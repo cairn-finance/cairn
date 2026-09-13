@@ -18,6 +18,7 @@ struct AccountsView: View {
     private var accounts: [Account]
 
     @State private var showingConnect = false
+    @State private var showingManualAccount = false
 
     var body: some View {
         List {
@@ -59,6 +60,18 @@ struct AccountsView: View {
                     }
                 }
             }
+
+            if !manualAccounts.isEmpty {
+                Section("Manual Accounts") {
+                    ForEach(manualAccounts) { account in
+                        NavigationLink {
+                            AccountDetailView(account: account)
+                        } label: {
+                            AccountRow(account: account)
+                        }
+                    }
+                }
+            }
         }
         .cairnListStyle()
         .navigationTitle("Accounts")
@@ -93,6 +106,9 @@ struct AccountsView: View {
             .frame(minWidth: 460, minHeight: 420)
             #endif
         }
+        .sheet(isPresented: $showingManualAccount) {
+            ManualAccountSheet()
+        }
     }
 
     @ToolbarContentBuilder
@@ -110,12 +126,25 @@ struct AccountsView: View {
             .disabled(model.syncState == .syncing)
         }
         ToolbarItem {
-            Button {
-                showingConnect = true
+            Menu {
+                Button {
+                    showingConnect = true
+                } label: {
+                    Label("Connect a Bank", systemImage: "building.columns")
+                }
+                Button {
+                    showingManualAccount = true
+                } label: {
+                    Label("Add Manual Account", systemImage: "square.and.pencil")
+                }
             } label: {
-                Label("Add Institution", systemImage: "plus")
+                Label("Add", systemImage: "plus")
             }
         }
+    }
+
+    private var manualAccounts: [Account] {
+        accounts.filter { $0.institution == nil }
     }
 
     private var netWorthTotals: [CurrencyTotal] {

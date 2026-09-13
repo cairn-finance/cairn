@@ -1,12 +1,22 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import CairnCore
 
 struct AccountDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppModel.self) private var model
 
     let account: Account
     @Query private var transactions: [LedgerTransaction]
+
+    @State private var showingImporter = false
+    @State private var importPayload: ImportPayload?
+
+    private struct ImportPayload: Identifiable {
+        let id = UUID()
+        let text: String
+    }
 
     init(account: Account) {
         self.account = account
@@ -33,7 +43,9 @@ struct AccountDetailView: View {
 
             if transactions.isEmpty {
                 Section {
-                    Text("No transactions yet. Sync to fetch recent activity.")
+                    Text(account.isManual
+                         ? "No transactions yet. Import a CSV from your bank or card."
+                         : "No transactions yet. Sync to fetch recent activity.")
                         .foregroundStyle(.secondary)
                         .font(.callout)
                 }
@@ -55,6 +67,15 @@ struct AccountDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         #endif
         .toolbar {
+            if account.isManual {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingImporter = true
+                    } label: {
+                        Label("Import CSV", systemImage: "square.and.arrow.down")
+                    }
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Toggle("Include in Net Worth", isOn: Binding(
@@ -69,6 +90,38 @@ struct AccountDetailView: View {
                     Label("Account Options", systemImage: "ellipsis.circle")
                 }
             }
+        }
+        .fileImporter(
+            isPresented: $showingImporter,
+            allowedContentTypes: [.commaSeparatedText, .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImportSelection(result)
+        }
+        .sheet(item: $importPayload) { payload in
+            ImportTransactionsSheet(account: account, text: payload.text)
+        }
+    }
+
+    private func handleImportSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case let .success(urls):
+            guard let url = urls.first else { return }
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                guard let text = String(data: data, encoding: .utf8)
+                    ?? String(data: data, encoding: .isoLatin1) else {
+                    model.banner = "Couldn’t read that file as text."
+                    return
+                }
+                importPayload = ImportPayload(text: text)
+            } catch {
+                model.banner = "Couldn’t open the file: \(error.localizedDescription)"
+            }
+        case let .failure(error):
+            model.banner = "Import cancelled: \(error.localizedDescription)"
         }
     }
 

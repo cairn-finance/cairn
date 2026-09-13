@@ -260,6 +260,42 @@ final class AppModel {
         await syncAll(force: false)
     }
 
+    // MARK: - Manual accounts & import
+
+    /// Creates a manual account for data SimpleFIN can't reach.
+    func createManualAccount(
+        name: String,
+        type: AccountType,
+        openingBalanceMinorUnits: Int64,
+        currency: Currency
+    ) {
+        let account = Account(
+            bankAccountID: "manual-\(UUID().uuidString)",
+            name: name,
+            currency: currency
+        )
+        account.sourceRaw = AccountSource.manual.rawValue
+        account.accountTypeRaw = type.rawValue
+        account.startingBalanceMinorUnits = openingBalanceMinorUnits
+        account.balanceMinorUnits = openingBalanceMinorUnits
+        account.balanceDate = .now
+        container.mainContext.insert(account)
+        try? container.mainContext.save()
+    }
+
+    /// Imports parsed CSV rows into an account, returning what was inserted.
+    func importTransactions(
+        _ imports: [ImportedTransaction],
+        into account: Account
+    ) async -> SyncEngine.ImportOutcome? {
+        do {
+            return try await engine.importTransactions(imports, intoAccountID: account.persistentModelID)
+        } catch {
+            banner = "Import failed: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
     // MARK: - Lock
 
     func setAppLock(enabled: Bool) {
