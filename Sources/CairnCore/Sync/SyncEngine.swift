@@ -235,8 +235,25 @@ public actor SyncEngine {
         account.balanceDate = simpleAccount.balanceDate
         account.lastSyncedAt = now
         account.institution = institution
+        if account.accountTypeRaw == AccountType.other.rawValue {
+            account.accountTypeRaw = Self.inferAccountType(from: simpleAccount.name).rawValue
+        }
         outcome.accountsUpserted += 1
         return account
+    }
+
+    /// Best-effort account type from its name, used when SimpleFIN provides no
+    /// type information.
+    private static func inferAccountType(from name: String) -> AccountType {
+        let lowered = name.lowercased()
+        if lowered.contains("credit") || lowered.contains("card") { return .credit }
+        if lowered.contains("saving") { return .savings }
+        if lowered.contains("checking") { return .checking }
+        if lowered.contains("invest") || lowered.contains("brokerage") || lowered.contains("retire") {
+            return .investment
+        }
+        if lowered.contains("loan") || lowered.contains("mortgage") { return .loan }
+        return .other
     }
 
     // swiftlint:disable:next function_parameter_count
@@ -281,6 +298,7 @@ public actor SyncEngine {
                 model.postedDate = txn.postedDate
                 model.transactedAt = txn.transactedAt
                 model.isPending = txn.isPending
+                model.normalizedMerchant = MerchantNormalizer.normalize(txn.description)
                 model.currencyExponent = account.currency.exponent
                 model.accountIDIndex = account.bankAccountID
                 model.account = account
@@ -303,6 +321,7 @@ public actor SyncEngine {
                 model.postedDate = txn.postedDate
                 model.transactedAt = txn.transactedAt
                 model.isPending = txn.isPending
+                model.normalizedMerchant = MerchantNormalizer.normalize(txn.description)
                 model.currencyExponent = account.currency.exponent
                 model.accountIDIndex = account.bankAccountID
                 model.account = account
@@ -530,6 +549,132 @@ public actor SyncEngine {
         settings.hasSeededDefaultCategories = true
         settings.modifiedAt = now
         try modelContext.save()
+    }
+
+    // MARK: - Import
+
+    public struct ImportOutcome: Sendable, Equatable {
+        public var inserted: Int = 0
+        public var duplicatesSkipped: Int = 0
+
+        public init() {}
+    }
+
+    private struct ImportCandidate {
+        let amountMinorUnits: Int64
+        let date: Date
+        let merchant: String
+    }
+
+    /// Inserts imported rows into an account, skipping likely duplicates.
+    /// Used by CSV import for accounts SimpleFIN can't reach (Apple Card,
+    /// Apple Savings, cash, property, loans).
+    public func importTransactions(
+        _ imports: [ImportedTransaction],
+        intoAccountID: PersistentIdentifier,
+        now: Date = .now
+    ) throws -> ImportOutcome {
+        guard let account = self[intoAccountID, as: Account.self] else {
+            throw SimpleFINError.transport("The account no longer exists.")
+        }
+
+        let accountBankID = account.bankAccountID
+        let existing = try modelContext.fetch(
+            FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.accountIDIndex == accountBankID })
+        )
+        var candidates = existing.map { transaction in
+            ImportCandidate(
+                amountMinorUnits: transaction.amountMinorUnits,
+                date: transaction.effectiveDate,
+                merchant: transaction.normalizedMerchant.isEmpty
+                    ? MerchantNormalizer.normalize(transaction.payeeDescription)
+                    : transaction.normalizedMerchant
+            )
+        }
+
+        let rules = try loadRuleSnapshots()
+        var outcome = ImportOutcome()
+
+        for item in imports.sorted(by: { $0.date < $1.date }) {
+            let normalized = MerchantNormalizer.normalize(item.merchant)
+            if isLikelyDuplicate(item, normalized: normalized, among: candidates) {
+                outcome.duplicatesSkipped += 1
+                continue
+            }
+
+            let model = LedgerTransaction(
+                bankTransactionID: Self.importIdentifier(for: item, normalized: normalized),
+                payeeDescription: item.description,
+                amountMinorUnits: item.amountMinorUnits
+            )
+            model.postedDate = item.date
+            model.isPending = false
+            model.normalizedMerchant = normalized
+            model.isImported = true
+            model.currencyExponent = account.currency.exponent
+            model.accountIDIndex = account.bankAccountID
+            model.account = account
+            model.createdAt = now
+            model.modifiedAt = now
+            modelContext.insert(model)
+            applyRulesIfNeeded(to: model, rules: rules)
+
+            candidates.append(
+                ImportCandidate(amountMinorUnits: item.amountMinorUnits, date: item.date, merchant: normalized)
+            )
+            outcome.inserted += 1
+        }
+
+        if account.isManual {
+            try recomputeManualBalance(account: account)
+        }
+
+        try modelContext.save()
+        return outcome
+    }
+
+    private func isLikelyDuplicate(
+        _ item: ImportedTransaction,
+        normalized: String,
+        among candidates: [ImportCandidate]
+    ) -> Bool {
+        let window = 3 * 86_400.0
+        for candidate in candidates {
+            guard candidate.amountMinorUnits == item.amountMinorUnits else { continue }
+            guard abs(candidate.date.timeIntervalSince(item.date)) <= window else { continue }
+            if candidate.merchant == normalized { return true }
+            if TextSimilarity.ratio(candidate.merchant, normalized) >= 0.6 { return true }
+        }
+        return false
+    }
+
+    /// Recomputes a manual account's balance from its opening balance and all of
+    /// its transactions.
+    private func recomputeManualBalance(account: Account) throws {
+        let accountBankID = account.bankAccountID
+        let transactions = try modelContext.fetch(
+            FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.accountIDIndex == accountBankID })
+        )
+        let sum = transactions.reduce(Int64(0)) { $0 + $1.amountMinorUnits }
+        account.balanceMinorUnits = account.startingBalanceMinorUnits + sum
+        account.balanceDate = .now
+    }
+
+    /// A deterministic id so re-importing the same file doesn't create new rows
+    /// even before the content-level duplicate check runs.
+    private static func importIdentifier(for item: ImportedTransaction, normalized: String) -> String {
+        let day = Int(item.date.timeIntervalSince1970 / 86_400)
+        let key = "\(day)|\(item.amountMinorUnits)|\(normalized.lowercased())"
+        return "import-\(stableHash(key))"
+    }
+
+    private static func stableHash(_ string: String) -> UInt64 {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in string.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return hash
     }
 
     // MARK: - Export
