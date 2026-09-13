@@ -91,6 +91,13 @@ public enum CairnSchemaV1: VersionedSchema {
         public var displayOrder: Int = 0
         public var lastSyncedAt: Date?
 
+        /// Where the account's data comes from. Manual accounts are for
+        /// institutions SimpleFIN can't reach (Apple Card, Apple Savings, cash,
+        /// property, loans) and receive imported transactions.
+        public var sourceRaw: String = AccountSource.simpleFIN.rawValue
+        public var accountTypeRaw: String = AccountType.other.rawValue
+        @Attribute(.allowsCloudEncryption) public var startingBalanceMinorUnits: Int64 = 0
+
         public var institution: Institution?
 
         @Relationship(deleteRule: .cascade, inverse: \LedgerTransaction.account)
@@ -132,6 +139,10 @@ public enum CairnSchemaV1: VersionedSchema {
             if let customDisplayName, !customDisplayName.isEmpty { return customDisplayName }
             return name
         }
+
+        public var source: AccountSource { AccountSource(rawValue: sourceRaw) ?? .simpleFIN }
+        public var accountType: AccountType { AccountType(rawValue: accountTypeRaw) ?? .other }
+        public var isManual: Bool { source == .manual }
 
         public var balance: Money {
             Money(minorUnits: balanceMinorUnits, currency: currency)
@@ -177,6 +188,12 @@ public enum CairnSchemaV1: VersionedSchema {
         public var modifiedAt: Date = Date.now
         public var modifiedByDeviceID: String = ""
         public var createdAt: Date = Date.now
+
+        /// Lowercased merchant name used for grouping, recurring detection, and
+        /// import de-duplication.
+        public var normalizedMerchant: String = ""
+        /// True when the transaction was added by a CSV import rather than a sync.
+        public var isImported: Bool = false
 
         public var account: Account?
 
@@ -406,5 +423,48 @@ public enum RuleMatchKind: String, Sendable, CaseIterable, Codable {
         case .equals: "Equals"
         case .regularExpression: "Regular Expression"
         }
+    }
+}
+
+/// Where an account's data comes from.
+public enum AccountSource: String, Sendable, CaseIterable, Codable {
+    /// Synced from SimpleFIN.
+    case simpleFIN = "simplefin"
+    /// Created by the user and filled by CSV import or manual entry.
+    case manual
+
+    public var displayName: String {
+        switch self {
+        case .simpleFIN: "SimpleFIN"
+        case .manual: "Manual"
+        }
+    }
+}
+
+/// The kind of account, used for grouping and net-worth classification.
+public enum AccountType: String, Sendable, CaseIterable, Codable {
+    case checking
+    case savings
+    case credit
+    case investment
+    case loan
+    case cash
+    case other
+
+    public var displayName: String {
+        switch self {
+        case .checking: "Checking"
+        case .savings: "Savings"
+        case .credit: "Credit Card"
+        case .investment: "Investment"
+        case .loan: "Loan"
+        case .cash: "Cash"
+        case .other: "Other"
+        }
+    }
+
+    /// Liabilities reduce net worth.
+    public var isLiability: Bool {
+        self == .credit || self == .loan
     }
 }
