@@ -1,0 +1,43 @@
+disabled_rules:
+  - todo
+  - trailing_comma
+  - opening_brace
+  - statement_position
+  - multiple_closures_with_trailing_closure
+  - function_body_length
+  - type_body_length
+  - file_length
+  - cyclomatic_complexity
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - force_unwrapping
+  - overridden_super_call
+  - private_action
+  - redundant_nil_coalescing
+  - implicitly_unwrapped_optional
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+
+line_length:
+  warning: 130
+  error: 200
+  ignores_comments: true
+
+identifier_name:
+  min_length:
+    warning: 1
+  excluded:
+    - id
+    - x
+    - y
+
+excluded:
+  - .build
+  - build
+  - Cairn.xcodeproj
+  - DerivedData
+
+force_unwrapping:
+  severity: warning
