@@ -138,8 +138,14 @@ public actor SimpleFINClient {
         case 402:
             throw SimpleFINError.paymentRequired
         case 403:
+            if let errors = errors(in: data), !errors.isEmpty {
+                throw SimpleFINError.serverReported(errors)
+            }
             throw SimpleFINError.unauthorized
         default:
+            if let errors = errors(in: data), !errors.isEmpty {
+                throw SimpleFINError.serverReported(errors)
+            }
             throw SimpleFINError.httpStatus(http.statusCode)
         }
 
@@ -179,6 +185,13 @@ public actor SimpleFINClient {
     }
 
     // MARK: - Helpers
+
+    /// Extracts structured errors from a response body. The bridge may include
+    /// `errlist` on non-200 responses as well as 200, and its docs ask apps to
+    /// always show those messages, so surface the real text when we can.
+    private func errors(in data: Data) -> [SimpleFINServerError]? {
+        (try? decoder.decode(SimpleFINAccountSetDTO.self, from: data))?.toDomain().errors
+    }
 
     /// Builds the `/accounts` request URL and the Basic auth value, keeping
     /// credentials out of the URL that is actually sent (and therefore out of

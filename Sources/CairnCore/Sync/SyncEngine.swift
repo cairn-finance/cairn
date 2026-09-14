@@ -34,9 +34,33 @@ public actor SyncEngine {
     /// SimpleFIN Bridge's documented daily request ceiling per token. Kept
     /// conservative because every signed-in device shares one Access URL.
     public static let dailyRequestLimit = 24
-    public static let initialBackfillDays = 365
+    /// SimpleFIN rejects a transaction range longer than 90 days, so the first
+    /// sync backfills just under that.
+    public static let initialBackfillDays = 89
+    /// Hard ceiling for any requested range, so an incremental sync after a long
+    /// gap is clamped instead of being rejected.
+    public static let maximumRequestDays = 89
     public static let syncOverlapDays = 7
     public static let stalePendingThreshold = 2
+
+    /// The start date to request for a sync, clamped so the range never exceeds
+    /// SimpleFIN's 90-day limit. A first sync backfills the full allowed window;
+    /// later syncs re-request a short overlap to catch late-posted transactions.
+    public static func requestStartDate(
+        lastSyncDate: Date?,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Date {
+        let desired: Date
+        if let lastSyncDate,
+           let overlap = calendar.date(byAdding: .day, value: -syncOverlapDays, to: lastSyncDate) {
+            desired = overlap
+        } else {
+            desired = calendar.date(byAdding: .day, value: -initialBackfillDays, to: now) ?? now
+        }
+        let earliestAllowed = calendar.date(byAdding: .day, value: -maximumRequestDays, to: now) ?? now
+        return max(desired, earliestAllowed)
+    }
 
     // MARK: - Settings
 
@@ -134,13 +158,11 @@ public actor SyncEngine {
 
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
 
-        let startDate: Date
-        if let lastSync = institution.lastSyncDate,
-           let overlap = calendar.date(byAdding: .day, value: -Self.syncOverlapDays, to: lastSync) {
-            startDate = overlap
-        } else {
-            startDate = calendar.date(byAdding: .day, value: -Self.initialBackfillDays, to: now) ?? now
-        }
+        let startDate = Self.requestStartDate(
+            lastSyncDate: institution.lastSyncDate,
+            now: now,
+            calendar: calendar
+        )
 
         do {
             let accountSet = try await client.fetchAccounts(
@@ -150,6 +172,7 @@ public actor SyncEngine {
             )
 
             var outcome = SyncOutcome()
+            let hadServerErrors = !accountSet.errors.isEmpty
             if let firstError = accountSet.errors.first {
                 outcome.serverErrors = accountSet.errors.map(\.message)
                 institution.lastSyncError = firstError.message
@@ -169,6 +192,12 @@ public actor SyncEngine {
                 institution.bankConnectionID = connection.id
             }
 
+            // Never leave a brand-new connection labeled "Connecting…".
+            if institution.name.isEmpty || institution.name == "Connecting…" {
+                let candidate = accountSet.connections.first?.name ?? ""
+                institution.name = candidate.isEmpty ? Self.fallbackName(for: accessURL) : candidate
+            }
+
             let ruleSnapshots = try loadRuleSnapshots()
 
             for simpleAccount in accountSet.accounts {
@@ -184,8 +213,12 @@ public actor SyncEngine {
                 try recordSnapshot(for: account, now: now, calendar: calendar)
             }
 
-            institution.lastSyncDate = now
-            institution.lastSuccessfulFetch = now
+            // Only advance the sync cursor when the fetch was clean; otherwise
+            // retry the same window next time.
+            if !hadServerErrors {
+                institution.lastSyncDate = now
+                institution.lastSuccessfulFetch = now
+            }
             institution.dailyRequestCount += 1
 
             try modelContext.save()
@@ -193,10 +226,24 @@ public actor SyncEngine {
             return outcome
         } catch {
             institution.lastSyncError = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+            // A brand-new connection is inserted as "Connecting…". If the very
+            // first fetch fails, replace that placeholder so the UI doesn't show
+            // "Connecting…" forever.
+            if institution.name.isEmpty || institution.name == "Connecting…" {
+                institution.name = Self.fallbackName(for: accessURL)
+            }
             institution.dailyRequestCount += 1
             try? modelContext.save()
             throw error
         }
+    }
+
+    /// A readable name for an institution when SimpleFIN never returned one.
+    static func fallbackName(for accessURL: URL) -> String {
+        if let host = accessURL.host, !host.isEmpty {
+            return host
+        }
+        return "Institution"
     }
 
     // MARK: - Upserts

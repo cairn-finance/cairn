@@ -111,6 +111,41 @@ struct TextSimilarityTests {
     }
 }
 
+@Suite("Sync request window")
+struct SyncRequestWindowTests {
+    private static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        return calendar
+    }
+
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func days(_ value: Int) -> Date {
+        Self.calendar.date(byAdding: .day, value: value, to: now) ?? now
+    }
+
+    @Test("First sync backfills just under the 90-day limit")
+    func firstSync() {
+        let start = SyncEngine.requestStartDate(lastSyncDate: nil, now: now, calendar: Self.calendar)
+        #expect(abs(start.timeIntervalSince(days(-SyncEngine.initialBackfillDays))) < 1)
+        #expect(start >= days(-90))
+    }
+
+    @Test("Incremental sync re-requests a short overlap")
+    func incremental() {
+        let start = SyncEngine.requestStartDate(lastSyncDate: days(-1), now: now, calendar: Self.calendar)
+        #expect(abs(start.timeIntervalSince(days(-(1 + SyncEngine.syncOverlapDays)))) < 1)
+    }
+
+    @Test("A long gap is clamped to the 90-day limit")
+    func clampedAfterGap() {
+        let start = SyncEngine.requestStartDate(lastSyncDate: days(-365), now: now, calendar: Self.calendar)
+        #expect(abs(start.timeIntervalSince(days(-SyncEngine.maximumRequestDays))) < 1)
+        #expect(now.timeIntervalSince(start) <= 90 * 86_400)
+    }
+}
+
 @Suite("Balance history")
 struct BalanceHistoryTests {
     private let base = Date(timeIntervalSince1970: 1_700_000_000)
