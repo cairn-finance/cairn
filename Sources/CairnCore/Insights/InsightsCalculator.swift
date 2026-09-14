@@ -183,9 +183,18 @@ public struct InsightsSnapshot: Sendable {
         return Double(currentToDateSpending - previousToDateSpending) / Double(previousToDateSpending)
     }
 
-    /// Projected spend for the whole month at the trailing average pace.
+    /// Projected spend for the whole month. Once enough of the month has
+    /// elapsed we extend the current run rate; very early in the month that is
+    /// too noisy, so we fall back to the trailing average.
     public var projectedSpending: Int64 {
-        averageDailyPace > 0 ? averageDailyPace * Int64(daysInMonth) : current.spendingMinorUnits
+        if lastDayWithData >= 5 {
+            let rate = Double(currentToDateSpending) / Double(max(1, lastDayWithData))
+            return Int64((rate * Double(daysInMonth)).rounded())
+        }
+        if averageDailyPace > 0 {
+            return averageDailyPace * Int64(daysInMonth)
+        }
+        return current.spendingMinorUnits
     }
 
     public var netChangeRatio: Double? {

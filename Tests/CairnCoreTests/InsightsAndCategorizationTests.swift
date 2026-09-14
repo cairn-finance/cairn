@@ -169,7 +169,8 @@ struct InsightsCalculatorTests {
         #expect(snapshot.lastDayWithData == 28)
         #expect(snapshot.currentToDateSpending == 13_000)
         #expect(snapshot.averageDailyPace == 9_000 / 31)
-        #expect(snapshot.projectedSpending == (9_000 / 31) * 28)
+        // A finished month projects to what it actually spent.
+        #expect(snapshot.projectedSpending == 13_000)
         #expect(snapshot.topMoverNames.contains("Groceries"))
     }
 }
