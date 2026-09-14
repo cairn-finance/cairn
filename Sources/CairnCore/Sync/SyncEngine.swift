@@ -131,16 +131,23 @@ public actor SyncEngine {
     }
 
     /// The smallest number of requests left today across all institutions, so
-    /// the UI never overstates the remaining budget.
+    /// the UI never overstates the remaining budget. Institutions that share an
+    /// Access URL share one budget, so collapse each credential to its highest
+    /// request count before taking the minimum.
     public func minimumRemainingBudget(now: Date, calendar: Calendar = .current) throws -> Int {
         let institutions = try modelContext.fetch(FetchDescriptor<Institution>())
         guard !institutions.isEmpty else { return Self.dailyRequestLimit }
-        var minimum = Self.dailyRequestLimit
+        var usedByCredential: [UUID: Int] = [:]
         for institution in institutions {
             rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
-            minimum = min(minimum, max(0, Self.dailyRequestLimit - institution.dailyRequestCount))
+            usedByCredential[institution.credentialID] = max(
+                usedByCredential[institution.credentialID] ?? 0,
+                institution.dailyRequestCount
+            )
         }
-        return minimum
+        return usedByCredential.values
+            .map { max(0, Self.dailyRequestLimit - $0) }
+            .min() ?? Self.dailyRequestLimit
     }
 
     // MARK: - Sync
@@ -194,7 +201,7 @@ public actor SyncEngine {
 
                 return try await applyAccountSet(
                     accountSet,
-                    institution: institution,
+                    institutionID: institution.persistentModelID,
                     accessURL: accessURL,
                     now: now,
                     calendar: calendar
@@ -228,44 +235,62 @@ public actor SyncEngine {
 
     /// Applies a successfully fetched account set: connection metadata, account
     /// and transaction upserts, and the sync cursor.
-    private func applyAccountSet(
+    ///
+    /// One SimpleFIN Access URL can expose several connections (for example, a
+    /// bridge account with a checking, savings, and brokerage login). Each
+    /// connection gets its own `Institution` sharing the owner's credential, so
+    /// every bank shows up separately and its accounts stay together.
+    func applyAccountSet(
         _ accountSet: SimpleFINAccountSet,
-        institution: Institution,
+        institutionID: PersistentIdentifier,
         accessURL: URL,
         now: Date,
-        calendar: Calendar
+        calendar: Calendar = .current
     ) async throws -> SyncOutcome {
+        guard let owner = self[institutionID, as: Institution.self] else {
+            throw SimpleFINError.transport("This institution is no longer in the local database.")
+        }
+
         var outcome = SyncOutcome()
         let hadServerErrors = !accountSet.errors.isEmpty
-        if let firstError = accountSet.errors.first {
-            outcome.serverErrors = accountSet.errors.map(\.message)
-            institution.lastSyncError = firstError.message
-        } else {
-            institution.lastSyncError = nil
-        }
 
-        // Update connection metadata.
-        if let connection = accountSet.connections.first(where: { $0.id == institution.bankConnectionID })
-            ?? accountSet.connections.first {
-            institution.name = connection.name
-            institution.orgID = connection.organizationID
-            institution.orgURL = connection.organizationURL
-            if !connection.simpleFINURL.isEmpty {
-                institution.sfinURL = connection.simpleFINURL
-            }
-            institution.bankConnectionID = connection.id
-        }
+        let owners = try institutions(forConnections: accountSet.connections, owner: owner)
 
         // Never leave a brand-new connection labeled "Connecting…".
-        if institution.name.isEmpty || institution.name == "Connecting…" {
-            let candidate = accountSet.connections.first?.name ?? ""
-            institution.name = candidate.isEmpty ? Self.fallbackName(for: accessURL) : candidate
+        if owner.name.isEmpty || owner.name == "Connecting…",
+           let first = owners.values.first {
+            owner.name = first.name.isEmpty ? Self.fallbackName(for: accessURL) : first.name
+        }
+
+        // Attach per-connection metadata, clearing stale errors; then apply any
+        // errors to the connection they name (or the owner if unspecified).
+        for connection in accountSet.connections {
+            guard let target = owners[connection.id] else { continue }
+            apply(connection, to: target)
+            target.lastSyncError = nil
+        }
+        for error in accountSet.errors {
+            let target = error.connectionID.flatMap { owners[$0] } ?? owner
+            target.lastSyncError = error.message
+        }
+        outcome.serverErrors = accountSet.errors.map(\.message)
+
+        // Accounts synced before connections were split out may still sit on the
+        // connection-less holder; move them onto their real connection. Accounts
+        // already owned by another connection are left untouched.
+        for simpleAccount in accountSet.accounts {
+            let target = owners[simpleAccount.connectionID] ?? owner
+            if let existing = try accountByBankID(simpleAccount.id),
+               existing.institution == nil || existing.institution === owner {
+                existing.institution = target
+            }
         }
 
         let ruleSnapshots = try loadRuleSnapshots()
 
         for simpleAccount in accountSet.accounts {
-            let account = try upsertAccount(simpleAccount, institution: institution, now: now, outcome: &outcome)
+            let target = owners[simpleAccount.connectionID] ?? owner
+            let account = try upsertAccount(simpleAccount, institution: target, now: now, outcome: &outcome)
             try reconcileTransactions(
                 simpleAccount.transactions,
                 account: account,
@@ -278,10 +303,16 @@ public actor SyncEngine {
         }
 
         // Only advance the sync cursor when the fetch was clean; otherwise
-        // retry the same window next time.
+        // retry the same window next time. A single fetch covers every
+        // connection sharing this credential, so mark them all as synced.
         if !hadServerErrors {
-            institution.lastSyncDate = now
-            institution.lastSuccessfulFetch = now
+            var synced = Set(owners.values.map(\.persistentModelID))
+            synced.insert(owner.persistentModelID)
+            for sibling in try siblingInstitutions(credentialID: owner.credentialID)
+            where synced.contains(sibling.persistentModelID) {
+                sibling.lastSyncDate = now
+                sibling.lastSuccessfulFetch = now
+            }
         }
 
         try modelContext.save()
@@ -292,6 +323,63 @@ public actor SyncEngine {
                 + "updated=\(outcome.transactionsUpdated) serverErrors=\(outcome.serverErrors.count)"
         )
         return outcome
+    }
+
+    /// Finds or creates one `Institution` per connection returned by an Access
+    /// URL. Each connection gets a child institution that shares the owner's
+    /// `credentialID`; the owner itself stays connection-less and acts as the
+    /// credential holder (and is hidden in the UI once it has children).
+    private func institutions(
+        forConnections connections: [SimpleFINConnection],
+        owner: Institution
+    ) throws -> [String: Institution] {
+        let credentialID = owner.credentialID
+        let siblings = try siblingInstitutions(credentialID: credentialID)
+        var byConnection: [String: Institution] = [:]
+        for sibling in siblings where !sibling.bankConnectionID.isEmpty {
+            byConnection[sibling.bankConnectionID] = sibling
+        }
+
+        var result: [String: Institution] = [:]
+        for connection in connections {
+            if let existing = byConnection[connection.id] {
+                result[connection.id] = existing
+            } else {
+                let created = Institution(
+                    bankConnectionID: connection.id,
+                    name: connection.name,
+                    credentialID: credentialID
+                )
+                modelContext.insert(created)
+                byConnection[connection.id] = created
+                result[connection.id] = created
+            }
+        }
+        return result
+    }
+
+    /// One account by its connection-scoped SimpleFIN id, if it exists.
+    private func accountByBankID(_ id: String) throws -> Account? {
+        var descriptor = FetchDescriptor<Account>(predicate: #Predicate { $0.bankAccountID == id })
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
+
+    /// Every institution that shares one SimpleFIN Access URL.
+    private func siblingInstitutions(credentialID: UUID) throws -> [Institution] {
+        try modelContext.fetch(
+            FetchDescriptor<Institution>(predicate: #Predicate { $0.credentialID == credentialID })
+        )
+    }
+
+    private func apply(_ connection: SimpleFINConnection, to institution: Institution) {
+        institution.name = connection.name
+        institution.orgID = connection.organizationID
+        institution.orgURL = connection.organizationURL
+        if !connection.simpleFINURL.isEmpty {
+            institution.sfinURL = connection.simpleFINURL
+        }
+        institution.bankConnectionID = connection.id
     }
 
     /// A readable name for an institution when SimpleFIN never returned one.
@@ -359,8 +447,14 @@ public actor SyncEngine {
         )
         descriptor.fetchLimit = 1
 
+        // Prefer an account already owned by this connection's institution, so
+        // two banks that reuse an account id never steal each other's accounts.
         let account: Account
-        if let existing = try modelContext.fetch(descriptor).first {
+        if let existing = (institution.accounts ?? []).first(where: { $0.bankAccountID == accountBankID }) {
+            account = existing
+        } else if let existing = try modelContext.fetch(descriptor).first,
+                  existing.institution == nil
+                  || existing.institution?.bankConnectionID == institution.bankConnectionID {
             account = existing
         } else {
             account = Account(bankAccountID: simpleAccount.id, name: simpleAccount.name, currency: simpleAccount.currency)

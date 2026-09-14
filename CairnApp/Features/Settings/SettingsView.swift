@@ -20,6 +20,22 @@ struct SettingsView: View {
         institutions.compactMap(\.lastSuccessfulFetch).max()
     }
 
+    /// Hides the connection-less credential holder once its connections have
+    /// been split out, but keeps it visible when it is the only record (for
+    /// example a first connect that never succeeded) so it can be disconnected.
+    private var visibleInstitutions: [Institution] {
+        institutions.filter { institution in
+            if !institution.bankConnectionID.isEmpty || institution.lastSyncError != nil {
+                return true
+            }
+            let hasChildren = institutions.contains {
+                $0.credentialID == institution.credentialID
+                    && $0.persistentModelID != institution.persistentModelID
+            }
+            return !hasChildren
+        }
+    }
+
     var body: some View {
         Form {
             syncSection
@@ -74,7 +90,9 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { institutionToDisconnect = nil }
         } message: {
-            Text("The stored credential is removed from the Keychain and local data is deleted. Revoke access at SimpleFIN as well if you want to be certain.")
+            Text("The stored credential is removed from the Keychain and local data is deleted. "
+                + "Banks that share this SimpleFIN connection are disconnected too. "
+                + "Revoke access at SimpleFIN as well if you want to be certain.")
         }
     }
 
@@ -121,7 +139,7 @@ struct SettingsView: View {
 
     private var institutionsSection: some View {
         Section {
-            ForEach(institutions) { institution in
+            ForEach(visibleInstitutions) { institution in
                 HStack(spacing: 12) {
                     SettingsIcon(systemImage: "building.columns.fill", tint: institution.lastSyncError == nil ? CairnTheme.accent : CairnTheme.negative)
                     VStack(alignment: .leading, spacing: 3) {

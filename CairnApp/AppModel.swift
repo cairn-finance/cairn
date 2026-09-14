@@ -229,9 +229,14 @@ final class AppModel {
         var reportedBudget = false
         var reportedThrottle = false
 
-        // Each institution is independent: its own credential, its own request
-        // budget, and its own failures. One bank failing must not stop the rest.
-        for institution in institutions {
+        // Institutions that share one Access URL share a credential and a
+        // request budget, so sync each credential once and let the fetch fan out
+        // to its connections. One failing bank must not stop the rest.
+        let credentialsByID = Dictionary(grouping: institutions, by: \.credentialID)
+        for (_, group) in credentialsByID {
+            guard let institution = group.first(where: { $0.bankConnectionID.isEmpty }) ?? group.first else {
+                continue
+            }
             let name = institution.name.isEmpty ? "A bank" : institution.name
             do {
                 let decision = try await engine.decideSync(
@@ -303,11 +308,20 @@ final class AppModel {
 
     // MARK: - Institution management
 
+    /// Revokes one SimpleFIN Access URL. Because a single Access URL can back
+    /// several connections (banks), every institution sharing its credential is
+    /// removed together — otherwise the next sync would recreate them.
     func disconnect(_ institution: Institution) async {
         let credentialID = institution.credentialID
+        let context = container.mainContext
+        let siblings = (try? context.fetch(
+            FetchDescriptor<Institution>(predicate: #Predicate { $0.credentialID == credentialID })
+        )) ?? []
         try? credentials.delete(id: credentialID)
-        container.mainContext.delete(institution)
-        try? container.mainContext.save()
+        for sibling in siblings.isEmpty ? [institution] : siblings {
+            context.delete(sibling)
+        }
+        try? context.save()
         await syncAll(force: false)
     }
 
