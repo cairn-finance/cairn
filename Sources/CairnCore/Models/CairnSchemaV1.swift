@@ -194,6 +194,9 @@ public enum CairnSchemaV1: VersionedSchema {
         public var normalizedMerchant: String = ""
         /// True when the transaction was added by a CSV import rather than a sync.
         public var isImported: Bool = false
+        /// When the on-device model last tried and failed to categorize this
+        /// transaction, so automatic categorization doesn't retry it forever.
+        public var autoCategorizeAttemptedAt: Date?
 
         public var account: Account?
 

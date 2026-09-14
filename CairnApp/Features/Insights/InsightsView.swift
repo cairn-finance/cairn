@@ -13,8 +13,6 @@ struct InsightsView: View {
     @Query private var settings: [AppSettings]
 
     @State private var month: Date = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
-    @State private var isWorking = false
-    @State private var statusMessage: String?
 
     var body: some View {
         let data = snapshot
@@ -42,6 +40,7 @@ struct InsightsView: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("Insights")
+        .task { await model.refreshCategorizationCounts() }
     }
 
     // MARK: - Currency & data
@@ -340,50 +339,80 @@ struct InsightsView: View {
 
     private var categorizeCard: some View {
         Card {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Categorization")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                Text("Rules and your past corrections sort transactions on-device. Nothing leaves your device.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                statusLine
 
-                HStack(spacing: 10) {
-                    Button {
-                        categorize()
-                    } label: {
-                        if isWorking {
-                            ProgressView()
-                        } else {
-                            Label("Categorize now", systemImage: "wand.and.stars")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isWorking)
-
-                    if AppleIntelligenceCategorizer.isAvailable {
-                        Button {
-                            categorizeWithAppleIntelligence()
-                        } label: {
-                            Label("Ask Apple Intelligence", systemImage: "sparkles")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isWorking)
-                    }
-                }
-
-                Text(AppleIntelligenceCategorizer.statusDescription)
+                Text("Rules and your past corrections run first, automatically after every sync and import. "
+                    + "When available, Apple Intelligence’s on-device model places what’s left. "
+                    + "Transaction text never leaves your device.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let statusMessage {
-                    Label(statusMessage, systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(CairnTheme.positive)
-                }
+                Text(AppleIntelligenceCategorizer.statusDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
         }
+    }
+
+    @ViewBuilder
+    private var statusLine: some View {
+        switch model.categorizationState {
+        case .running:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Categorizing automatically…")
+                    .font(.callout)
+            }
+        case let .finished(categorized, counts):
+            if counts.total == 0 {
+                allCategorizedLabel(categorized: categorized)
+            } else if counts.pendingModel > 0, automaticModelEnabled {
+                Label(
+                    "\(counts.pendingModel) transaction\(counts.pendingModel == 1 ? "" : "s") will be categorized automatically.",
+                    systemImage: "clock"
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            } else {
+                Label(
+                    "\(counts.total) transaction\(counts.total == 1 ? "" : "s") need a category.",
+                    systemImage: "exclamationmark.circle"
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+        case .idle:
+            if model.categorizationCounts.total == 0 {
+                allCategorizedLabel(categorized: 0)
+            } else {
+                Label(
+                    "\(model.categorizationCounts.total) transaction\(model.categorizationCounts.total == 1 ? "" : "s") will be categorized automatically.",
+                    systemImage: "clock"
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var automaticModelEnabled: Bool {
+        model.useAppleIntelligence && AppleIntelligenceCategorizer.isAvailable
+    }
+
+    private func allCategorizedLabel(categorized: Int) -> some View {
+        Label(
+            categorized > 0
+                ? "Categorized \(categorized) transaction\(categorized == 1 ? "" : "s"). All caught up."
+                : "All transactions are categorized.",
+            systemImage: "checkmark.circle.fill"
+        )
+        .font(.callout)
+        .foregroundStyle(CairnTheme.positive)
     }
 
     // MARK: - Helpers
@@ -419,31 +448,5 @@ struct InsightsView: View {
         return value.formatted(
             .currency(code: primaryCurrency.code).notation(.compactName).precision(.fractionLength(1))
         )
-    }
-
-    // MARK: - Actions
-
-    private func categorize() {
-        isWorking = true
-        Task {
-            let outcome = await model.recategorize()
-            isWorking = false
-            guard let outcome else { return }
-            statusMessage = outcome.categorized == 0
-                ? "Everything is already categorized."
-                : "Categorized \(outcome.categorized) transaction\(outcome.categorized == 1 ? "" : "s")."
-        }
-    }
-
-    private func categorizeWithAppleIntelligence() {
-        isWorking = true
-        Task {
-            let outcome = await model.categorizeWithAppleIntelligence()
-            isWorking = false
-            guard let outcome else { return }
-            statusMessage = outcome.categorized == 0
-                ? "Apple Intelligence didn’t change anything."
-                : "Apple Intelligence categorized \(outcome.categorized) transaction\(outcome.categorized == 1 ? "" : "s")."
-        }
     }
 }

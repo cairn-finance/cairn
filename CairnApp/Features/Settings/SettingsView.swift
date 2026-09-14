@@ -22,6 +22,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             syncSection
+            categorizationSection
             storageSection
             institutionsSection
             privacySection
@@ -98,6 +99,28 @@ struct SettingsView: View {
                 }
             }
             .disabled(model.syncState == .syncing)
+            NavigationLink {
+                SyncDiagnosticsView()
+            } label: {
+                Label("Sync Diagnostics", systemImage: "doc.text.magnifyingglass")
+            }
+        }
+    }
+
+    private var categorizationSection: some View {
+        Section("Categorization") {
+            Toggle("Use Apple Intelligence", isOn: Binding(
+                get: { model.useAppleIntelligence },
+                set: { model.useAppleIntelligence = $0 }
+            ))
+            .disabled(!AppleIntelligenceCategorizer.isAvailable)
+            Text(AppleIntelligenceCategorizer.statusDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Rules and your past corrections always run on-device, automatically after every sync and import. "
+                + "Apple Intelligence is used only for what they can’t place, and only its on-device model — never the cloud.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

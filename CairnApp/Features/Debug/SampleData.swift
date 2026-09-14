@@ -92,6 +92,7 @@ enum SampleData {
         ]
 
         let accounts = ["ACT-CHK": checking, "ACT-SAV": savings, "ACT-CC": card]
+        var seenMerchants: Set<String> = []
         for (index, sample) in samples.enumerated() {
             guard let account = accounts[sample.3] else { continue }
             let transaction = LedgerTransaction(
@@ -106,11 +107,31 @@ enum SampleData {
             transaction.isPending = index % 11 == 0
             transaction.createdAt = transaction.effectiveDate
             transaction.modifiedAt = transaction.createdAt
-            transaction.autoCategory = category(sample.2)
-            transaction.autoCategorySource = "rule"
-            transaction.autoConfidence = 1
+            transaction.normalizedMerchant = MerchantNormalizer.normalize(sample.0)
+            // The person's first transaction with a merchant stands in for a
+            // manual correction; repeats are left uncategorized so the automatic
+            // pass can recognize them from merchant memory.
+            if seenMerchants.insert(sample.0).inserted {
+                transaction.userCategory = category(sample.2)
+            }
             context.insert(transaction)
         }
+
+        // One merchant with no prior history or rule, so the on-device model has
+        // something to categorize.
+        let unique = LedgerTransaction(
+            bankTransactionID: "TXN-UNCAT-1",
+            payeeDescription: "Chevron Gas #4471",
+            amountMinorUnits: -4_210
+        )
+        unique.account = card
+        unique.accountIDIndex = card.bankAccountID
+        unique.currencyExponent = 2
+        unique.postedDate = calendar.date(byAdding: .day, value: -4, to: now)
+        unique.createdAt = unique.effectiveDate
+        unique.modifiedAt = unique.createdAt
+        unique.normalizedMerchant = MerchantNormalizer.normalize("Chevron Gas #4471")
+        context.insert(unique)
 
         try? context.save()
     }

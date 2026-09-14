@@ -158,84 +158,140 @@ public actor SyncEngine {
 
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
 
-        let startDate = Self.requestStartDate(
+        let label = institution.name.isEmpty ? "institution" : institution.name
+        await cairnLog(
+            .info,
+            "Sync started for \(label). lastSync=\(institution.lastSyncDate.map(Self.iso) ?? "never")"
+        )
+
+        let candidates = Self.candidateStartDates(
             lastSyncDate: institution.lastSyncDate,
             now: now,
             calendar: calendar
         )
 
-        do {
-            let accountSet = try await client.fetchAccounts(
-                accessURL: accessURL,
-                startDate: startDate,
-                includePending: true
-            )
+        var lastError: any Error = SimpleFINError.httpStatus(-1)
+        for (index, startDate) in candidates.enumerated() {
+            let isLast = index == candidates.count - 1
+            let windowDays = Int(now.timeIntervalSince(startDate) / 86_400)
+            await cairnLog(.info, "Requesting a \(windowDays)-day window (attempt \(index + 1) of \(candidates.count)).")
+            institution.dailyRequestCount += 1
 
-            var outcome = SyncOutcome()
-            let hadServerErrors = !accountSet.errors.isEmpty
-            if let firstError = accountSet.errors.first {
-                outcome.serverErrors = accountSet.errors.map(\.message)
-                institution.lastSyncError = firstError.message
-            } else {
-                institution.lastSyncError = nil
-            }
-
-            // Update connection metadata.
-            if let connection = accountSet.connections.first(where: { $0.id == institution.bankConnectionID })
-                ?? accountSet.connections.first {
-                institution.name = connection.name
-                institution.orgID = connection.organizationID
-                institution.orgURL = connection.organizationURL
-                if !connection.simpleFINURL.isEmpty {
-                    institution.sfinURL = connection.simpleFINURL
-                }
-                institution.bankConnectionID = connection.id
-            }
-
-            // Never leave a brand-new connection labeled "Connecting…".
-            if institution.name.isEmpty || institution.name == "Connecting…" {
-                let candidate = accountSet.connections.first?.name ?? ""
-                institution.name = candidate.isEmpty ? Self.fallbackName(for: accessURL) : candidate
-            }
-
-            let ruleSnapshots = try loadRuleSnapshots()
-
-            for simpleAccount in accountSet.accounts {
-                let account = try upsertAccount(simpleAccount, institution: institution, now: now, outcome: &outcome)
-                try reconcileTransactions(
-                    simpleAccount.transactions,
-                    account: account,
-                    rules: ruleSnapshots,
-                    now: now,
-                    calendar: calendar,
-                    outcome: &outcome
+            do {
+                let accountSet = try await client.fetchAccounts(
+                    accessURL: accessURL,
+                    startDate: startDate,
+                    includePending: true
                 )
-                try recordSnapshot(for: account, now: now, calendar: calendar)
-            }
 
-            // Only advance the sync cursor when the fetch was clean; otherwise
-            // retry the same window next time.
-            if !hadServerErrors {
-                institution.lastSyncDate = now
-                institution.lastSuccessfulFetch = now
-            }
-            institution.dailyRequestCount += 1
+                // If the server rejects the range, try a shorter window before
+                // giving up, so the app self-heals if the limit differs.
+                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }), !isLast {
+                    await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
+                    lastError = SimpleFINError.serverReported(accountSet.errors)
+                    continue
+                }
 
-            try modelContext.save()
-            outcome.finishedAt = now
-            return outcome
-        } catch {
-            institution.lastSyncError = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
-            // A brand-new connection is inserted as "Connecting…". If the very
-            // first fetch fails, replace that placeholder so the UI doesn't show
-            // "Connecting…" forever.
-            if institution.name.isEmpty || institution.name == "Connecting…" {
-                institution.name = Self.fallbackName(for: accessURL)
+                return try await applyAccountSet(
+                    accountSet,
+                    institution: institution,
+                    accessURL: accessURL,
+                    now: now,
+                    calendar: calendar
+                )
+            } catch {
+                if Self.isRangeLimitError(error), !isLast {
+                    await cairnLog(.warning, "Range rejected: \(Self.describe(error)). Retrying with a shorter window.")
+                    lastError = error
+                    continue
+                }
+                let message = Self.describe(error)
+                await cairnLog(.error, "Sync failed: \(message)")
+                institution.lastSyncError = message
+                // A brand-new connection is inserted as "Connecting…". If the
+                // very first fetch fails, replace that placeholder.
+                if institution.name.isEmpty || institution.name == "Connecting…" {
+                    institution.name = Self.fallbackName(for: accessURL)
+                }
+                try? modelContext.save()
+                throw error
             }
-            institution.dailyRequestCount += 1
-            try? modelContext.save()
-            throw error
         }
+
+        // Every candidate window was rejected.
+        let message = Self.describe(lastError)
+        await cairnLog(.error, "Sync exhausted all windows: \(message)")
+        institution.lastSyncError = message
+        try? modelContext.save()
+        throw lastError
+    }
+
+    /// Applies a successfully fetched account set: connection metadata, account
+    /// and transaction upserts, and the sync cursor.
+    private func applyAccountSet(
+        _ accountSet: SimpleFINAccountSet,
+        institution: Institution,
+        accessURL: URL,
+        now: Date,
+        calendar: Calendar
+    ) async throws -> SyncOutcome {
+        var outcome = SyncOutcome()
+        let hadServerErrors = !accountSet.errors.isEmpty
+        if let firstError = accountSet.errors.first {
+            outcome.serverErrors = accountSet.errors.map(\.message)
+            institution.lastSyncError = firstError.message
+        } else {
+            institution.lastSyncError = nil
+        }
+
+        // Update connection metadata.
+        if let connection = accountSet.connections.first(where: { $0.id == institution.bankConnectionID })
+            ?? accountSet.connections.first {
+            institution.name = connection.name
+            institution.orgID = connection.organizationID
+            institution.orgURL = connection.organizationURL
+            if !connection.simpleFINURL.isEmpty {
+                institution.sfinURL = connection.simpleFINURL
+            }
+            institution.bankConnectionID = connection.id
+        }
+
+        // Never leave a brand-new connection labeled "Connecting…".
+        if institution.name.isEmpty || institution.name == "Connecting…" {
+            let candidate = accountSet.connections.first?.name ?? ""
+            institution.name = candidate.isEmpty ? Self.fallbackName(for: accessURL) : candidate
+        }
+
+        let ruleSnapshots = try loadRuleSnapshots()
+
+        for simpleAccount in accountSet.accounts {
+            let account = try upsertAccount(simpleAccount, institution: institution, now: now, outcome: &outcome)
+            try reconcileTransactions(
+                simpleAccount.transactions,
+                account: account,
+                rules: ruleSnapshots,
+                now: now,
+                calendar: calendar,
+                outcome: &outcome
+            )
+            try recordSnapshot(for: account, now: now, calendar: calendar)
+        }
+
+        // Only advance the sync cursor when the fetch was clean; otherwise
+        // retry the same window next time.
+        if !hadServerErrors {
+            institution.lastSyncDate = now
+            institution.lastSuccessfulFetch = now
+        }
+
+        try modelContext.save()
+        outcome.finishedAt = now
+        await cairnLog(
+            .info,
+            "Sync ok: accounts=\(accountSet.accounts.count) inserted=\(outcome.transactionsInserted) "
+                + "updated=\(outcome.transactionsUpdated) serverErrors=\(outcome.serverErrors.count)"
+        )
+        return outcome
     }
 
     /// A readable name for an institution when SimpleFIN never returned one.
@@ -244,6 +300,49 @@ public actor SyncEngine {
             return host
         }
         return "Institution"
+    }
+
+    /// Windows to try when the server rejects a range, longest first.
+    static let backfillFallbackDays = [89, 30, 7]
+
+    /// Start dates to attempt, longest permitted window first. An incremental
+    /// sync only needs its overlap window.
+    static func candidateStartDates(
+        lastSyncDate: Date?,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> [Date] {
+        if lastSyncDate != nil {
+            return [requestStartDate(lastSyncDate: lastSyncDate, now: now, calendar: calendar)]
+        }
+        return backfillFallbackDays.map { days in
+            calendar.date(byAdding: .day, value: -days, to: now) ?? now
+        }
+    }
+
+    /// The bridge's range limit has appeared as both an `errlist` message and an
+    /// HTTP error, so match on the text rather than a status code.
+    static func isRangeLimitError(_ message: String) -> Bool {
+        let lowered = message.lowercased()
+        return lowered.contains("date range")
+            || lowered.contains("90 day")
+            || lowered.contains("exceeds limit")
+    }
+
+    static func isRangeLimitError(_ error: any Error) -> Bool {
+        if let simpleError = error as? SimpleFINError,
+           case let .serverReported(errors) = simpleError {
+            return errors.contains { isRangeLimitError($0.message) }
+        }
+        return isRangeLimitError(describe(error))
+    }
+
+    static func describe(_ error: any Error) -> String {
+        (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+    }
+
+    static func iso(_ date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
     }
 
     // MARK: - Upserts
@@ -552,6 +651,10 @@ public actor SyncEngine {
 
     public struct RecategorizeOutcome: Sendable, Equatable {
         public var categorized: Int = 0
+        /// Transactions the on-device model was asked about.
+        public var attempted: Int = 0
+        /// Uncategorized transactions still awaiting the on-device model.
+        public var remaining: Int = 0
         public var bySource: [String: Int] = [:]
 
         public init() {}
@@ -570,7 +673,7 @@ public actor SyncEngine {
         var outcome = RecategorizeOutcome()
 
         for transaction in transactions {
-            guard transaction.userCategory == nil else { continue }
+            guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
             guard transaction.autoCategorySource != SuggestionSource.appleIntelligence.rawValue,
                   transaction.autoCategorySource != "model" else { continue }
 
@@ -600,48 +703,98 @@ public actor SyncEngine {
         return outcome
     }
 
-    /// Asks Apple Intelligence to categorize the highest-value uncategorized
-    /// transactions. Slow, optional, and only runs when the model is available.
+    public struct CategorizationCounts: Sendable, Equatable {
+        /// Needs a category and hasn't been tried by the on-device model yet.
+        public var pendingModel: Int = 0
+        /// Needs a category and the on-device model already tried and failed.
+        public var unresolved: Int = 0
+
+        public var total: Int { pendingModel + unresolved }
+
+        public init() {}
+    }
+
+    /// How many transactions still need a category, split by whether the
+    /// on-device model has already tried them.
+    public func categorizationCounts() throws -> CategorizationCounts {
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        var counts = CategorizationCounts()
+        for transaction in transactions where Self.needsCategory(transaction) {
+            if transaction.autoCategorizeAttemptedAt == nil {
+                counts.pendingModel += 1
+            } else {
+                counts.unresolved += 1
+            }
+        }
+        return counts
+    }
+
+    /// Total transactions still needing a category.
+    public func uncategorizedCount() throws -> Int {
+        try categorizationCounts().total
+    }
+
+    /// Runs the on-device Apple Intelligence model over a bounded batch of
+    /// uncategorized transactions. Purely local: it uses `SystemLanguageModel`
+    /// and never the Private Cloud Compute model.
+    ///
+    /// Every transaction it looks at is stamped so later automatic runs don't
+    /// retry it, whether or not a category was found.
     @discardableResult
-    public func categorizeWithAppleIntelligence(
-        limit: Int = 20,
+    public func appleIntelligenceCategorizeBatch(
+        limit: Int = 12,
         now: Date = .now
     ) async throws -> RecategorizeOutcome {
-        guard AppleIntelligenceCategorizer.isAvailable else { return RecategorizeOutcome() }
+        var outcome = RecategorizeOutcome()
 
         let categories = try modelContext.fetch(FetchDescriptor<Category>())
             .filter { !$0.isArchived && $0.name != "Income" && $0.name != "Transfers" }
-        guard !categories.isEmpty else { return RecategorizeOutcome() }
+        guard !categories.isEmpty else { return outcome }
         let names = categories.map(\.name)
 
-        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
-            .filter { $0.userCategory == nil && $0.autoCategory == nil }
-            .sorted { abs($0.amountMinorUnits) > abs($1.amountMinorUnits) }
-            .prefix(limit)
+        let all = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        let candidates = all
+            .filter { Self.needsCategory($0) && $0.autoCategorizeAttemptedAt == nil }
+            .sorted { $0.effectiveDate > $1.effectiveDate }
 
-        var outcome = RecategorizeOutcome()
-        for transaction in transactions {
+        guard !candidates.isEmpty else { return outcome }
+        guard AppleIntelligenceCategorizer.isAvailable else {
+            outcome.remaining = candidates.count
+            return outcome
+        }
+
+        for transaction in candidates.prefix(limit) {
             let merchant = transaction.normalizedMerchant.isEmpty
                 ? transaction.payeeDescription
                 : transaction.normalizedMerchant
-            guard let name = try? await AppleIntelligenceCategorizer.classify(
+            transaction.autoCategorizeAttemptedAt = now
+            outcome.attempted += 1
+
+            if let name = try? await AppleIntelligenceCategorizer.classify(
                 merchant: merchant,
                 description: transaction.payeeDescription,
                 categories: names
-            ), let category = categories.first(where: { $0.name == name }) else { continue }
-
-            transaction.autoCategory = category
-            transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
-            transaction.autoConfidence = 0.8
-            transaction.modifiedAt = now
-            outcome.categorized += 1
-            outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += 1
+            ), let category = categories.first(where: { $0.name == name }) {
+                transaction.autoCategory = category
+                transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
+                transaction.autoConfidence = 0.8
+                transaction.modifiedAt = now
+                outcome.categorized += 1
+                outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += 1
+            }
         }
 
-        if outcome.categorized > 0 {
-            try modelContext.save()
-        }
+        outcome.remaining = max(0, candidates.count - outcome.attempted)
+        try modelContext.save()
         return outcome
+    }
+
+    private static func needsCategory(_ transaction: LedgerTransaction) -> Bool {
+        transaction.userCategory == nil
+            && transaction.autoCategory == nil
+            && !transaction.isIgnored
+            && !transaction.isTransfer
+            && !transaction.isPending
     }
 
     /// Builds merchant memory from transactions the person categorized.

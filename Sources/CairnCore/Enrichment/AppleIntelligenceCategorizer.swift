@@ -27,11 +27,15 @@ public enum CategoryNameMatcher {
     }
 }
 
-/// Optional zero-shot categorization using Apple's on-device foundation model
-/// (Apple Intelligence). This never sends data anywhere: the model runs on the
-/// device. It is used only as a last resort when rules and learned history have
-/// no answer, and every call is gated on availability.
+/// Local-only categorization using Apple's on-device foundation model.
+///
+/// Cairn deliberately uses `SystemLanguageModel`, the on-device model. It never
+/// uses the Private Cloud Compute model (`PrivateCloudComputeLanguageModel`)
+/// available from iOS 27, so transaction text never leaves the device. Every
+/// call is gated on `SystemLanguageModel.default.isAvailable`.
 public enum AppleIntelligenceCategorizer {
+    /// Always true: Cairn only ever uses the on-device model.
+    public static let usesLocalModelOnly = true
     public enum Availability: Sendable, Equatable {
         case available
         case unavailable(String)

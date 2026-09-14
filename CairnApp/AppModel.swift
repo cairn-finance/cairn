@@ -13,6 +13,7 @@ final class AppModel {
         static let useCloudKit = "cairn.useCloudKit"
         static let onboardingComplete = "cairn.onboardingComplete"
         static let appLockEnabled = "cairn.appLockEnabled"
+        static let useAppleIntelligence = "cairn.useAppleIntelligenceCategorization"
     }
 
     enum SyncState: Equatable {
@@ -37,6 +38,26 @@ final class AppModel {
     var remainingBudget: Int = SyncEngine.dailyRequestLimit
     var banner: String?
 
+    /// Automatic categorization progress, surfaced in Insights.
+    enum CategorizationState: Equatable {
+        case idle
+        case running
+        case finished(categorized: Int, counts: SyncEngine.CategorizationCounts)
+    }
+
+    private(set) var categorizationState: CategorizationState = .idle
+    private(set) var categorizationCounts = SyncEngine.CategorizationCounts()
+
+    /// Whether the on-device model may be used. Rules and learned history always
+    /// run, regardless of this setting.
+    var useAppleIntelligence: Bool {
+        didSet {
+            UserDefaults.standard.set(useAppleIntelligence, forKey: Self.Keys.useAppleIntelligence)
+        }
+    }
+
+    @ObservationIgnored private var isAutoCategorizing = false
+
     init(inMemory: Bool = false) {
         let defaults = UserDefaults.standard
         // New installs default to iCloud Sync so the onboarding default works
@@ -46,6 +67,7 @@ final class AppModel {
         requestedCloud = cloud
         onboardingComplete = defaults.bool(forKey: Self.Keys.onboardingComplete)
         appLockEnabled = defaults.bool(forKey: Self.Keys.appLockEnabled)
+        useAppleIntelligence = (defaults.object(forKey: Self.Keys.useAppleIntelligence) as? Bool) ?? true
 
         credentials = inMemory ? InMemoryCredentialStore() : KeychainCredentialStore()
         client = SimpleFINClient(session: SimpleFINClient.ephemeralSession())
@@ -92,6 +114,7 @@ final class AppModel {
             await syncAll(force: false)
         }
         await seeding
+        await autoCategorize()
     }
 
     /// Seeds the default categories once. On a CloudKit store this waits briefly
@@ -143,8 +166,10 @@ final class AppModel {
     @discardableResult
     func connectInstitution(token: String) async -> Bool {
         syncState = .syncing
+        await cairnLog(.info, "connectInstitution: claiming setup token.")
         do {
             let accessURL = try await client.claim(token: token)
+            await cairnLog(.info, "Claimed access URL for \(accessURL.host ?? "unknown host").")
             let credentialID = UUID()
             try storeCredential(accessURL.absoluteString, id: credentialID)
 
@@ -172,6 +197,7 @@ final class AppModel {
                 message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
             }
             syncState = .failed(message)
+            await cairnLog(.error, "connectInstitution failed: \(message)")
             return false
         }
     }
@@ -187,6 +213,7 @@ final class AppModel {
         }
 
         syncState = .syncing
+        await cairnLog(.info, "syncAll: \(institutions.count) institution(s), force=\(force)")
         var failures: [String] = []
         var skippedForCredential = 0
         var reportedBudget = false
@@ -204,11 +231,13 @@ final class AppModel {
                 )
                 switch decision {
                 case .budgetExhausted:
+                    await cairnLog(.warning, "\(name): daily request budget exhausted.")
                     if !reportedBudget {
                         banner = "\(name) has reached today’s SimpleFIN request limit. It will sync again tomorrow."
                         reportedBudget = true
                     }
                 case let .throttled(until):
+                    await cairnLog(.info, "\(name): throttled until \(until.formatted(date: .omitted, time: .shortened)).")
                     if force, !reportedThrottle {
                         banner = "Just synced. Next automatic refresh after \(until.formatted(date: .omitted, time: .shortened))."
                         reportedThrottle = true
@@ -216,6 +245,7 @@ final class AppModel {
                 case .proceed:
                     guard let secret = try credentials.secret(for: institution.credentialID),
                           let accessURL = URL(string: secret) else {
+                        await cairnLog(.warning, "\(name): credential not available yet (waiting for iCloud Keychain).")
                         skippedForCredential += 1
                         continue
                     }
@@ -225,15 +255,23 @@ final class AppModel {
                         client: client,
                         now: Date()
                     )
+                    await cairnLog(
+                        .info,
+                        "\(name): synced accounts=\(outcome.accountsUpserted) "
+                            + "inserted=\(outcome.transactionsInserted) updated=\(outcome.transactionsUpdated) "
+                            + "serverErrors=\(outcome.serverErrors.count)"
+                    )
                     failures.append(contentsOf: outcome.serverErrors.map { "\(name): \($0)" })
                 }
             } catch {
                 let reason = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+                await cairnLog(.error, "\(name): \(reason)")
                 failures.append("\(name): \(reason)")
             }
         }
 
         await refreshBudget()
+        await cairnLog(.info, "syncAll finished: failures=\(failures.count) skipped=\(skippedForCredential)")
         if let first = failures.first {
             syncState = .failed(first)
         } else if skippedForCredential > 0 {
@@ -244,6 +282,9 @@ final class AppModel {
         } else {
             syncState = .success
         }
+
+        // Categorize in the background so the sync UI finishes immediately.
+        Task { await autoCategorize() }
     }
 
     func refreshBudget() async {
@@ -289,7 +330,9 @@ final class AppModel {
         into account: Account
     ) async -> SyncEngine.ImportOutcome? {
         do {
-            return try await engine.importTransactions(imports, intoAccountID: account.persistentModelID)
+            let outcome = try await engine.importTransactions(imports, intoAccountID: account.persistentModelID)
+            Task { await autoCategorize() }
+            return outcome
         } catch {
             banner = "Import failed: \(error.localizedDescription)"
             return nil
@@ -298,26 +341,58 @@ final class AppModel {
 
     // MARK: - Categorization
 
-    /// Re-runs rules and merchant-memory categorization over uncategorized
-    /// transactions.
+    /// Runs categorization automatically: rules and learned history first, then
+    /// a bounded on-device Apple Intelligence batch when enabled and available.
+    ///
+    /// Safe to call often; overlapping calls are coalesced, and the model only
+    /// ever looks at transactions it hasn't tried before.
+    func autoCategorize() async {
+        guard !isAutoCategorizing else { return }
+        isAutoCategorizing = true
+        categorizationState = .running
+        defer { isAutoCategorizing = false }
+
+        let ruleOutcome = await recategorize()
+        var categorized = ruleOutcome?.categorized ?? 0
+        var aiCategorized = 0
+
+        if useAppleIntelligence, AppleIntelligenceCategorizer.isAvailable {
+            if let aiOutcome = await runAppleIntelligenceBatch() {
+                aiCategorized = aiOutcome.categorized
+                categorized += aiCategorized
+            }
+        }
+
+        await refreshCategorizationCounts()
+        await cairnLog(
+            .info,
+            "Auto-categorize: rules=\(ruleOutcome?.categorized ?? 0) ai=\(aiCategorized) "
+                + "pending=\(categorizationCounts.pendingModel) unresolved=\(categorizationCounts.unresolved)"
+        )
+        categorizationState = .finished(categorized: categorized, counts: categorizationCounts)
+    }
+
+    /// Rules plus merchant memory. Fast and deterministic, always on-device.
     @discardableResult
     func recategorize() async -> SyncEngine.RecategorizeOutcome? {
         do {
             return try await engine.recategorize()
         } catch {
-            banner = "Categorization failed: \(error.localizedDescription)"
+            await cairnLog(.warning, "Rule categorization failed: \(error.localizedDescription)")
             return nil
         }
     }
 
-    /// Optional Apple Intelligence pass over the biggest uncategorized
-    /// transactions. Does nothing when the model isn't available.
-    @discardableResult
-    func categorizeWithAppleIntelligence() async -> SyncEngine.RecategorizeOutcome? {
+    /// Updates the counts shown in Insights.
+    func refreshCategorizationCounts() async {
+        categorizationCounts = (try? await engine.categorizationCounts()) ?? SyncEngine.CategorizationCounts()
+    }
+
+    private func runAppleIntelligenceBatch() async -> SyncEngine.RecategorizeOutcome? {
         do {
-            return try await engine.categorizeWithAppleIntelligence()
+            return try await engine.appleIntelligenceCategorizeBatch()
         } catch {
-            banner = "Apple Intelligence couldn’t categorize right now: \(error.localizedDescription)"
+            await cairnLog(.warning, "On-device categorization pass failed: \(error.localizedDescription)")
             return nil
         }
     }

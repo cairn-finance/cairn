@@ -144,6 +144,22 @@ struct SyncRequestWindowTests {
         #expect(abs(start.timeIntervalSince(days(-SyncEngine.maximumRequestDays))) < 1)
         #expect(now.timeIntervalSince(start) <= 90 * 86_400)
     }
+
+    @Test("Falls back to shorter windows on a range rejection")
+    func fallbackWindows() {
+        let candidates = SyncEngine.candidateStartDates(lastSyncDate: nil, now: now, calendar: Self.calendar)
+        #expect(candidates.count == SyncEngine.backfillFallbackDays.count)
+        #expect(abs(candidates[0].timeIntervalSince(days(-89))) < 1)
+        #expect(abs(candidates[1].timeIntervalSince(days(-30))) < 1)
+        #expect(abs(candidates[2].timeIntervalSince(days(-7))) < 1)
+    }
+
+    @Test("Recognizes the bridge's range-limit message")
+    func rangeErrorDetection() {
+        #expect(SyncEngine.isRangeLimitError("requested date range exceeds limit of 90 days"))
+        #expect(SyncEngine.isRangeLimitError("The date range is too large"))
+        #expect(!SyncEngine.isRangeLimitError("con.auth: reauthentication required"))
+    }
 }
 
 @Suite("Balance history")

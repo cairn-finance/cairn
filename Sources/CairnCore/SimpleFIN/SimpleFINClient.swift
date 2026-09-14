@@ -43,18 +43,23 @@ public actor SimpleFINClient {
         request.httpMethod = "POST"
         request.setValue("Cairn/0.1", forHTTPHeaderField: "User-Agent")
 
+        await cairnLog(.info, "POST \(claimURL.host ?? "?")\(claimURL.path)")
         let (data, response) = try await perform(request)
 
         guard let http = response as? HTTPURLResponse else {
+            await cairnLog(.error, "No HTTP response while claiming the token.")
             throw SimpleFINError.transport("No HTTP response while claiming the token.")
         }
+        await cairnLog(.info, "Claim HTTP \(http.statusCode)")
 
         switch http.statusCode {
         case 200:
             break
         case 403:
+            await cairnLog(.error, "Claim HTTP 403: token already used.")
             throw SimpleFINError.claimForbidden
         default:
+            await cairnLog(.error, "Claim HTTP \(http.statusCode).")
             throw SimpleFINError.httpStatus(http.statusCode)
         }
 
@@ -126,33 +131,50 @@ public actor SimpleFINClient {
             request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
         }
 
+        await cairnLog(.info, "GET \(requestURL.host ?? "?")\(requestURL.path)?\(requestURL.query ?? "")")
+
         let (data, response) = try await perform(request)
 
         guard let http = response as? HTTPURLResponse else {
+            await cairnLog(.error, "No HTTP response while fetching accounts.")
             throw SimpleFINError.transport("No HTTP response while fetching accounts.")
         }
+        await cairnLog(.info, "HTTP \(http.statusCode), \(data.count) bytes")
 
         switch http.statusCode {
         case 200:
             break
         case 402:
+            await cairnLog(.error, "HTTP 402: the SimpleFIN subscription needs attention.")
             throw SimpleFINError.paymentRequired
         case 403:
             if let errors = errors(in: data), !errors.isEmpty {
+                await cairnLog(.error, "HTTP 403: \(errors.map(\.message).joined(separator: " | "))")
                 throw SimpleFINError.serverReported(errors)
             }
+            await cairnLog(.error, "HTTP 403: access revoked or credentials invalid.")
             throw SimpleFINError.unauthorized
         default:
             if let errors = errors(in: data), !errors.isEmpty {
+                await cairnLog(.error, "HTTP \(http.statusCode): \(errors.map(\.message).joined(separator: " | "))")
                 throw SimpleFINError.serverReported(errors)
             }
+            await cairnLog(.error, "HTTP \(http.statusCode) with no structured errors.")
             throw SimpleFINError.httpStatus(http.statusCode)
         }
 
         do {
             let dto = try decoder.decode(SimpleFINAccountSetDTO.self, from: data)
-            return dto.toDomain()
+            let accountSet = dto.toDomain()
+            let errors = accountSet.errors.isEmpty ? "none" : accountSet.errors.map(\.message).joined(separator: " | ")
+            await cairnLog(
+                .info,
+                "Decoded connections=\(accountSet.connections.count) accounts=\(accountSet.accounts.count) "
+                    + "transactions=\(accountSet.accounts.reduce(0) { $0 + $1.transactions.count }) errors=\(errors)"
+            )
+            return accountSet
         } catch {
+            await cairnLog(.error, "Decoding failed: \(ErrorSanitizer.sanitize(error.localizedDescription))")
             throw SimpleFINError.decoding(error.localizedDescription)
         }
     }
