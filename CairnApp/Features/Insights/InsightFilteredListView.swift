@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import CairnCore
 
-/// A simple, tappable list behind an Insights card: either one category in one
+/// A tappable list behind an Insights card: either one category in one
 /// month, or everything still waiting for a category.
 struct InsightFilteredListView: View {
     enum Scope: Hashable {
@@ -19,28 +19,18 @@ struct InsightFilteredListView: View {
     let scope: Scope
 
     var body: some View {
-        List {
-            if filtered.isEmpty {
-                Section {
-                    Text(emptyMessage)
-                        .foregroundStyle(.secondary)
-                        .font(.callout)
-                }
-            } else {
-                Section {
-                    ForEach(filtered) { transaction in
-                        NavigationLink {
-                            TransactionDetailView(transaction: transaction)
-                        } label: {
-                            TransactionRow(transaction: transaction)
-                        }
-                    }
-                } header: {
-                    header
+        ScrollView {
+            VStack(alignment: .leading, spacing: CairnTheme.Spacing.l) {
+                if filtered.isEmpty {
+                    EmptyStateView(systemImage: "checkmark.circle", title: "Nothing here", message: emptyMessage)
+                } else {
+                    summary
+                    TransactionDayList(transactions: filtered)
                 }
             }
+            .cairnScreen()
         }
-        .cairnListStyle()
+        .cairnCanvas()
         .navigationTitle(title)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -48,20 +38,36 @@ struct InsightFilteredListView: View {
     }
 
     @ViewBuilder
-    private var header: some View {
+    private var summary: some View {
         switch scope {
-        case .category:
-            HStack {
-                Text("Total")
-                Spacer()
-                AmountText(
-                    money: Money(minorUnits: -totalSpent, currency: currency),
-                    font: .caption.weight(.semibold),
-                    colorOverride: CairnTheme.negative
-                )
+        case let .category(_, month):
+            Card {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Spent in \(month.formatted(.dateTime.month(.wide)))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        AmountText(money: Money(minorUnits: totalSpent, currency: currency), font: .cairnDisplay)
+                    }
+                    Spacer()
+                    Text("\(filtered.count) transaction\(filtered.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         case .needingCategory:
-            Text("\(filtered.count) transaction\(filtered.count == 1 ? "" : "s")")
+            Card {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemImage: "sparkles", tint: CairnTheme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(filtered.count) transaction\(filtered.count == 1 ? "" : "s") to review")
+                            .font(.headline)
+                        Text("Pick a category and Cairn remembers it for that merchant.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 

@@ -14,68 +14,117 @@ struct RootView: View {
                 #endif
             } else {
                 OnboardingView()
+                    .transition(.opacity)
             }
         }
+        .animation(CairnTheme.Motion.standard, value: model.onboardingComplete)
         .overlay(alignment: .top) {
             if let banner = model.banner {
                 BannerView(text: banner)
-                    .padding(.top, 6)
+                    .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     // A toast must never intercept taps on the toolbar beneath.
                     .allowsHitTesting(false)
             }
         }
-        .animation(.snappy, value: model.banner)
+        .animation(CairnTheme.Motion.quick, value: model.banner)
         .tint(CairnTheme.accent)
         // Banners are transient: clear them after a few seconds so they never
         // sit over the toolbar.
         .task(id: model.banner) {
             guard model.banner != nil else { return }
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(4.5))
             guard !Task.isCancelled else { return }
             model.banner = nil
         }
     }
 }
 
+/// A transient, non-blocking status toast.
 private struct BannerView: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             Image(systemName: "info.circle.fill")
-                .foregroundStyle(.tint)
+                .foregroundStyle(CairnTheme.accent)
+                .padding(.top, 1)
             Text(text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.separator.opacity(0.4)))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(CairnTheme.outline, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
         .padding(.horizontal)
         .frame(maxWidth: 520)
     }
 }
 
+/// The app's top-level destinations, shared by the iOS tab bar and the macOS
+/// sidebar so both platforms have the same information architecture.
+enum AppSection: String, CaseIterable, Identifiable, Hashable {
+    case home, activity, insights, settings
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .home: "Home"
+        case .activity: "Activity"
+        case .insights: "Insights"
+        case .settings: "Settings"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .home: "house.fill"
+        case .activity: "list.bullet.rectangle.fill"
+        case .insights: "chart.bar.xaxis"
+        case .settings: "gearshape.fill"
+        }
+    }
+
+    /// The first tab shown. Debug builds accept `-cairn-tab <name>` so UI can be
+    /// checked screen by screen.
+    static var initial: AppSection {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-cairn-tab"), index + 1 < args.count,
+           let section = AppSection(rawValue: args[index + 1]) {
+            return section
+        }
+        #endif
+        return .home
+    }
+
+    @MainActor @ViewBuilder
+    var destination: some View {
+        switch self {
+        case .home: HomeView()
+        case .activity: TransactionsView()
+        case .insights: InsightsView()
+        case .settings: SettingsView()
+        }
+    }
+}
+
 #if os(iOS)
 struct MainTabView: View {
+    @State private var selection: AppSection = AppSection.initial
+
     var body: some View {
-        TabView {
-            Tab("Accounts", systemImage: "building.columns.fill") {
-                NavigationStack { AccountsView() }
-            }
-            Tab("Insights", systemImage: "chart.bar.xaxis") {
-                NavigationStack { InsightsView() }
-            }
-            Tab("Transactions", systemImage: "list.bullet.rectangle") {
-                NavigationStack { TransactionsView() }
-            }
-            Tab("Net Worth", systemImage: "chart.line.uptrend.xyaxis") {
-                NavigationStack { NetWorthView() }
-            }
-            Tab("Settings", systemImage: "gearshape.fill") {
-                NavigationStack { SettingsView() }
+        TabView(selection: $selection) {
+            ForEach(AppSection.allCases) { section in
+                Tab(section.title, systemImage: section.systemImage, value: section) {
+                    NavigationStack { section.destination }
+                }
             }
         }
     }
@@ -83,52 +132,20 @@ struct MainTabView: View {
 #endif
 
 #if os(macOS)
-enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
-    case accounts, insights, transactions, netWorth, settings
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .accounts: "Accounts"
-        case .insights: "Insights"
-        case .transactions: "Transactions"
-        case .netWorth: "Net Worth"
-        case .settings: "Settings"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .accounts: "building.columns.fill"
-        case .insights: "chart.bar.xaxis"
-        case .transactions: "list.bullet.rectangle"
-        case .netWorth: "chart.line.uptrend.xyaxis"
-        case .settings: "gearshape.fill"
-        }
-    }
-}
-
 struct MainShellView: View {
-    @State private var selection: SidebarSection = .accounts
+    @State private var selection: AppSection = AppSection.initial
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarSection.allCases, selection: $selection) { section in
+            List(AppSection.allCases, selection: $selection) { section in
                 Label(section.title, systemImage: section.systemImage)
                     .tag(section)
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
         } detail: {
-            switch selection {
-            case .accounts: NavigationStack { AccountsView() }
-            case .insights: NavigationStack { InsightsView() }
-            case .transactions: NavigationStack { TransactionsView() }
-            case .netWorth: NavigationStack { NetWorthView() }
-            case .settings: NavigationStack { SettingsView() }
-            }
+            NavigationStack { selection.destination }
         }
-        .frame(minWidth: 880, minHeight: 560)
+        .frame(minWidth: 900, minHeight: 600)
     }
 }
 #endif

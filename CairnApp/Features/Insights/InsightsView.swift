@@ -13,12 +13,13 @@ struct InsightsView: View {
     @Query private var settings: [AppSettings]
 
     @State private var month: Date = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
+    @State private var showAllCategories = false
 
     var body: some View {
         let data = snapshot
         return ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                monthChips
+            VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
+                monthPicker
 
                 if currencyAccounts.isEmpty {
                     EmptyStateView(
@@ -26,29 +27,26 @@ struct InsightsView: View {
                         title: "No accounts to analyze",
                         message: "Connect a bank or add an account to see spending insights."
                     )
-                    .padding(.top, 40)
                 } else {
-                    heroCard(data)
-                    paceCard(data)
-                    trendCard(data)
-                    categoryCard(data)
-                    merchantsCard(data)
-                    categorizeCard
+                    heroCard(data).cairnAppear()
+                    paceCard(data).cairnAppear(delay: 0.05)
+                    categoryCard(data).cairnAppear(delay: 0.1)
+                    trendCard(data).cairnAppear(delay: 0.15)
+                    merchantsCard(data).cairnAppear(delay: 0.2)
+                    categorizeCard.cairnAppear(delay: 0.25)
                 }
             }
             .cairnScreen()
         }
-        .background(CairnTheme.groupedBackground.ignoresSafeArea())
+        .cairnCanvas()
         .navigationTitle("Insights")
         .task { await model.refreshCategorizationCounts() }
+        .sensoryFeedback(.selection, trigger: month)
     }
 
     // MARK: - Currency & data
 
-    private var homeCurrency: Currency {
-        let code = settings.first?.homeCurrencyCode ?? "USD"
-        return Currency(code: code, exponent: Currency.defaultExponent(forISOCode: code))
-    }
+    private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
 
     private var primaryCurrency: Currency {
         if accounts.contains(where: { $0.currency.code == homeCurrency.code }) {
@@ -106,7 +104,7 @@ struct InsightsView: View {
 
     private var recentMonths: [Date] {
         let calendar = Calendar.current
-        var months = (0..<6).reversed().compactMap {
+        var months = (0..<12).reversed().compactMap {
             calendar.date(byAdding: .month, value: -$0, to: currentMonthStart)
         }
         if !months.contains(where: { calendar.isDate($0, equalTo: month, toGranularity: .month) }) {
@@ -115,162 +113,167 @@ struct InsightsView: View {
         return months
     }
 
-    private var monthChips: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Button {
-                    shiftMonth(-1)
-                } label: {
-                    Image(systemName: "chevron.left").font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.plain)
+    private var monthPicker: some View {
+        HStack(spacing: 8) {
+            stepButton("chevron.left") { shiftMonth(-1) }
 
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(recentMonths, id: \.self) { candidate in
-                                Button {
-                                    withAnimation(.snappy) { month = candidate }
-                                } label: {
-                                    Text(candidate, format: .dateTime.month(.abbreviated).year(.twoDigits))
-                                        .font(.subheadline.weight(isSelected(candidate) ? .semibold : .regular))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(
-                                            isSelected(candidate) ? Color.accentColor : Color.clear,
-                                            in: Capsule()
-                                        )
-                                        .foregroundStyle(isSelected(candidate) ? Color.white : Color.primary)
-                                }
-                                .buttonStyle(.plain)
-                                .id(candidate)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(recentMonths, id: \.self) { candidate in
+                            Button {
+                                withAnimation(CairnTheme.Motion.quick) { month = candidate }
+                            } label: {
+                                Chip(
+                                    title: candidate.formatted(.dateTime.month(.abbreviated).year(.twoDigits)),
+                                    isSelected: isSelected(candidate),
+                                    tint: CairnTheme.ink
+                                )
                             }
+                            .buttonStyle(.plain)
+                            .id(candidate)
                         }
-                        .padding(.horizontal, 2)
                     }
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0),
-                                .init(color: .black, location: 0.05),
-                                .init(color: .black, location: 0.95),
-                                .init(color: .clear, location: 1)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 2)
+                }
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black, location: 0.04),
+                            .init(color: .black, location: 0.96),
+                            .init(color: .clear, location: 1),
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
-                    .onAppear { scrollToSelected(proxy) }
-                    .onChange(of: month) { _, _ in scrollToSelected(proxy) }
-                }
+                )
+                .onAppear { scrollToSelected(proxy, animated: false) }
+                .onChange(of: month) { _, _ in scrollToSelected(proxy, animated: true) }
+            }
 
-                Button {
-                    shiftMonth(1)
-                } label: {
-                    Image(systemName: "chevron.right").font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.plain)
+            stepButton("chevron.right") { shiftMonth(1) }
                 .disabled(isCurrentMonth)
                 .opacity(isCurrentMonth ? 0.3 : 1)
-            }
-
-            if !isCurrentMonth {
-                Button("Back to this month") {
-                    withAnimation(.snappy) { month = currentMonthStart }
-                }
-                .font(.caption)
-            }
         }
+    }
+
+    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(.primary)
+                .frame(width: 32, height: 32)
+                .background(CairnTheme.surfaceInset, in: Circle())
+                .overlay(Circle().strokeBorder(CairnTheme.outline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     private func shiftMonth(_ delta: Int) {
         guard let next = Calendar.current.date(byAdding: .month, value: delta, to: month) else { return }
         guard next <= .now || Calendar.current.isDate(next, equalTo: .now, toGranularity: .month) else { return }
-        withAnimation(.snappy) { month = next }
+        withAnimation(CairnTheme.Motion.quick) { month = next }
     }
 
-    private func scrollToSelected(_ proxy: ScrollViewProxy) {
+    private func scrollToSelected(_ proxy: ScrollViewProxy, animated: Bool) {
         guard let selected = recentMonths.first(where: { isSelected($0) }) else { return }
-        withAnimation(.snappy) { proxy.scrollTo(selected, anchor: .center) }
+        if animated {
+            withAnimation(CairnTheme.Motion.quick) { proxy.scrollTo(selected, anchor: .center) }
+        } else {
+            proxy.scrollTo(selected, anchor: .center)
+        }
     }
 
     // MARK: - Hero
 
     private func heroCard(_ data: InsightsSnapshot) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(
-                    title: isCurrentMonth
-                        ? "Spent this month"
-                        : "Spent in \(data.monthStart.formatted(.dateTime.month(.wide)))"
+        HeroCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(isCurrentMonth ? "Spent so far this month" : "Spent in \(data.monthStart.formatted(.dateTime.month(.wide)))")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.75))
+
+                AmountText(
+                    money: Money(minorUnits: data.currentToDateSpending, currency: primaryCurrency),
+                    font: .cairnHero,
+                    colorOverride: .white,
+                    deemphasizeFraction: true
                 )
 
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    AmountText(
-                        money: Money(minorUnits: data.currentToDateSpending, currency: primaryCurrency),
-                        font: .system(.largeTitle, weight: .bold)
-                    )
+                HStack(spacing: 8) {
                     if let change = data.spendingChangeVsDate {
-                        TrendPill(ratio: change, higherIsBad: true)
+                        TrendPill(ratio: change, higherIsBad: true, onInk: true)
+                        Text("vs this point last month")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.7))
+                    } else if isCurrentMonth {
+                        Text("No comparison yet — last month had no spending.")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.7))
                     }
                 }
 
-                if isCurrentMonth, data.averageDailyPace > 0 {
-                    Text("On pace for \(moneyText(data.projectedSpending)) by month end")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                if data.previousToDateSpending > 0 {
-                    Text("vs \(moneyText(data.previousToDateSpending)) at this point last month")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                if isCurrentMonth, data.projectedSpending > 0 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "gauge.with.needle")
+                            .font(.caption.weight(.semibold))
+                        Text("On pace for \(moneyText(data.projectedSpending)) by month end")
+                            .font(.footnote.weight(.medium))
+                    }
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.12), in: Capsule())
                 }
 
-                Divider()
+                Rectangle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(height: 1)
 
                 HStack(alignment: .top, spacing: 16) {
-                    Metric(
-                        title: "Income",
-                        money: Money(minorUnits: data.current.incomeMinorUnits, currency: primaryCurrency),
-                        tint: CairnTheme.positive
-                    )
-                    Metric(
-                        title: "Net",
-                        money: Money(minorUnits: data.current.netMinorUnits, currency: primaryCurrency),
-                        tint: data.current.netMinorUnits >= 0 ? CairnTheme.positive : CairnTheme.negative
-                    )
-                    Metric(
-                        title: "Avg / day",
-                        money: Money(minorUnits: data.averageDailySpending(), currency: primaryCurrency)
-                    )
+                    heroMetric("Income", data.current.incomeMinorUnits)
+                    heroMetric("Net", data.current.netMinorUnits, tint: data.current.netMinorUnits >= 0 ? CairnTheme.inkGlow : Color(red: 1, green: 0.62, blue: 0.58))
+                    heroMetric("Avg / day", data.averageDailySpending())
                 }
             }
         }
     }
 
+    private func heroMetric(_ title: String, _ minorUnits: Int64, tint: Color = .white) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.6))
+            AmountText(
+                money: Money(minorUnits: minorUnits, currency: primaryCurrency),
+                font: .subheadline.weight(.semibold),
+                colorOverride: tint
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     // MARK: - Pace
 
     private func idealPace(_ data: InsightsSnapshot) -> [PacePoint] {
-        guard data.averageDailyPace > 0, data.lastDayWithData > 0 else { return [] }
-        return (1...data.lastDayWithData).map { day in
+        guard data.averageDailyPace > 0 else { return [] }
+        return (1...data.daysInMonth).map { day in
             PacePoint(day: day, amountMinorUnits: data.averageDailyPace * Int64(day))
         }
+    }
+
+    /// The straight-line projection from the last real point to month end.
+    private func projection(_ data: InsightsSnapshot) -> [PacePoint] {
+        guard isCurrentMonth, let last = data.cumulative.last, last.day < data.daysInMonth else { return [] }
+        return [last, PacePoint(day: data.daysInMonth, amountMinorUnits: data.projectedSpending)]
     }
 
     private func paceCard(_ data: InsightsSnapshot) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(isCurrentMonth ? "Pace this month" : "Pace")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if data.averageDailyPace > 0 {
-                        Text("dashed = your usual pace")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
+                CardHeader("Spending pace", subtitle: paceSubtitle(data))
 
                 if data.cumulative.isEmpty {
                     Text("No spending recorded yet.")
@@ -281,24 +284,34 @@ struct InsightsView: View {
                         ForEach(data.cumulative) { point in
                             AreaMark(
                                 x: .value("Day", point.day),
-                                y: .value("Spent", dollars(point.amountMinorUnits))
+                                y: .value("Spent", dollars(point.amountMinorUnits)),
+                                series: .value("Series", "actual")
                             )
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)],
+                                    colors: [CairnTheme.accent.opacity(0.28), CairnTheme.accent.opacity(0.0)],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )
                             )
                             .interpolationMethod(.monotone)
-                        }
-                        ForEach(data.cumulative) { point in
                             LineMark(
                                 x: .value("Day", point.day),
-                                y: .value("Spent", dollars(point.amountMinorUnits))
+                                y: .value("Spent", dollars(point.amountMinorUnits)),
+                                series: .value("Series", "actual")
                             )
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(CairnTheme.accent)
+                            .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round))
                             .interpolationMethod(.monotone)
+                        }
+                        ForEach(projection(data)) { point in
+                            LineMark(
+                                x: .value("Day", point.day),
+                                y: .value("Spent", dollars(point.amountMinorUnits)),
+                                series: .value("Series", "projection")
+                            )
+                            .foregroundStyle(CairnTheme.accent.opacity(0.55))
+                            .lineStyle(StrokeStyle(lineWidth: 1.6, dash: [2, 4]))
                         }
                         ForEach(idealPace(data)) { point in
                             LineMark(
@@ -306,71 +319,116 @@ struct InsightsView: View {
                                 y: .value("Spent", dollars(point.amountMinorUnits)),
                                 series: .value("Series", "usual")
                             )
-                            .foregroundStyle(Color.secondary.opacity(0.7))
-                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                            .interpolationMethod(.linear)
+                            .foregroundStyle(Color.secondary.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1.4, dash: [5, 4]))
+                        }
+                        if isCurrentMonth, let last = data.cumulative.last {
+                            PointMark(
+                                x: .value("Day", last.day),
+                                y: .value("Spent", dollars(last.amountMinorUnits))
+                            )
+                            .symbolSize(70)
+                            .foregroundStyle(CairnTheme.accent)
                         }
                     }
+                    .chartXScale(domain: 1...data.daysInMonth)
                     .chartXAxis {
                         AxisMarks(values: [1, 8, 15, 22, data.daysInMonth]) { value in
                             AxisValueLabel {
-                                if let day = value.as(Int.self) { Text("\(day)") }
+                                if let day = value.as(Int.self) { Text("\(day)").foregroundStyle(Color.secondary) }
                             }
                         }
                     }
                     .chartYAxis {
-                        AxisMarks(position: .leading) { value in
-                            AxisGridLine()
+                        AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
+                            AxisGridLine().foregroundStyle(CairnTheme.hairline)
                             AxisValueLabel {
-                                if let amount = value.as(Double.self) { Text(shortCurrency(amount)) }
+                                if let amount = value.as(Double.self) { Text(shortCurrency(amount)).foregroundStyle(Color.secondary) }
                             }
                         }
                     }
-                    .frame(height: 170)
+                    .frame(height: 180)
+
+                    HStack(spacing: 14) {
+                        legend("This month", color: CairnTheme.accent, dashed: false)
+                        if isCurrentMonth {
+                            legend("Projected", color: CairnTheme.accent.opacity(0.55), dashed: true)
+                        }
+                        if data.averageDailyPace > 0 {
+                            legend("Usual pace", color: .secondary, dashed: true)
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    private func paceSubtitle(_ data: InsightsSnapshot) -> String? {
+        guard isCurrentMonth, data.averageDailyPace > 0 else { return nil }
+        let usual = data.averageDailyPace * Int64(data.lastDayWithData)
+        let diff = data.currentToDateSpending - usual
+        if abs(diff) < max(100, usual / 50) { return "Right on your usual pace." }
+        return diff > 0
+            ? "\(moneyText(diff)) ahead of your usual pace."
+            : "\(moneyText(-diff)) under your usual pace."
+    }
+
+    private func legend(_ title: String, color: Color, dashed: Bool) -> some View {
+        HStack(spacing: 4) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 14, height: 2)
+                .mask {
+                    if dashed {
+                        HStack(spacing: 2) {
+                            Rectangle(); Rectangle(); Rectangle()
+                        }
+                    } else {
+                        Rectangle()
+                    }
+                }
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 
     // MARK: - Trend
 
     private func trendCard(_ data: InsightsSnapshot) -> some View {
-        Card {
+        let average = data.months.isEmpty ? 0 : data.months.reduce(Int64(0)) { $0 + $1.spendingMinorUnits } / Int64(data.months.count)
+        return Card {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Last 6 months")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    AmountText(
-                        money: Money(minorUnits: data.current.spendingMinorUnits, currency: primaryCurrency),
-                        font: .caption.weight(.semibold)
-                    )
-                }
+                CardHeader("Six-month trend", subtitle: "Average \(moneyText(average)) per month")
 
                 Chart(data.months) { totals in
                     BarMark(
                         x: .value("Month", totals.monthStart, unit: .month),
-                        y: .value("Spending", dollars(totals.spendingMinorUnits))
+                        y: .value("Spending", dollars(totals.spendingMinorUnits)),
+                        width: .ratio(0.55)
                     )
                     .foregroundStyle(
                         isSelected(totals.monthStart)
-                            ? Color.accentColor
-                            : Color.accentColor.opacity(0.30)
+                            ? AnyShapeStyle(CairnTheme.inkGradient)
+                            : AnyShapeStyle(CairnTheme.accent.opacity(0.28))
                     )
-                    .cornerRadius(4)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    RuleMark(y: .value("Average", dollars(average)))
+                        .foregroundStyle(Color.secondary.opacity(0.4))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                 }
                 .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine()
+                    AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
+                        AxisGridLine().foregroundStyle(CairnTheme.hairline)
                         AxisValueLabel {
-                            if let amount = value.as(Double.self) { Text(shortCurrency(amount)) }
+                            if let amount = value.as(Double.self) { Text(shortCurrency(amount)).foregroundStyle(Color.secondary) }
                         }
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .month)) {
+                    AxisMarks(values: .stride(by: .month)) { _ in
                         AxisValueLabel(format: .dateTime.month(.narrow))
+                            .foregroundStyle(Color.secondary)
                     }
                 }
                 .frame(height: 150)
@@ -381,27 +439,37 @@ struct InsightsView: View {
     // MARK: - Categories
 
     private func categoryCard(_ data: InsightsSnapshot) -> some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(title: "Spending by category", trailing: "tap to view")
+        let visible = showAllCategories ? data.categories : Array(data.categories.prefix(6))
+        return Card {
+            VStack(alignment: .leading, spacing: 10) {
+                CardHeader("By category") {
+                    if data.categories.count > 6 {
+                        Button(showAllCategories ? "Show less" : "Show all") {
+                            withAnimation(CairnTheme.Motion.standard) { showAllCategories.toggle() }
+                        }
+                        .font(.subheadline.weight(.medium))
+                    }
+                }
 
                 if data.categories.isEmpty {
                     Text("No spending recorded this month.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(data.categories.prefix(8)) { slice in
-                        NavigationLink {
-                            InsightFilteredListView(
-                                title: slice.name,
-                                emptyMessage: "No transactions in this category for this month.",
-                                currency: primaryCurrency,
-                                scope: .category(name: slice.name, month: data.monthStart)
-                            )
-                        } label: {
-                            categoryRow(slice, in: data)
+                    VStack(spacing: 6) {
+                        ForEach(visible) { slice in
+                            NavigationLink {
+                                InsightFilteredListView(
+                                    title: slice.name,
+                                    emptyMessage: "No transactions in this category for this month.",
+                                    currency: primaryCurrency,
+                                    scope: .category(name: slice.name, month: data.monthStart)
+                                )
+                            } label: {
+                                categoryRow(slice, in: data)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -414,34 +482,55 @@ struct InsightsView: View {
         let tint = CairnTheme.color(hex: slice.colorHex)
         let fraction = fraction(slice, in: data)
 
-        return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle()
-                .fill(tint)
-                .frame(width: 8, height: 8)
-            Text(slice.name)
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Text(share.formatted(.percent.precision(.fractionLength(0))))
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.tertiary)
-            AmountText(
-                money: Money(minorUnits: slice.amountMinorUnits, currency: primaryCurrency),
-                font: .subheadline.weight(.semibold)
-            )
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(tint.opacity(0.13))
-                .containerRelativeFrame(.horizontal) { width, _ in
-                    max(34, width * fraction)
+        return HStack(spacing: 12) {
+            CategoryBadge(symbolName: symbol(for: slice.name), hex: slice.colorHex, size: 34)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(slice.name)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    if data.topMoverNames.contains(slice.name), let change = slice.changeRatio {
+                        TrendPill(ratio: change, higherIsBad: true)
+                    }
+                    Spacer(minLength: 8)
+                    AmountText(
+                        money: Money(minorUnits: slice.amountMinorUnits, currency: primaryCurrency),
+                        font: .subheadline.weight(.semibold)
+                    )
                 }
+                HStack(spacing: 8) {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(tint.opacity(0.12))
+                            Capsule()
+                                .fill(tint)
+                                .frame(width: max(4, proxy.size.width * fraction))
+                        }
+                    }
+                    .frame(height: 5)
+                    Text(share.formatted(.percent.precision(.fractionLength(0))))
+                        .font(.caption2.weight(.medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 34, alignment: .trailing)
+                }
+            }
         }
+        .padding(.vertical, 5)
         .contentShape(Rectangle())
+    }
+
+    /// Insights only carries the category name; look the symbol up so rows
+    /// match the transaction list.
+    private func symbol(for categoryName: String) -> String? {
+        for account in currencyAccounts {
+            for transaction in account.transactions ?? [] {
+                if let category = transaction.effectiveCategory, category.name == categoryName {
+                    return category.symbolName
+                }
+            }
+        }
+        return categoryName == InsightsCalculator.uncategorizedName ? "questionmark.circle" : nil
     }
 
     private func fraction(_ slice: CategoryBreakdown, in data: InsightsSnapshot) -> Double {
@@ -455,32 +544,35 @@ struct InsightsView: View {
     private func merchantsCard(_ data: InsightsSnapshot) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Top merchants")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                CardHeader("Top merchants")
 
                 if data.topMerchants.isEmpty {
                     Text("No merchants yet this month.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(Array(data.topMerchants.prefix(5).enumerated()), id: \.element.id) { index, merchant in
-                        HStack(spacing: 12) {
-                            Text("\(index + 1)")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 18, alignment: .leading)
-                            Text(merchant.name)
-                                .font(.callout)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            AmountText(
-                                money: Money(minorUnits: merchant.amountMinorUnits, currency: primaryCurrency),
-                                font: .callout.weight(.medium)
-                            )
-                        }
-                        if index < min(data.topMerchants.count, 5) - 1 {
-                            Divider()
+                    VStack(spacing: 0) {
+                        ForEach(Array(data.topMerchants.prefix(5).enumerated()), id: \.element.id) { index, merchant in
+                            HStack(spacing: 12) {
+                                Text("\(index + 1)")
+                                    .font(.caption.weight(.bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(index == 0 ? Color.white : .secondary)
+                                    .frame(width: 24, height: 24)
+                                    .background(index == 0 ? AnyShapeStyle(CairnTheme.inkGradient) : AnyShapeStyle(CairnTheme.surfaceInset), in: Circle())
+                                Text(merchant.name.capitalized)
+                                    .font(.callout.weight(index == 0 ? .semibold : .regular))
+                                    .lineLimit(1)
+                                Spacer(minLength: 8)
+                                AmountText(
+                                    money: Money(minorUnits: merchant.amountMinorUnits, currency: primaryCurrency),
+                                    font: .callout.weight(.medium)
+                                )
+                            }
+                            .padding(.vertical, 8)
+                            if index < min(data.topMerchants.count, 5) - 1 {
+                                RowDivider(leadingInset: 36)
+                            }
                         }
                     }
                 }
@@ -492,11 +584,16 @@ struct InsightsView: View {
 
     private var categorizeCard: some View {
         Card {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Categorization")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemImage: "sparkles", tint: Color(red: 0.62, green: 0.36, blue: 0.87))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Automatic categorization")
+                            .font(.headline)
+                        Text("On-device. Transaction text never leaves this device.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
                     if model.categorizationCounts.total > 0 {
                         NavigationLink {
@@ -507,19 +604,13 @@ struct InsightsView: View {
                                 scope: .needingCategory
                             )
                         } label: {
-                            Label("Review", systemImage: "list.bullet")
-                                .font(.caption.weight(.semibold))
+                            Text("Review")
+                                .font(.subheadline.weight(.semibold))
                         }
                     }
                 }
 
                 statusLine
-
-                Text("Rules and your past corrections run first, automatically after every sync and import. "
-                    + "When available, Apple Intelligence’s on-device model works through the rest. "
-                    + "Transaction text never leaves your device.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
 
                 if !AppleIntelligenceCategorizer.isAvailable {
                     Text(AppleIntelligenceCategorizer.statusDescription)
@@ -534,14 +625,15 @@ struct InsightsView: View {
     private var statusLine: some View {
         switch model.categorizationState {
         case .running:
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Categorizing automatically…")
+                    Text("Categorizing…")
                         .font(.callout)
                 }
                 if let progress = model.modelProgress, progress.total > 0 {
                     ProgressView(value: Double(progress.processed), total: Double(progress.total))
+                        .tint(CairnTheme.accent)
                     Text("\(progress.processed) of \(progress.total) checked with the on-device model")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -553,12 +645,7 @@ struct InsightsView: View {
             if model.categorizationCounts.total == 0 {
                 allCategorizedLabel(categorized: 0)
             } else if automaticModelEnabled {
-                Label(
-                    "\(model.categorizationCounts.total) will be categorized automatically.",
-                    systemImage: "clock"
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                statusLabel("\(model.categorizationCounts.total) will be categorized automatically.", systemImage: "clock", tint: .secondary)
             } else {
                 needsCategoryLabel(count: model.categorizationCounts.total)
             }
@@ -574,36 +661,35 @@ struct InsightsView: View {
         } else if !model.useAppleIntelligence {
             needsCategoryLabel(count: counts.total, reason: "Apple Intelligence is turned off in Settings.")
         } else if counts.pendingModel > 0 {
-            Label(
-                "\(counts.pendingModel) still queued; they continue automatically next time.",
-                systemImage: "clock"
-            )
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            statusLabel("\(counts.pendingModel) still queued; they continue automatically next time.", systemImage: "clock", tint: .secondary)
         } else {
             needsCategoryLabel(count: counts.unresolved, reason: "The on-device model couldn’t place them.")
         }
     }
 
+    private func statusLabel(_ text: String, systemImage: String, tint: Color) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.callout)
+            .foregroundStyle(tint)
+    }
+
     private func allCategorizedLabel(categorized: Int) -> some View {
-        Label(
+        statusLabel(
             categorized > 0
                 ? "Categorized \(categorized) transaction\(categorized == 1 ? "" : "s"). All caught up."
                 : "All transactions are categorized.",
-            systemImage: "checkmark.circle.fill"
+            systemImage: "checkmark.circle.fill",
+            tint: CairnTheme.positive
         )
-        .font(.callout)
-        .foregroundStyle(CairnTheme.positive)
     }
 
     private func needsCategoryLabel(count: Int, reason: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Label(
+            statusLabel(
                 "\(count) transaction\(count == 1 ? "" : "s") need a category.",
-                systemImage: "exclamationmark.circle"
+                systemImage: "exclamationmark.circle",
+                tint: .secondary
             )
-            .font(.callout)
-            .foregroundStyle(.secondary)
             if let reason {
                 Text(reason)
                     .font(.caption2)
@@ -623,15 +709,10 @@ struct InsightsView: View {
     }
 
     private func dollars(_ minorUnits: Int64) -> Double {
-        NSDecimalNumber(decimal: MinorUnits.decimal(minorUnits, exponent: primaryCurrency.exponent)).doubleValue
+        NetWorthMath.doubleValue(minorUnits, currency: primaryCurrency)
     }
 
     private func shortCurrency(_ value: Double) -> String {
-        if primaryCurrency.isCustom {
-            return value.formatted(.number.notation(.compactName).precision(.fractionLength(0)))
-        }
-        return value.formatted(
-            .currency(code: primaryCurrency.code).notation(.compactName).precision(.fractionLength(1))
-        )
+        Money(minorUnits: Int64(value * pow(10, Double(primaryCurrency.exponent))), currency: primaryCurrency).compactFormatted()
     }
 }
