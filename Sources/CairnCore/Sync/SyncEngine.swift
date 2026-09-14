@@ -440,7 +440,8 @@ public actor SyncEngine {
     private func applyRulesIfNeeded(to transaction: LedgerTransaction, rules: [RuleSnapshot]) {
         guard transaction.userCategory == nil else { return }
         // Never overwrite an on-device model suggestion with a rule.
-        guard transaction.autoCategorySource != "model" else { return }
+        guard transaction.autoCategorySource != SuggestionSource.appleIntelligence.rawValue,
+              transaction.autoCategorySource != "model" else { return }
         guard !rules.isEmpty else { return }
 
         let categoryID = RulesEngine.categoryID(
@@ -498,6 +499,116 @@ public actor SyncEngine {
             snapshot.account = account
             modelContext.insert(snapshot)
         }
+    }
+
+    // MARK: - Categorization
+
+    public struct RecategorizeOutcome: Sendable, Equatable {
+        public var categorized: Int = 0
+        public var bySource: [String: Int] = [:]
+
+        public init() {}
+    }
+
+    /// Re-runs categorization over transactions with no user category, using
+    /// rules plus merchant memory learned from the person's own corrections.
+    ///
+    /// Never overwrites a user choice, and never downgrades an Apple
+    /// Intelligence suggestion.
+    @discardableResult
+    public func recategorize(now: Date = .now) throws -> RecategorizeOutcome {
+        let rules = try loadRuleSnapshots()
+        let memory = try buildMerchantMemory()
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        var outcome = RecategorizeOutcome()
+
+        for transaction in transactions {
+            guard transaction.userCategory == nil else { continue }
+            guard transaction.autoCategorySource != SuggestionSource.appleIntelligence.rawValue,
+                  transaction.autoCategorySource != "model" else { continue }
+
+            let merchant = transaction.normalizedMerchant.isEmpty
+                ? transaction.payeeDescription
+                : transaction.normalizedMerchant
+            guard let suggestion = CategorySuggester.suggest(
+                description: transaction.payeeDescription,
+                merchant: merchant,
+                amountMinorUnits: transaction.amountMinorUnits,
+                rules: rules,
+                memory: memory
+            ) else { continue }
+            guard let category = try? category(withUUID: suggestion.categoryID) else { continue }
+
+            transaction.autoCategory = category
+            transaction.autoCategorySource = suggestion.source.rawValue
+            transaction.autoConfidence = suggestion.confidence
+            transaction.modifiedAt = now
+            outcome.categorized += 1
+            outcome.bySource[suggestion.source.rawValue, default: 0] += 1
+        }
+
+        if outcome.categorized > 0 {
+            try modelContext.save()
+        }
+        return outcome
+    }
+
+    /// Asks Apple Intelligence to categorize the highest-value uncategorized
+    /// transactions. Slow, optional, and only runs when the model is available.
+    @discardableResult
+    public func categorizeWithAppleIntelligence(
+        limit: Int = 20,
+        now: Date = .now
+    ) async throws -> RecategorizeOutcome {
+        guard AppleIntelligenceCategorizer.isAvailable else { return RecategorizeOutcome() }
+
+        let categories = try modelContext.fetch(FetchDescriptor<Category>())
+            .filter { !$0.isArchived && $0.name != "Income" && $0.name != "Transfers" }
+        guard !categories.isEmpty else { return RecategorizeOutcome() }
+        let names = categories.map(\.name)
+
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+            .filter { $0.userCategory == nil && $0.autoCategory == nil }
+            .sorted { abs($0.amountMinorUnits) > abs($1.amountMinorUnits) }
+            .prefix(limit)
+
+        var outcome = RecategorizeOutcome()
+        for transaction in transactions {
+            let merchant = transaction.normalizedMerchant.isEmpty
+                ? transaction.payeeDescription
+                : transaction.normalizedMerchant
+            guard let name = try? await AppleIntelligenceCategorizer.classify(
+                merchant: merchant,
+                description: transaction.payeeDescription,
+                categories: names
+            ), let category = categories.first(where: { $0.name == name }) else { continue }
+
+            transaction.autoCategory = category
+            transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
+            transaction.autoConfidence = 0.8
+            transaction.modifiedAt = now
+            outcome.categorized += 1
+            outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += 1
+        }
+
+        if outcome.categorized > 0 {
+            try modelContext.save()
+        }
+        return outcome
+    }
+
+    /// Builds merchant memory from transactions the person categorized.
+    private func buildMerchantMemory() throws -> MerchantMemory {
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        let samples = transactions.compactMap { transaction -> MemorySample? in
+            guard let category = transaction.userCategory else { return nil }
+            let merchant = transaction.normalizedMerchant.isEmpty
+                ? transaction.payeeDescription
+                : transaction.normalizedMerchant
+            guard !merchant.isEmpty else { return nil }
+            return MemorySample(merchant: merchant, categoryID: category.uuid)
+        }
+        return MerchantMemory(samples: samples)
     }
 
     // MARK: - Categories

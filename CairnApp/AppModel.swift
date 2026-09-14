@@ -296,6 +296,32 @@ final class AppModel {
         }
     }
 
+    // MARK: - Categorization
+
+    /// Re-runs rules and merchant-memory categorization over uncategorized
+    /// transactions.
+    @discardableResult
+    func recategorize() async -> SyncEngine.RecategorizeOutcome? {
+        do {
+            return try await engine.recategorize()
+        } catch {
+            banner = "Categorization failed: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// Optional Apple Intelligence pass over the biggest uncategorized
+    /// transactions. Does nothing when the model isn't available.
+    @discardableResult
+    func categorizeWithAppleIntelligence() async -> SyncEngine.RecategorizeOutcome? {
+        do {
+            return try await engine.categorizeWithAppleIntelligence()
+        } catch {
+            banner = "Apple Intelligence couldn’t categorize right now: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
     // MARK: - Lock
 
     func setAppLock(enabled: Bool) {
