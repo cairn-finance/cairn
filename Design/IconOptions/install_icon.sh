@@ -2,7 +2,7 @@
 #
 # install_icon.sh — install one of the Cairn icon concepts into the asset catalog.
 #
-# Usage:   ./install_icon.sh 02-cairn-mark.png
+# Usage:   ./install_icon.sh 03-ascent.png
 #
 # Generates every required iOS/macOS size with sips and writes a valid
 # AppIcon.appiconset/Contents.json. Run from anywhere; paths are resolved
@@ -11,7 +11,7 @@
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-    echo "usage: $0 <concept.png>   (e.g. 02-cairn-mark.png)" >&2
+    echo "usage: $0 <concept.png>   (e.g. 03-ascent.png)" >&2
     exit 64
 fi
 

@@ -1,252 +1,209 @@
-#!/usr/bin/env swift
+// Generates abstract app-icon concepts for Cairn.
+// Run: swift Design/IconOptions/generate_icons.swift
 //
-// generate_icons.swift — Cairn app-icon concept generator
+// Output: five 1024x1024 fully opaque sRGB PNGs (no alpha channel), mask-safe
+// (all marks sit inside the central ~80% so the system rounded-rect never clips
+// them). No stone imagery, no text, no baked-in corners or gloss.
 //
-// Renders four 1024×1024 opaque sRGB PNG concepts with Core Graphics.
-// Re-runnable:  swift Design/IconOptions/generate_icons.swift
-//
-// Design constraints (Apple, 2025–2026):
-//   • 1024×1024 master, fully opaque, sRGB.
-//   • Do NOT bake rounded corners; the system applies the mask.
-//   • Keep the key art inside roughly the central 80% of the canvas.
-//
-import Cocoa
+// Coordinate system: Core Graphics bitmap space (origin bottom-left, y up).
+
+import AppKit
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import Foundation
 
-let side: CGFloat = 1024
-let outDir = URL(fileURLWithPath:
-    "Design/IconOptions", isDirectory: true)
+let size = 1024
+let center = CGPoint(x: 512, y: 512)
+let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
 
-// MARK: - Color / gradient helpers
-
-let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
-
-func cg(_ hex: String, _ alpha: CGFloat = 1) -> CGColor {
-    var h = hex
-    if h.hasPrefix("#") { h.removeFirst() }
-    let v = UInt64(h, radix: 16) ?? 0
-    let r = CGFloat((v >> 16) & 0xFF) / 255
-    let g = CGFloat((v >> 8) & 0xFF) / 255
-    let b = CGFloat(v & 0xFF) / 255
-    return CGColor(colorSpace: srgb, components: [r, g, b, alpha])!
+func rgb(_ hex: UInt32) -> CGColor {
+    let r = CGFloat((hex >> 16) & 0xFF) / 255
+    let g = CGFloat((hex >> 8) & 0xFF) / 255
+    let b = CGFloat(hex & 0xFF) / 255
+    return CGColor(colorSpace: sRGB, components: [r, g, b, 1])!
 }
-
-func gradient(_ stops: [(String, CGFloat, CGFloat)]) -> CGGradient {
-    // (hex, alpha, location)
-    let colors = stops.map { cg($0.0, $0.1) as CGColor }
-    let locs = stops.map { $0.2 }
-    return CGGradient(colorsSpace: srgb, colors: colors as CFArray, locations: locs)!
-}
-
-// MARK: - Canvas
 
 func makeContext() -> CGContext {
-    // `noneSkipLast` gives an opaque RGBX bitmap → PNG is written without an
-    // alpha channel, satisfying Apple’s “no transparency” requirement.
-    let ctx = CGContext(data: nil, width: Int(side), height: Int(side),
-                        bitsPerComponent: 8, bytesPerRow: 0, space: srgb,
-                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
-    ctx.setFillColor(cg("#000000"))
-    ctx.setAllowsAntialiasing(true)
-    ctx.setShouldAntialias(true)
-    ctx.interpolationQuality = .high
-    // Flip to a top-left origin so layout math reads naturally.
-    ctx.translateBy(x: 0, y: side)
-    ctx.scaleBy(x: 1, y: -1)
-    return ctx
+    let context = CGContext(
+        data: nil,
+        width: size,
+        height: size,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: sRGB,
+        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    )!
+    context.setAllowsAntialiasing(true)
+    context.setShouldAntialias(true)
+    context.interpolationQuality = .high
+    return context
 }
 
-func save(_ ctx: CGContext, _ name: String) {
-    guard let image = ctx.makeImage() else { fatalError("no image for \(name)") }
-    let url = outDir.appendingPathComponent(name)
-    guard let dest = CGImageDestinationCreateWithURL(url as CFURL,
-            UTType.png.identifier as CFString, 1, nil) else {
-        fatalError("cannot create \(url.path)")
+/// Vertical field gradient, `top` at the top of the canvas and `bottom` at the base.
+func fillGradient(_ context: CGContext, top: UInt32, bottom: UInt32) {
+    let gradient = CGGradient(
+        colorsSpace: sRGB,
+        colors: [rgb(top), rgb(bottom)] as CFArray,
+        locations: [0, 1]
+    )!
+    context.drawLinearGradient(
+        gradient,
+        start: CGPoint(x: 0, y: size),
+        end: CGPoint(x: 0, y: 0),
+        options: []
+    )
+}
+
+/// Strokes an arc as many short round-capped segments, blending red→blue along
+/// the sweep. Gives a smooth gradient stroke without clipping tricks.
+func strokeGradientArc(
+    _ context: CGContext,
+    center: CGPoint,
+    radius: CGFloat,
+    start: CGFloat,
+    end: CGFloat,
+    width: CGFloat,
+    from: CGColor,
+    to: CGColor,
+    steps: Int = 260
+) {
+    context.setLineCap(.round)
+    context.setLineJoin(.round)
+    context.setLineWidth(width)
+    let a = from.components!
+    let b = to.components!
+    for index in 0..<steps {
+        let t0 = CGFloat(index) / CGFloat(steps)
+        let t1 = CGFloat(index + 1) / CGFloat(steps)
+        let angle0 = start + (end - start) * t0
+        let angle1 = start + (end - start) * t1
+        let p0 = CGPoint(x: center.x + radius * cos(angle0), y: center.y + radius * sin(angle0))
+        let p1 = CGPoint(x: center.x + radius * cos(angle1), y: center.y + radius * sin(angle1))
+        let r = a[0] + (b[0] - a[0]) * t0
+        let g = a[1] + (b[1] - a[1]) * t0
+        let bl = a[2] + (b[2] - a[2]) * t0
+        context.setStrokeColor(CGColor(colorSpace: sRGB, components: [r, g, bl, 1])!)
+        context.move(to: p0)
+        context.addLine(to: p1)
+        context.strokePath()
     }
-    CGImageDestinationAddImage(dest, image, nil)
-    guard CGImageDestinationFinalize(dest) else { fatalError("write failed \(url.path)") }
-    print("wrote \(url.path)")
 }
 
-// MARK: - Painting primitives
-
-/// Fill the whole canvas with a linear gradient (top → bottom).
-func fillBackground(_ ctx: CGContext, _ grad: CGGradient) {
-    ctx.saveGState()
-    ctx.addRect(CGRect(x: 0, y: 0, width: side, height: side))
-    ctx.clip()
-    ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: 0),
-                           end: CGPoint(x: 0, y: side), options: [])
-    ctx.restoreGState()
+func strokeLine(_ context: CGContext, _ points: [CGPoint], width: CGFloat, color: CGColor) {
+    context.setLineCap(.round)
+    context.setLineJoin(.round)
+    context.setLineWidth(width)
+    context.setStrokeColor(color)
+    context.beginPath()
+    context.move(to: points[0])
+    for point in points.dropFirst() { context.addLine(to: point) }
+    context.strokePath()
 }
 
-/// Soft radial glow, useful for depth without hard edges.
-func glow(_ ctx: CGContext, center: CGPoint, radius: CGFloat,
-          hex: String, alpha: CGFloat) {
-    let g = gradient([(hex, alpha, 0), (hex, 0, 1)])
-    ctx.saveGState()
-    ctx.addRect(CGRect(x: 0, y: 0, width: side, height: side))
-    ctx.clip()
-    ctx.drawRadialGradient(g, startCenter: center, startRadius: 0,
-                           endCenter: center, endRadius: radius, options: [])
-    ctx.restoreGState()
+func fillRoundedRect(_ context: CGContext, rect: CGRect, radius: CGFloat, color: CGColor) {
+    let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    context.setFillColor(color)
+    context.addPath(path)
+    context.fillPath()
 }
 
-func ellipse(_ rect: CGRect) -> CGPath { CGPath(ellipseIn: rect, transform: nil) }
-
-/// A fully rounded “pill” — reads as a smooth stacked stone / river rock.
-func pebble(_ rect: CGRect) -> CGPath {
-    let r = min(rect.height / 2, rect.width / 2)
-    return CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
+func strokeRoundedRect(_ context: CGContext, rect: CGRect, radius: CGFloat, width: CGFloat, color: CGColor) {
+    let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    context.setStrokeColor(color)
+    context.setLineWidth(width)
+    context.addPath(path)
+    context.strokePath()
 }
 
-/// Paints a shape with a vertical gradient and a soft top highlight.
-/// `shadowY` > 0 casts a soft shadow downward.
-func paintStone(_ ctx: CGContext, path: CGPath, rect: CGRect,
-                top: String, bottom: String,
-                shadowY: CGFloat = 10, shadowAlpha: CGFloat = 0.22,
-                highlightAlpha: CGFloat = 0.18) {
-    let base = cg(top)
+func fillCircle(_ context: CGContext, center: CGPoint, radius: CGFloat, color: CGColor) {
+    context.setFillColor(color)
+    context.fillEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+}
 
-    // Soft contact shadow (drawn first, beneath the stone).
-    if shadowAlpha > 0 {
-        ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: shadowY), blur: 26,
-                      color: cg("#000000", shadowAlpha))
-        ctx.addPath(path)
-        ctx.setFillColor(base)
-        ctx.fillPath()
-        ctx.restoreGState()
+func write(_ context: CGContext, name: String) {
+    let image = context.makeImage()!
+    let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        .appendingPathComponent("Design/IconOptions/\(name)") as CFURL
+    let destination = CGImageDestinationCreateWithURL(url, UTType.png.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, image, nil)
+    precondition(CGImageDestinationFinalize(destination), "Failed to write \(name)")
+    print("wrote \(name)")
+}
+
+// 1 — Monogram: a single heavy two-tone C. Letterform, no other cues.
+do {
+    let context = makeContext()
+    fillGradient(context, top: 0x0A2A34, bottom: 0x04151B)
+    strokeGradientArc(
+        context,
+        center: center,
+        radius: 288,
+        start: 34 * .pi / 180,
+        end: 326 * .pi / 180,
+        width: 136,
+        from: rgb(0x3FC6DE),
+        to: rgb(0xF4F1EA)
+    )
+    write(context, name: "01-monogram.png")
+}
+
+// 2 — Aperture: nested rounded frames, a deliberate geometric target.
+do {
+    let context = makeContext()
+    fillGradient(context, top: 0x10222B, bottom: 0x051016)
+    let widths: CGFloat = 56
+    strokeRoundedRect(context, rect: CGRect(x: 202, y: 202, width: 620, height: 620), radius: 150, width: widths, color: rgb(0x2FB3CB))
+    strokeRoundedRect(context, rect: CGRect(x: 302, y: 302, width: 420, height: 420), radius: 105, width: widths, color: rgb(0x7FD9E8))
+    strokeRoundedRect(context, rect: CGRect(x: 402, y: 402, width: 220, height: 220), radius: 56, width: widths, color: rgb(0xF2F7F8))
+    write(context, name: "02-aperture.png")
+}
+
+// 3 — Ascent: a clean ascending bar series.
+do {
+    let context = makeContext()
+    fillGradient(context, top: 0x0E3A47, bottom: 0x061A21)
+    let barWidth: CGFloat = 112
+    let gap: CGFloat = 42
+    let heights: [CGFloat] = [210, 340, 470, 600]
+    let colors: [UInt32] = [0xF4F1EA, 0xBFEFF8, 0x7ADBEC, 0x37BBD3]
+    let groupWidth = CGFloat(heights.count) * barWidth + CGFloat(heights.count - 1) * gap
+    var x = 512 - groupWidth / 2
+    for index in heights.indices {
+        let height = heights[index]
+        fillRoundedRect(
+            context,
+            rect: CGRect(x: x, y: 228, width: barWidth, height: height),
+            radius: barWidth / 2,
+            color: rgb(colors[index])
+        )
+        x += barWidth + gap
     }
-
-    // Body gradient.
-    ctx.saveGState()
-    ctx.addPath(path); ctx.clip()
-    let body = gradient([(top, 1, 0), (bottom, 1, 1)])
-    ctx.drawLinearGradient(body, start: CGPoint(x: rect.midX, y: rect.minY),
-                           end: CGPoint(x: rect.midX, y: rect.maxY), options: [])
-    // Top highlight.
-    if highlightAlpha > 0 {
-        let hl = gradient([("#FFFFFF", highlightAlpha, 0), ("#FFFFFF", 0, 1)])
-        let hw = rect.width * 0.82
-        let hRect = CGRect(x: rect.midX - hw / 2, y: rect.minY + rect.height * 0.10,
-                           width: hw, height: rect.height * 0.55)
-        ctx.addPath(ellipse(hRect)); ctx.clip()
-        ctx.drawLinearGradient(hl, start: CGPoint(x: hRect.midX, y: hRect.minY),
-                               end: CGPoint(x: hRect.midX, y: hRect.maxY),
-                               options: [.drawsAfterEndLocation])
-    }
-    ctx.restoreGState()
+    write(context, name: "03-ascent.png")
 }
 
-// MARK: - Concept 1 — Stacked Stones (teal field, warm stones)
-
-func concept1() {
-    let ctx = makeContext()
-    fillBackground(ctx, gradient([("#3CBAD2", 1, 0), ("#16869C", 1, 1)]))
-    glow(ctx, center: CGPoint(x: 330, y: 250), radius: 640, hex: "#BFF0F8", alpha: 0.45)
-    glow(ctx, center: CGPoint(x: 760, y: 860), radius: 620, hex: "#0C5666", alpha: 0.40)
-
-    // Warm stone palette.
-    paintStone(ctx, path: pebble(CGRect(x: 277, y: 632, width: 470, height: 196)),
-               rect: CGRect(x: 277, y: 632, width: 470, height: 196),
-               top: "#F2E9DA", bottom: "#C9B392", shadowAlpha: 0.28)
-    paintStone(ctx, path: pebble(CGRect(x: 332, y: 492, width: 360, height: 172)),
-               rect: CGRect(x: 332, y: 492, width: 360, height: 172),
-               top: "#F6EFE3", bottom: "#D6C4A6")
-    paintStone(ctx, path: pebble(CGRect(x: 387, y: 356, width: 250, height: 158)),
-               rect: CGRect(x: 387, y: 356, width: 250, height: 158),
-               top: "#F7F1E6", bottom: "#DCCBAF")
-    // Dark walnut capstone — anchors the stack and adds the accent.
-    paintStone(ctx, path: pebble(CGRect(x: 447, y: 232, width: 130, height: 132)),
-               rect: CGRect(x: 447, y: 232, width: 130, height: 132),
-               top: "#8A6540", bottom: "#4E3418", shadowAlpha: 0.30, highlightAlpha: 0.22)
-    save(ctx, "01-stacked-stones.png")
+// 4 — Peak: nested chevrons, a single confident direction.
+do {
+    let context = makeContext()
+    fillGradient(context, top: 0x0B2430, bottom: 0x04121A)
+    strokeLine(context, [CGPoint(x: 250, y: 358), CGPoint(x: 512, y: 620), CGPoint(x: 774, y: 358)], width: 116, color: rgb(0xF4F1EA))
+    strokeLine(context, [CGPoint(x: 420, y: 358), CGPoint(x: 512, y: 450), CGPoint(x: 604, y: 358)], width: 58, color: rgb(0x3FC6DE))
+    write(context, name: "04-peak.png")
 }
 
-// MARK: - Concept 2 — Cairn Mark (deep walnut field, off-white stack)
-
-func concept2() {
-    let ctx = makeContext()
-    fillBackground(ctx, gradient([("#3A2A1A", 1, 0), ("#170F08", 1, 1)]))
-    glow(ctx, center: CGPoint(x: 512, y: 320), radius: 560, hex: "#6B4A2E", alpha: 0.55)
-
-    let stones: [(CGRect, String, String)] = [
-        (CGRect(x: 302, y: 640, width: 420, height: 150), "#F7F2E9", "#DACBB2"),
-        (CGRect(x: 352, y: 502, width: 320, height: 140), "#F9F5EE", "#E0D2BC"),
-        (CGRect(x: 402, y: 370, width: 220, height: 130), "#FBF8F3", "#E5D9C5"),
+// 5 — Pulse: one bold market line on a light field. No axes, no labels.
+do {
+    let context = makeContext()
+    fillGradient(context, top: 0xFCF9F3, bottom: 0xECE2D1)
+    let points = [
+        CGPoint(x: 172, y: 474),
+        CGPoint(x: 348, y: 474),
+        CGPoint(x: 462, y: 642),
+        CGPoint(x: 596, y: 372),
+        CGPoint(x: 722, y: 520),
+        CGPoint(x: 852, y: 520),
     ]
-    for (rect, top, bottom) in stones {
-        paintStone(ctx, path: pebble(rect), rect: rect, top: top, bottom: bottom)
-    }
-    // Teal capstone — the brand accent, safe in tinted/mono because the
-    // silhouette still reads as a stacked cairn.
-    paintStone(ctx, path: ellipse(CGRect(x: 456, y: 252, width: 112, height: 108)),
-               rect: CGRect(x: 456, y: 252, width: 112, height: 108),
-               top: "#4FC7DC", bottom: "#1E8CA2", shadowAlpha: 0.30, highlightAlpha: 0.28)
-    save(ctx, "02-cairn-mark.png")
+    strokeLine(context, points, width: 78, color: rgb(0x0E5E6E))
+    fillCircle(context, center: CGPoint(x: 852, y: 520), radius: 52, color: rgb(0x2AA6BE))
+    write(context, name: "05-pulse.png")
 }
-
-// MARK: - Concept 3 — Trailhead (sand field, dark stones, teal ground)
-
-func concept3() {
-    let ctx = makeContext()
-    fillBackground(ctx, gradient([("#FBF7EF", 1, 0), ("#EADFCB", 1, 1)]))
-    glow(ctx, center: CGPoint(x: 512, y: 300), radius: 620, hex: "#FFFFFF", alpha: 0.65)
-
-    // Teal ground shadow beneath the cairn.
-    ctx.saveGState()
-    ctx.addPath(ellipse(CGRect(x: 246, y: 790, width: 532, height: 96)))
-    ctx.clip()
-    ctx.drawLinearGradient(gradient([("#30B0C7", 0.55, 0), ("#30B0C7", 0.0, 1)]),
-                           start: CGPoint(x: 512, y: 790),
-                           end: CGPoint(x: 512, y: 886), options: [])
-    ctx.restoreGState()
-
-    // Dark walnut / ink stones for maximum contrast on a light field.
-    let stones: [(CGRect, CGPath)] = [
-        (CGRect(x: 282, y: 636, width: 460, height: 190), pebble(CGRect(x: 282, y: 636, width: 460, height: 190))),
-        (CGRect(x: 337, y: 498, width: 350, height: 168), pebble(CGRect(x: 337, y: 498, width: 350, height: 168))),
-        (CGRect(x: 392, y: 366, width: 240, height: 154), pebble(CGRect(x: 392, y: 366, width: 240, height: 154))),
-    ]
-    for (rect, path) in stones {
-        paintStone(ctx, path: path, rect: rect, top: "#5A4128", bottom: "#2A1B0E",
-                   shadowAlpha: 0.20, highlightAlpha: 0.14)
-    }
-    paintStone(ctx, path: ellipse(CGRect(x: 452, y: 250, width: 120, height: 116)),
-               rect: CGRect(x: 452, y: 250, width: 120, height: 116),
-               top: "#40BBD1", bottom: "#1A7F94", shadowAlpha: 0.22, highlightAlpha: 0.30)
-    save(ctx, "03-trailhead.png")
-}
-
-// MARK: - Concept 4 — Summit (dark ink field, teal abstract stack)
-
-func concept4() {
-    let ctx = makeContext()
-    fillBackground(ctx, gradient([("#103039", 1, 0), ("#050F14", 1, 1)]))
-    glow(ctx, center: CGPoint(x: 512, y: 430), radius: 520, hex: "#30B0C7", alpha: 0.42)
-
-    // Abstract, wide-flat pebbles narrowing upward: a cairn turned into a
-    // minimal “summit” glyph. Silhouette-first for Clear/Tinted modes.
-    let stones: [(CGRect, String, String)] = [
-        (CGRect(x: 262, y: 618, width: 500, height: 150), "#9FE4F0", "#38B6CC"),
-        (CGRect(x: 322, y: 486, width: 380, height: 140), "#7BD8E8", "#2BA3BA"),
-        (CGRect(x: 384, y: 362, width: 256, height: 132), "#5ACCE0", "#2090A6"),
-        (CGRect(x: 446, y: 252, width: 132, height: 118), "#B7EDF6", "#3FBBD1"),
-    ]
-    for (rect, top, bottom) in stones {
-        paintStone(ctx, path: pebble(rect), rect: rect, top: top, bottom: bottom,
-                   shadowAlpha: 0.24, highlightAlpha: 0.16)
-    }
-    save(ctx, "04-summit.png")
-}
-
-// MARK: - Run
-
-concept1()
-concept2()
-concept3()
-concept4()
-print("done — 4 concepts in \(outDir.path)")
