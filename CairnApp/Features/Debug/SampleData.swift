@@ -33,6 +33,7 @@ enum SampleData {
         context.insert(institution)
 
         let checking = Account(bankAccountID: "ACT-CHK", name: "Everyday Checking", currency: .usd)
+        checking.accountTypeRaw = AccountType.checking.rawValue
         checking.balanceMinorUnits = 421_355
         checking.availableBalanceMinorUnits = 410_000
         checking.hasAvailableBalance = true
@@ -42,6 +43,7 @@ enum SampleData {
         context.insert(checking)
 
         let savings = Account(bankAccountID: "ACT-SAV", name: "High-Yield Savings", currency: .usd)
+        savings.accountTypeRaw = AccountType.savings.rawValue
         savings.balanceMinorUnits = 1_894_012
         savings.balanceDate = now
         savings.institution = institution
@@ -49,6 +51,7 @@ enum SampleData {
         context.insert(savings)
 
         let card = Account(bankAccountID: "ACT-CC", name: "Travel Card", currency: .usd)
+        card.accountTypeRaw = AccountType.credit.rawValue
         card.balanceMinorUnits = -120_432
         card.balanceDate = now
         card.institution = institution

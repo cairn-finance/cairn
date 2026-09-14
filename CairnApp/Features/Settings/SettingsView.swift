@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var exportType: UTType = .commaSeparatedText
     @State private var showingExporter = false
     @State private var showingDeleteConfirm = false
+    @State private var showingConnect = false
     @State private var institutionToDisconnect: Institution?
 
     /// The most recent successful fetch across all banks.
@@ -22,20 +23,24 @@ struct SettingsView: View {
     var body: some View {
         Form {
             syncSection
+            institutionsSection
             categorizationSection
             storageSection
-            institutionsSection
             privacySection
+            dataSection
             aboutSection
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
         .onAppear { storageMode = model.storeMode }
+        .sheet(isPresented: $showingConnect) {
+            ConnectBankSheet { showingConnect = false }
+        }
         .fileExporter(
             isPresented: $showingExporter,
             document: exportDocument,
             contentType: exportType,
-            defaultFilename: exportType == .json ? "cairn-transactions" : "cairn-transactions"
+            defaultFilename: "cairn-transactions"
         ) { _ in }
         .confirmationDialog(
             "Delete all Cairn data?",
@@ -73,88 +78,52 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Sync
+
     private var syncSection: some View {
-        Section("Sync") {
-            LabeledContent("Last successful sync") {
+        Section {
+            IconRow("Last successful sync", systemImage: "arrow.triangle.2.circlepath", tint: CairnTheme.accent) {
                 if let date = lastSuccessfulSync {
-                    Text(date, format: .dateTime.month().day().hour().minute())
+                    Text(date, format: .relative(presentation: .named))
+                        .foregroundStyle(.secondary)
                 } else {
                     Text("Never").foregroundStyle(.secondary)
                 }
             }
-            LabeledContent("Requests left today") {
+            IconRow("Requests left today", systemImage: "gauge.with.dots.needle.33percent", tint: .orange) {
                 Text("\(model.remainingBudget) of \(SyncEngine.dailyRequestLimit)")
                     .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
-            Text("Each bank has its own SimpleFIN daily budget, shared across your devices. Cairn shows the smallest and refreshes conservatively.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
             Button {
                 Task { await model.syncAll(force: true) }
             } label: {
-                if model.syncState == .syncing {
-                    Text("Syncing…")
-                } else {
-                    Text("Sync Now")
+                IconRow(model.syncState == .syncing ? "Syncing…" : "Sync Now", systemImage: "arrow.clockwise", tint: CairnTheme.accent) {
+                    if model.syncState == .syncing {
+                        ProgressView().controlSize(.small)
+                    }
                 }
             }
-            .disabled(model.syncState == .syncing)
+            .disabled(model.syncState == .syncing || institutions.isEmpty)
             NavigationLink {
                 SyncDiagnosticsView()
             } label: {
-                Label("Sync Diagnostics", systemImage: "doc.text.magnifyingglass")
+                IconRow("Sync Diagnostics", systemImage: "doc.text.magnifyingglass", tint: .gray)
             }
+        } header: {
+            Text("Sync")
+        } footer: {
+            Text("Each bank has its own SimpleFIN daily budget, shared across your devices. Cairn shows the smallest and refreshes conservatively.")
         }
     }
 
-    private var categorizationSection: some View {
-        Section("Categorization") {
-            Toggle("Use Apple Intelligence", isOn: Binding(
-                get: { model.useAppleIntelligence },
-                set: { model.useAppleIntelligence = $0 }
-            ))
-            .disabled(!AppleIntelligenceCategorizer.isAvailable)
-            Text(AppleIntelligenceCategorizer.statusDescription)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("Rules and your past corrections always run on-device, automatically after every sync and import. "
-                + "Apple Intelligence is used only for what they can’t place, and only its on-device model — never the cloud.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var storageSection: some View {
-        Section("Storage") {
-            Picker("Where data lives", selection: $storageMode) {
-                Text(StoreMode.cloud.displayName).tag(StoreMode.cloud)
-                Text(StoreMode.local.displayName).tag(StoreMode.local)
-            }
-            .onChange(of: storageMode) { _, newValue in
-                guard newValue != model.storeMode else { return }
-                model.requestStoreModeChange(to: newValue)
-            }
-            Text(storageMode.summary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("Changing this takes effect after you quit and reopen Cairn. Turning sync off only stops future uploads; to remove data already in iCloud, use Delete All Data.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let reason = model.cloudFallbackReason {
-                Label("iCloud isn’t available right now, so Cairn is using local storage. \(reason)", systemImage: "icloud.slash")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
+    // MARK: - Institutions
 
     private var institutionsSection: some View {
-        Section("Institutions") {
-            if institutions.isEmpty {
-                Text("No institutions connected.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(institutions) { institution in
+        Section {
+            ForEach(institutions) { institution in
+                HStack(spacing: 12) {
+                    SettingsIcon(systemImage: "building.columns.fill", tint: institution.lastSyncError == nil ? CairnTheme.accent : CairnTheme.negative)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(institution.name.isEmpty ? "Institution" : institution.name)
                         if let error = institution.lastSyncError {
@@ -163,51 +132,152 @@ struct SettingsView: View {
                                 .foregroundStyle(CairnTheme.negative)
                                 .lineLimit(2)
                         } else if let date = institution.lastSyncDate {
-                            Text("Synced \(date.formatted(date: .abbreviated, time: .shortened))")
+                            Text("Synced \(date.formatted(.relative(presentation: .named)))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Not synced yet")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .swipeActions {
-                        Button("Disconnect", role: .destructive) {
-                            institutionToDisconnect = institution
-                        }
+                    Spacer()
+                    Text("\(institution.accounts?.count ?? 0)")
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+                .swipeActions {
+                    Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {
+                        institutionToDisconnect = institution
+                    }
+                }
+                .contextMenu {
+                    Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {
+                        institutionToDisconnect = institution
                     }
                 }
             }
-        }
-    }
-
-    private var privacySection: some View {
-        Section("Privacy & Data") {
-            Toggle("Require unlock to open Cairn", isOn: Binding(
-                get: { model.appLockEnabled },
-                set: { model.setAppLock(enabled: $0) }
-            ))
-            Text("The app lock guards the interface. The SimpleFIN credential stays in the Keychain so background sync can work, and can be revoked at any time from your SimpleFIN Bridge.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Button("Export as CSV") { export(json: false) }
-            Button("Export as JSON") { export(json: true) }
-            Text("Exports include every transaction and your categories and notes. Nothing is uploaded; the file is shared through the system share sheet.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Button("Delete All Data", role: .destructive) {
-                showingDeleteConfirm = true
+            Button {
+                showingConnect = true
+            } label: {
+                IconRow("Connect a Bank", systemImage: "plus", tint: CairnTheme.positive)
+            }
+        } header: {
+            Text("Institutions")
+        } footer: {
+            if !institutions.isEmpty {
+                Text("Swipe an institution to disconnect it.")
             }
         }
     }
 
+    // MARK: - Categorization
+
+    private var categorizationSection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { model.useAppleIntelligence },
+                set: { model.useAppleIntelligence = $0 }
+            )) {
+                IconRow("Use Apple Intelligence", subtitle: AppleIntelligenceCategorizer.statusDescription, systemImage: "sparkles", tint: Color(red: 0.62, green: 0.36, blue: 0.87))
+            }
+            .disabled(!AppleIntelligenceCategorizer.isAvailable)
+        } header: {
+            Text("Categorization")
+        } footer: {
+            Text("Rules and your past corrections always run on-device, automatically after every sync and import. "
+                + "Apple Intelligence is used only for what they can’t place, and only its on-device model — never the cloud.")
+        }
+    }
+
+    // MARK: - Storage
+
+    private var storageSection: some View {
+        Section {
+            Picker(selection: $storageMode) {
+                Text(StoreMode.cloud.displayName).tag(StoreMode.cloud)
+                Text(StoreMode.local.displayName).tag(StoreMode.local)
+            } label: {
+                IconRow("Where data lives", systemImage: storageMode == .cloud ? "icloud.fill" : "internaldrive.fill", tint: storageMode == .cloud ? .blue : .gray)
+            }
+            .onChange(of: storageMode) { _, newValue in
+                guard newValue != model.storeMode else { return }
+                model.requestStoreModeChange(to: newValue)
+            }
+            if let reason = model.cloudFallbackReason {
+                Label("iCloud isn’t available right now, so Cairn is using local storage. \(reason)", systemImage: "icloud.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Storage")
+        } footer: {
+            Text("\(storageMode.summary) Changing this takes effect after you quit and reopen Cairn. "
+                + "Turning sync off only stops future uploads; to remove data already in iCloud, use Delete All Data.")
+        }
+    }
+
+    // MARK: - Privacy
+
+    private var privacySection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { model.appLockEnabled },
+                set: { model.setAppLock(enabled: $0) }
+            )) {
+                IconRow("Require unlock to open", systemImage: "faceid", tint: CairnTheme.positive)
+            }
+        } header: {
+            Text("Privacy")
+        } footer: {
+            Text("The app lock guards the interface. The SimpleFIN credential stays in the Keychain so background sync can work, and can be revoked at any time from your SimpleFIN Bridge.")
+        }
+    }
+
+    // MARK: - Data
+
+    private var dataSection: some View {
+        Section {
+            Button { export(json: false) } label: {
+                IconRow("Export as CSV", systemImage: "tablecells", tint: .blue)
+            }
+            Button { export(json: true) } label: {
+                IconRow("Export as JSON", systemImage: "curlybraces", tint: .indigo)
+            }
+            Button(role: .destructive) {
+                showingDeleteConfirm = true
+            } label: {
+                IconRow("Delete All Data", systemImage: "trash.fill", tint: CairnTheme.negative)
+                    .foregroundStyle(CairnTheme.negative)
+            }
+        } header: {
+            Text("Your data")
+        } footer: {
+            Text("Exports include every transaction and your categories and notes. Nothing is uploaded; the file is shared through the system share sheet.")
+        }
+    }
+
+    // MARK: - About
+
     private var aboutSection: some View {
-        Section("About") {
-            LabeledContent("Version", value: appVersion)
-            Link("Source Code", destination: URL(string: "https://github.com/sehejjain/cairn")!)
-            Link("Privacy Policy", destination: URL(string: "https://github.com/sehejjain/cairn/blob/main/docs/privacy-policy.md")!)
+        Section {
+            IconRow("Version", systemImage: "mountain.2.fill", tint: CairnTheme.ink) {
+                Text(appVersion).foregroundStyle(.secondary)
+            }
+            Link(destination: URL(string: "https://github.com/sehejjain/cairn")!) {
+                IconRow("Source Code", systemImage: "chevron.left.forwardslash.chevron.right", tint: .gray) {
+                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+            Link(destination: URL(string: "https://github.com/sehejjain/cairn/blob/main/docs/privacy-policy.md")!) {
+                IconRow("Privacy Policy", systemImage: "hand.raised.fill", tint: .gray) {
+                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+        } header: {
+            Text("About")
+        } footer: {
             Text("Cairn is not affiliated with SimpleFIN or any bank. It reads data you authorize and never moves money.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
