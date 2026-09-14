@@ -90,6 +90,19 @@ public struct MerchantTotal: Sendable, Hashable, Identifiable {
     }
 }
 
+/// A cumulative spending point for one day of a month, used by the pace chart.
+public struct PacePoint: Sendable, Hashable, Identifiable {
+    public let day: Int
+    public let amountMinorUnits: Int64
+
+    public var id: Int { day }
+
+    public init(day: Int, amountMinorUnits: Int64) {
+        self.day = day
+        self.amountMinorUnits = amountMinorUnits
+    }
+}
+
 /// Everything the insights screen needs for one month, precomputed.
 public struct InsightsSnapshot: Sendable {
     public let monthStart: Date
@@ -108,6 +121,19 @@ public struct InsightsSnapshot: Sendable {
 
     public let transactionCount: Int
 
+    /// Cumulative spending by day-of-month for the selected month.
+    public let cumulative: [PacePoint]
+    /// Total days in the selected month.
+    public let daysInMonth: Int
+    /// Last day with data (today's day for the current month, else all days).
+    public let lastDayWithData: Int
+    /// Average daily spend over the months before the selected one.
+    public let averageDailyPace: Int64
+    /// Spending last month through the same point in the month.
+    public let previousToDateSpending: Int64
+    /// Categories with the largest dollar change versus last month.
+    public let topMoverNames: Set<String>
+
     public init(
         monthStart: Date,
         current: MonthlyTotals,
@@ -115,7 +141,13 @@ public struct InsightsSnapshot: Sendable {
         categories: [CategoryBreakdown],
         months: [MonthlyTotals],
         topMerchants: [MerchantTotal],
-        transactionCount: Int
+        transactionCount: Int,
+        cumulative: [PacePoint],
+        daysInMonth: Int,
+        lastDayWithData: Int,
+        averageDailyPace: Int64,
+        previousToDateSpending: Int64,
+        topMoverNames: Set<String>
     ) {
         self.monthStart = monthStart
         self.current = current
@@ -124,12 +156,36 @@ public struct InsightsSnapshot: Sendable {
         self.months = months
         self.topMerchants = topMerchants
         self.transactionCount = transactionCount
+        self.cumulative = cumulative
+        self.daysInMonth = daysInMonth
+        self.lastDayWithData = lastDayWithData
+        self.averageDailyPace = averageDailyPace
+        self.previousToDateSpending = previousToDateSpending
+        self.topMoverNames = topMoverNames
     }
 
     public var spendingChangeRatio: Double? {
         guard previous.spendingMinorUnits > 0 else { return nil }
         return Double(current.spendingMinorUnits - previous.spendingMinorUnits)
             / Double(previous.spendingMinorUnits)
+    }
+
+    /// Spending so far this month (or the whole month for a past one).
+    public var currentToDateSpending: Int64 {
+        cumulative.last?.amountMinorUnits ?? current.spendingMinorUnits
+    }
+
+    /// Change versus the same point in the previous month. Comparing like for
+    /// like avoids the misleading jump you get from a full-month baseline early
+    /// in the month.
+    public var spendingChangeVsDate: Double? {
+        guard previousToDateSpending > 0 else { return nil }
+        return Double(currentToDateSpending - previousToDateSpending) / Double(previousToDateSpending)
+    }
+
+    /// Projected spend for the whole month at the trailing average pace.
+    public var projectedSpending: Int64 {
+        averageDailyPace > 0 ? averageDailyPace * Int64(daysInMonth) : current.spendingMinorUnits
     }
 
     public var netChangeRatio: Double? {
@@ -189,6 +245,42 @@ public enum InsightsCalculator {
         let merchants = topMerchants(monthStart: monthStart, transactions: relevant, calendar: calendar)
         let count = relevant.filter { isInMonth($0.date, monthStart: monthStart, calendar: calendar) }.count
 
+        let cumulative = cumulativeSpending(
+            transactions: relevant,
+            month: monthStart,
+            now: now,
+            calendar: calendar
+        )
+        let daysInMonth = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? 30
+        let isCurrentMonth = calendar.isDate(monthStart, equalTo: now, toGranularity: .month)
+        let lastDayWithData = isCurrentMonth
+            ? min(max(1, calendar.component(.day, from: now)), daysInMonth)
+            : daysInMonth
+        let averageDailyPace = averageDailySpend(
+            transactions: relevant,
+            before: monthStart,
+            months: 3,
+            calendar: calendar
+        )
+        let previousCumulative = cumulativeSpending(
+            transactions: relevant,
+            month: previousStart,
+            now: now,
+            calendar: calendar
+        )
+        let previousDays = calendar.range(of: .day, in: .month, for: previousStart)?.count ?? 30
+        let compareDay = min(lastDayWithData, previousDays)
+        let previousToDate = previousCumulative.last(where: { $0.day <= compareDay })?.amountMinorUnits ?? 0
+
+        let topMovers = Set(
+            categories
+                .map { ($0.name, abs($0.amountMinorUnits - $0.previousAmountMinorUnits)) }
+                .sorted { $0.1 > $1.1 }
+                .prefix(3)
+                .filter { $0.1 > 0 }
+                .map(\.0)
+        )
+
         return InsightsSnapshot(
             monthStart: monthStart,
             current: current,
@@ -196,8 +288,72 @@ public enum InsightsCalculator {
             categories: categories,
             months: months,
             topMerchants: merchants,
-            transactionCount: count
+            transactionCount: count,
+            cumulative: cumulative,
+            daysInMonth: daysInMonth,
+            lastDayWithData: lastDayWithData,
+            averageDailyPace: averageDailyPace,
+            previousToDateSpending: previousToDate,
+            topMoverNames: topMovers
         )
+    }
+
+    /// Cumulative spending within `month`, one point per day through the last
+    /// day with data. Used to draw the pace line against an average reference.
+    public static func cumulativeSpending(
+        transactions: [InsightTransaction],
+        month: Date,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> [PacePoint] {
+        let monthStart = startOfMonth(month, calendar: calendar)
+        let daysInMonth = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? 30
+        let isCurrent = calendar.isDate(monthStart, equalTo: now, toGranularity: .month)
+        let lastDay = isCurrent ? min(max(1, calendar.component(.day, from: now)), daysInMonth) : daysInMonth
+
+        var daily = [Int64](repeating: 0, count: lastDay + 1)
+        for transaction in transactions
+            where transaction.includedInInsights
+            && transaction.amountMinorUnits < 0
+            && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
+            let day = calendar.component(.day, from: transaction.date)
+            guard day >= 1, day <= lastDay else { continue }
+            daily[day] += abs(transaction.amountMinorUnits)
+        }
+
+        var running: Int64 = 0
+        var points: [PacePoint] = []
+        for day in 1...lastDay {
+            running += daily[day]
+            points.append(PacePoint(day: day, amountMinorUnits: running))
+        }
+        return points
+    }
+
+    /// Average daily spend over the `months` months before `month`, used as the
+    /// straight reference line in the pace chart.
+    public static func averageDailySpend(
+        transactions: [InsightTransaction],
+        before month: Date,
+        months: Int = 3,
+        calendar: Calendar = .current
+    ) -> Int64 {
+        guard months > 0 else { return 0 }
+        let monthStart = startOfMonth(month, calendar: calendar)
+        let relevant = transactions.filter { $0.includedInInsights }
+        var total: Int64 = 0
+        var days = 0
+        for offset in 1...months {
+            guard let start = calendar.date(byAdding: .month, value: -offset, to: monthStart),
+                  let end = calendar.date(byAdding: .month, value: 1, to: start) else { continue }
+            // Skip months with no data at all, so a new install isn't diluted by
+            // months that predate its history.
+            let hasCoverage = relevant.contains { $0.date >= start && $0.date < end }
+            guard hasCoverage else { continue }
+            total += totals(for: start, transactions: relevant, calendar: calendar).spendingMinorUnits
+            days += calendar.range(of: .day, in: .month, for: start)?.count ?? 30
+        }
+        return days > 0 ? total / Int64(days) : 0
     }
 
     /// Totals for a specific month.

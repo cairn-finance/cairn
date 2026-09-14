@@ -35,6 +35,9 @@ public enum MerchantNormalizer {
         guard !original.isEmpty else { return "" }
 
         var text = original
+        // Strip leading protocol labels (e.g. "ACH:", "PPD:") so the real
+        // merchant is exposed before processor and noise handling.
+        text = strippingLeadingLabels(from: text)
         let lowered = text.lowercased()
 
         // Amazon order suffixes contain opaque codes, so map the whole family.
@@ -69,6 +72,27 @@ public enum MerchantNormalizer {
         text = text.trimmingCharacters(in: charactersToTrim)
 
         return text.isEmpty ? original : text
+    }
+
+    /// Leading protocol labels that carry no merchant information. Stripped
+    /// repeatedly so "ACH: PAYPAL *X" still reaches the PayPal handler.
+    private static let leadingLabels = [
+        "ach:", "pos:", "ppd:", "ccd:", "web:", "tel:", "eft:", "orig:", "pmt:", "payment:",
+    ]
+
+    private static func strippingLeadingLabels(from raw: String) -> String {
+        var text = raw
+        var stripped = true
+        while stripped {
+            stripped = false
+            let lowered = text.lowercased()
+            for label in leadingLabels where lowered.hasPrefix(label) {
+                text = String(text.dropFirst(label.count)).trimmingCharacters(in: .whitespaces)
+                stripped = true
+                break
+            }
+        }
+        return text
     }
 
     /// A case-insensitive grouping key for the normalized name.

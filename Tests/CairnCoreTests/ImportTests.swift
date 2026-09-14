@@ -18,6 +18,14 @@ struct MerchantNormalizerTests {
         #expect(MerchantNormalizer.normalize("AMAZON.COM*AB12") == "Amazon")
     }
 
+    @Test("Strips ACH and other protocol labels")
+    func protocolLabels() {
+        #expect(MerchantNormalizer.normalize("ACH: PAYPAL *SPOTIFY") == "SPOTIFY")
+        #expect(MerchantNormalizer.normalize("ACH: ACME PAYROLL") == "ACME PAYROLL")
+        #expect(MerchantNormalizer.normalize("ACH DEBIT VANGUARD") == "VANGUARD")
+        #expect(MerchantNormalizer.normalize("POS: WHOLE FOODS #12") == "WHOLE FOODS")
+    }
+
     @Test("Removes store numbers and trailing state")
     func storeAndState() {
         #expect(MerchantNormalizer.normalize("STARBUCKS STORE 12345") == "STARBUCKS STORE")

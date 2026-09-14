@@ -48,6 +48,14 @@ final class AppModel {
     private(set) var categorizationState: CategorizationState = .idle
     private(set) var categorizationCounts = SyncEngine.CategorizationCounts()
 
+    /// Progress of the on-device model pass, shown while it runs.
+    struct ModelProgress: Equatable {
+        var processed: Int
+        var total: Int
+    }
+
+    private(set) var modelProgress: ModelProgress?
+
     /// Whether the on-device model may be used. Rules and learned history always
     /// run, regardless of this setting.
     var useAppleIntelligence: Bool {
@@ -114,7 +122,9 @@ final class AppModel {
             await syncAll(force: false)
         }
         await seeding
-        await autoCategorize()
+        // Kick off categorization without blocking launch; a large backlog can
+        // take minutes on-device.
+        Task { await autoCategorize() }
     }
 
     /// Seeds the default categories once. On a CloudKit store this waits briefly
@@ -342,7 +352,8 @@ final class AppModel {
     // MARK: - Categorization
 
     /// Runs categorization automatically: rules and learned history first, then
-    /// a bounded on-device Apple Intelligence batch when enabled and available.
+    /// the on-device Apple Intelligence model in batches until the backlog is
+    /// cleared (or a per-session cap is reached).
     ///
     /// Safe to call often; overlapping calls are coalesced, and the model only
     /// ever looks at transactions it hasn't tried before.
@@ -350,26 +361,45 @@ final class AppModel {
         guard !isAutoCategorizing else { return }
         isAutoCategorizing = true
         categorizationState = .running
-        defer { isAutoCategorizing = false }
+        defer {
+            isAutoCategorizing = false
+            modelProgress = nil
+        }
 
         let ruleOutcome = await recategorize()
-        var categorized = ruleOutcome?.categorized ?? 0
+        let ruleCategorized = ruleOutcome?.categorized ?? 0
         var aiCategorized = 0
 
         if useAppleIntelligence, AppleIntelligenceCategorizer.isAvailable {
-            if let aiOutcome = await runAppleIntelligenceBatch() {
-                aiCategorized = aiOutcome.categorized
-                categorized += aiCategorized
+            await refreshCategorizationCounts()
+            let total = categorizationCounts.pendingModel
+            if total > 0 {
+                modelProgress = ModelProgress(processed: 0, total: total)
+                var processed = 0
+                // Generous cap so a large backlog clears in one session, while
+                // still yielding to keep the device responsive.
+                let sessionCap = 200
+                while processed < sessionCap, !Task.isCancelled {
+                    guard let outcome = await runAppleIntelligenceBatch(limit: 10) else { break }
+                    aiCategorized += outcome.categorized
+                    processed += outcome.attempted
+                    modelProgress = ModelProgress(processed: min(processed, total), total: total)
+                    if outcome.attempted == 0 { break }
+                    try? await Task.sleep(for: .milliseconds(150))
+                }
             }
         }
 
         await refreshCategorizationCounts()
         await cairnLog(
             .info,
-            "Auto-categorize: rules=\(ruleOutcome?.categorized ?? 0) ai=\(aiCategorized) "
+            "Auto-categorize: rules=\(ruleCategorized) ai=\(aiCategorized) "
                 + "pending=\(categorizationCounts.pendingModel) unresolved=\(categorizationCounts.unresolved)"
         )
-        categorizationState = .finished(categorized: categorized, counts: categorizationCounts)
+        categorizationState = .finished(
+            categorized: ruleCategorized + aiCategorized,
+            counts: categorizationCounts
+        )
     }
 
     /// Rules plus merchant memory. Fast and deterministic, always on-device.
@@ -388,9 +418,9 @@ final class AppModel {
         categorizationCounts = (try? await engine.categorizationCounts()) ?? SyncEngine.CategorizationCounts()
     }
 
-    private func runAppleIntelligenceBatch() async -> SyncEngine.RecategorizeOutcome? {
+    private func runAppleIntelligenceBatch(limit: Int = 12) async -> SyncEngine.RecategorizeOutcome? {
         do {
-            return try await engine.appleIntelligenceCategorizeBatch()
+            return try await engine.appleIntelligenceCategorizeBatch(limit: limit)
         } catch {
             await cairnLog(.warning, "On-device categorization pass failed: \(error.localizedDescription)")
             return nil

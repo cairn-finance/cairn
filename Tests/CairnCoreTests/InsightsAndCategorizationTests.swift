@@ -131,6 +131,47 @@ struct InsightsCalculatorTests {
         // February has 28 days; a past month uses the whole month.
         #expect(snapshot.averageDailySpending(now: date(2026, 3, 15), calendar: Self.calendar) == 464)
     }
+
+    @Test("Cumulative spending accumulates by day")
+    func cumulative() {
+        let points = InsightsCalculator.cumulativeSpending(
+            transactions: transactions(),
+            month: date(2026, 2, 1),
+            now: date(2026, 3, 15),
+            calendar: Self.calendar
+        )
+        #expect(points.count == 28)
+        #expect(points[4].amountMinorUnits == 10_000)
+        #expect(points.last?.amountMinorUnits == 13_000)
+    }
+
+    @Test("Average daily pace uses trailing months with data")
+    func averagePace() {
+        let pace = InsightsCalculator.averageDailySpend(
+            transactions: transactions(),
+            before: date(2026, 2, 1),
+            months: 1,
+            calendar: Self.calendar
+        )
+        #expect(pace == 9_000 / 31)
+    }
+
+    @Test("Snapshot projects month-end and compares like-for-like")
+    func projectionAndComparison() {
+        let snapshot = InsightsCalculator.snapshot(
+            transactions: transactions(),
+            month: date(2026, 2, 1),
+            historyMonths: 3,
+            now: date(2026, 3, 15),
+            calendar: Self.calendar
+        )
+        #expect(snapshot.daysInMonth == 28)
+        #expect(snapshot.lastDayWithData == 28)
+        #expect(snapshot.currentToDateSpending == 13_000)
+        #expect(snapshot.averageDailyPace == 9_000 / 31)
+        #expect(snapshot.projectedSpending == (9_000 / 31) * 28)
+        #expect(snapshot.topMoverNames.contains("Groceries"))
+    }
 }
 
 @Suite("Merchant memory")
