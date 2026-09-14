@@ -5,29 +5,26 @@ struct AccountRow: View {
     let account: Account
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(CairnTheme.color(hex: "#30B0C7").opacity(0.18))
-                Image(systemName: "building.columns.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(CairnTheme.color(hex: "#30B0C7"))
-            }
-            .frame(width: 34, height: 34)
+        HStack(spacing: CairnTheme.Spacing.m) {
+            CategoryBadge(symbolName: "building.columns.fill", hex: "#1F93AC", size: 34)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(account.displayName)
                     .font(.body.weight(.medium))
                     .lineLimit(1)
-                Text(account.currency.displayLabel)
+                Text(account.isManual ? "Manual" : account.currency.displayLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            AmountText(money: account.balance, font: .body.weight(.semibold))
-                .fixedSize(horizontal: true, vertical: false)
+            AmountText(
+                money: account.balance,
+                font: .body.weight(.semibold),
+                colorOverride: account.balance.isNegative ? CairnTheme.negative : nil
+            )
+            .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.vertical, 2)
     }
@@ -37,9 +34,13 @@ struct TransactionRow: View {
     let transaction: LedgerTransaction
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 12) {
-                categoryIcon
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .top, spacing: CairnTheme.Spacing.m) {
+                CategoryBadge(
+                    symbolName: transaction.effectiveCategory?.symbolName,
+                    hex: transaction.effectiveCategory?.colorHex,
+                    size: 32
+                )
 
                 Text(transaction.payeeDescription.isEmpty ? "No description" : transaction.payeeDescription)
                     .font(.body)
@@ -53,7 +54,7 @@ struct TransactionRow: View {
             metadata
                 .padding(.leading, 44)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 
     private var metadata: some View {
@@ -61,25 +62,19 @@ struct TransactionRow: View {
             if transaction.isPending {
                 Text("Pending")
                     .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
-                    .background(.quaternary, in: Capsule())
+                    .background(Color.primary.opacity(0.06), in: Capsule())
                     .fixedSize()
             }
             Text(transaction.effectiveDate, format: .dateTime.month(.abbreviated).day().year())
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            if let category = transaction.effectiveCategory {
+            if let label = categoryLabel {
                 Text("·")
                     .foregroundStyle(.tertiary)
-                Text(category.name)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if transaction.isTransfer {
-                Text("·")
-                    .foregroundStyle(.tertiary)
-                Text("Transfer")
+                Text(label)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -88,15 +83,12 @@ struct TransactionRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var categoryIcon: some View {
-        let category = transaction.effectiveCategory
-        let hex = category?.colorHex ?? "#8E8E93"
-        return ZStack {
-            Circle().fill(CairnTheme.color(hex: hex).opacity(0.18))
-            Image(systemName: category?.symbolName ?? "circle.dashed")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(CairnTheme.color(hex: hex))
+    /// The category, or "Transfer" when the row is money movement and has no
+    /// category of its own.
+    private var categoryLabel: String? {
+        if let category = transaction.effectiveCategory {
+            return category.name
         }
-        .frame(width: 32, height: 32)
+        return transaction.isTransfer ? "Transfer" : nil
     }
 }

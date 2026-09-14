@@ -161,14 +161,12 @@ struct AccountsView: View {
     private var netWorthHeader: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Net Worth")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                SectionHeader(title: "Net Worth")
 
                 if netWorthTotals.count == 1, let only = netWorthTotals.first {
                     AmountText(
                         money: Money(minorUnits: only.totalMinorUnits, currency: only.currency),
-                        font: .system(.largeTitle, design: .rounded, weight: .bold)
+                        font: .system(.largeTitle, weight: .bold)
                     )
                 } else {
                     ForEach(netWorthTotals) { total in

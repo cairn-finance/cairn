@@ -43,10 +43,9 @@ struct NetWorthView: View {
                     totalsCard
                 }
             }
-            .padding()
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity)
+            .cairnScreen()
         }
+        .background(CairnTheme.groupedBackground.ignoresSafeArea())
         .navigationTitle("Net Worth")
     }
 
@@ -111,7 +110,7 @@ struct NetWorthView: View {
                     .foregroundStyle(.secondary)
                 AmountText(
                     money: Money(minorUnits: currentTotal, currency: primaryCurrency),
-                    font: .system(.largeTitle, design: .rounded, weight: .bold)
+                    font: .system(.largeTitle, weight: .bold)
                 )
                 .fixedSize(horizontal: false, vertical: true)
                 Picker("Range", selection: $range) {

@@ -40,7 +40,7 @@ struct OnboardingView: View {
                 .font(.system(size: 44, weight: .semibold))
                 .foregroundStyle(.tint)
             Text("Cairn")
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .font(.system(.largeTitle, weight: .bold))
             Text("Your money. Your data. No account, no server, no tracking.")
                 .font(.title3)
                 .foregroundStyle(.secondary)

@@ -26,6 +26,7 @@ struct RootView: View {
             }
         }
         .animation(.snappy, value: model.banner)
+        .tint(CairnTheme.accent)
         // Banners are transient: clear them after a few seconds so they never
         // sit over the toolbar.
         .task(id: model.banner) {

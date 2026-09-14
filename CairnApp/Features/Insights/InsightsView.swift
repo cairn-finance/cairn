@@ -36,10 +36,9 @@ struct InsightsView: View {
                     categorizeCard
                 }
             }
-            .padding()
-            .frame(maxWidth: 760)
-            .frame(maxWidth: .infinity)
+            .cairnScreen()
         }
+        .background(CairnTheme.groupedBackground.ignoresSafeArea())
         .navigationTitle("Insights")
         .task { await model.refreshCategorizationCounts() }
     }
@@ -149,6 +148,18 @@ struct InsightsView: View {
                         }
                         .padding(.horizontal, 2)
                     }
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(color: .black, location: 0.05),
+                                .init(color: .black, location: 0.95),
+                                .init(color: .clear, location: 1)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                     .onAppear { scrollToSelected(proxy) }
                     .onChange(of: month) { _, _ in scrollToSelected(proxy) }
                 }
@@ -188,19 +199,19 @@ struct InsightsView: View {
     private func heroCard(_ data: InsightsSnapshot) -> some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                Text(isCurrentMonth
-                     ? "Spent this month"
-                     : "Spent in \(data.monthStart.formatted(.dateTime.month(.wide)))")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                SectionHeader(
+                    title: isCurrentMonth
+                        ? "Spent this month"
+                        : "Spent in \(data.monthStart.formatted(.dateTime.month(.wide)))"
+                )
 
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     AmountText(
                         money: Money(minorUnits: data.currentToDateSpending, currency: primaryCurrency),
-                        font: .system(.largeTitle, design: .rounded, weight: .bold)
+                        font: .system(.largeTitle, weight: .bold)
                     )
                     if let change = data.spendingChangeVsDate {
-                        changePill(change, higherIsBad: true)
+                        TrendPill(ratio: change, higherIsBad: true)
                     }
                 }
 
@@ -217,33 +228,24 @@ struct InsightsView: View {
 
                 Divider()
 
-                HStack(spacing: 16) {
-                    metric("Income", data.current.incomeMinorUnits, CairnTheme.positive)
-                    metric(
-                        "Net",
-                        data.current.netMinorUnits,
-                        data.current.netMinorUnits >= 0 ? CairnTheme.positive : CairnTheme.negative
+                HStack(alignment: .top, spacing: 16) {
+                    Metric(
+                        title: "Income",
+                        money: Money(minorUnits: data.current.incomeMinorUnits, currency: primaryCurrency),
+                        tint: CairnTheme.positive
                     )
-                    metric("Avg / day", data.averageDailySpending(), CairnTheme.neutral)
+                    Metric(
+                        title: "Net",
+                        money: Money(minorUnits: data.current.netMinorUnits, currency: primaryCurrency),
+                        tint: data.current.netMinorUnits >= 0 ? CairnTheme.positive : CairnTheme.negative
+                    )
+                    Metric(
+                        title: "Avg / day",
+                        money: Money(minorUnits: data.averageDailySpending(), currency: primaryCurrency)
+                    )
                 }
             }
         }
-    }
-
-    private func metric(_ title: String, _ minorUnits: Int64, _ tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            AmountText(
-                money: Money(minorUnits: minorUnits, currency: primaryCurrency),
-                font: .callout.weight(.semibold),
-                colorOverride: tint
-            )
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Pace
@@ -380,16 +382,8 @@ struct InsightsView: View {
 
     private func categoryCard(_ data: InsightsSnapshot) -> some View {
         Card {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Spending by category")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("tap to view")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Spending by category", trailing: "tap to view")
 
                 if data.categories.isEmpty {
                     Text("No spending recorded this month.")
@@ -417,47 +411,37 @@ struct InsightsView: View {
     private func categoryRow(_ slice: CategoryBreakdown, in data: InsightsSnapshot) -> some View {
         let total = data.categories.reduce(Int64(0)) { $0 + $1.amountMinorUnits }
         let share = total > 0 ? Double(slice.amountMinorUnits) / Double(total) : 0
-        let showChange = data.topMoverNames.contains(slice.name)
-            && (slice.changeRatio.map { abs($0) >= 0.1 } ?? false)
+        let tint = CairnTheme.color(hex: slice.colorHex)
+        let fraction = fraction(slice, in: data)
 
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(CairnTheme.color(hex: slice.colorHex))
-                    .frame(width: 9, height: 9)
-                Text(slice.name)
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                AmountText(
-                    money: Money(minorUnits: slice.amountMinorUnits, currency: primaryCurrency),
-                    font: .subheadline.weight(.semibold)
-                )
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule()
-                        .fill(CairnTheme.color(hex: slice.colorHex))
-                        .frame(width: max(4, geometry.size.width * fraction(slice, in: data)))
-                }
-            }
-            .frame(height: 6)
-
-            HStack(spacing: 6) {
-                Text(share.formatted(.percent.precision(.fractionLength(0))))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if showChange, let change = slice.changeRatio {
-                    changePill(change, higherIsBad: true)
-                }
-            }
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle()
+                .fill(tint)
+                .frame(width: 8, height: 8)
+            Text(slice.name)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(share.formatted(.percent.precision(.fractionLength(0))))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+            AmountText(
+                money: Money(minorUnits: slice.amountMinorUnits, currency: primaryCurrency),
+                font: .subheadline.weight(.semibold)
+            )
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(tint.opacity(0.13))
+                .containerRelativeFrame(.horizontal) { width, _ in
+                    max(34, width * fraction)
+                }
+        }
+        .contentShape(Rectangle())
     }
 
     private func fraction(_ slice: CategoryBreakdown, in data: InsightsSnapshot) -> Double {
@@ -636,27 +620,6 @@ struct InsightsView: View {
 
     private func moneyText(_ minorUnits: Int64) -> String {
         Money(minorUnits: minorUnits, currency: primaryCurrency).formatted()
-    }
-
-    @ViewBuilder
-    private func changePill(_ ratio: Double, higherIsBad: Bool) -> some View {
-        let percent = Int((abs(ratio) * 100).rounded())
-        let isUp = ratio >= 0
-        let good = higherIsBad ? !isUp : isUp
-        let color = percent == 0 ? CairnTheme.neutral : (good ? CairnTheme.positive : CairnTheme.negative)
-
-        HStack(spacing: 2) {
-            Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right")
-                .font(.system(size: 9, weight: .bold))
-            Text("\(percent)%")
-                .monospacedDigit()
-        }
-        .font(.caption2.weight(.semibold))
-        .foregroundStyle(color)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(color.opacity(0.14), in: Capsule())
-        .fixedSize()
     }
 
     private func dollars(_ minorUnits: Int64) -> Double {

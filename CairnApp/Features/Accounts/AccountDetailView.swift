@@ -134,7 +134,7 @@ struct AccountDetailView: View {
 
                 AmountText(
                     money: account.balance,
-                    font: .system(.largeTitle, design: .rounded, weight: .bold)
+                    font: .system(.largeTitle, weight: .bold)
                 )
 
                 if account.hasAvailableBalance, account.availableBalance.minorUnits != account.balance.minorUnits {
@@ -173,7 +173,7 @@ struct TransactionDetailView: View {
                     AmountText(
                         money: transaction.amount,
                         showSign: true,
-                        font: .system(.largeTitle, design: .rounded, weight: .bold)
+                        font: .system(.largeTitle, weight: .bold)
                     )
                     if transaction.isPending {
                         Label("Pending", systemImage: "clock")
