@@ -3,19 +3,23 @@ import SwiftData
 import Charts
 import CairnCore
 
+/// Full net-worth history: a scrubbable chart, the change over the selected
+/// range, and the assets/liabilities split.
 struct NetWorthView: View {
     @Query private var accounts: [Account]
     @Query private var settings: [AppSettings]
 
     @State private var range: RangeOption = .ninetyDays
+    @State private var selectedDate: Date?
 
     enum RangeOption: String, CaseIterable, Identifiable {
-        case thirtyDays, ninetyDays, oneYear
+        case thirtyDays, ninetyDays, sixMonths, oneYear
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .thirtyDays: "30D"
-            case .ninetyDays: "90D"
+            case .thirtyDays: "1M"
+            case .ninetyDays: "3M"
+            case .sixMonths: "6M"
             case .oneYear: "1Y"
             }
         }
@@ -23,6 +27,7 @@ struct NetWorthView: View {
             switch self {
             case .thirtyDays: 30
             case .ninetyDays: 90
+            case .sixMonths: 182
             case .oneYear: 365
             }
         }
@@ -30,147 +35,246 @@ struct NetWorthView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if visibleTotals.isEmpty {
+            VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
+                if totals.isEmpty {
                     EmptyStateView(
                         systemImage: "chart.line.uptrend.xyaxis",
                         title: "Nothing to chart yet",
                         message: "Connect a bank and sync to build your net worth history."
                     )
-                    .padding(.top, 40)
                 } else {
                     chartCard
-                    totalsCard
+                    breakdownCard
+                    if totals.count > 1 {
+                        currenciesCard
+                    }
+                    accountsCard
                 }
             }
             .cairnScreen()
         }
-        .background(CairnTheme.groupedBackground.ignoresSafeArea())
+        .cairnCanvas()
         .navigationTitle("Net Worth")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 
-    private var homeCurrency: Currency {
-        let code = settings.first?.homeCurrencyCode ?? "USD"
-        return Currency(code: code, exponent: Currency.defaultExponent(forISOCode: code))
-    }
+    // MARK: - Data
 
-    private var visibleTotals: [CurrencyTotal] {
-        let included = accounts.filter { !$0.isHidden && $0.includeInNetWorth }
-        let grouped = Dictionary(grouping: included) { $0.currency.code }
-        return grouped.compactMap { _, group in
-            guard let currency = group.first?.currency else { return nil }
-            return CurrencyTotal(
-                currency: currency,
-                totalMinorUnits: group.reduce(Int64(0)) { $0 + $1.balanceMinorUnits }
-            )
-        }
-        .sorted { $0.currency.code < $1.currency.code }
-    }
+    private var totals: [CurrencyTotal] { NetWorthMath.totals(accounts: accounts) }
 
-    private var primaryCurrency: Currency {
-        if visibleTotals.contains(where: { $0.currency.code == homeCurrency.code }) {
-            return homeCurrency
-        }
-        return visibleTotals.first?.currency ?? homeCurrency
-    }
-
-    private var series: [BalanceHistory.Entry] {
-        let relevant = accounts.filter {
-            !$0.isHidden && $0.includeInNetWorth && $0.currency.code == primaryCurrency.code
-        }
-        return relevant.flatMap { account in
-            (account.transactions ?? [])
-                .filter { !$0.isPending }
-                .map { BalanceHistory.Entry(date: $0.effectiveDate, amountMinorUnits: $0.amountMinorUnits) }
-        }
+    private var currency: Currency {
+        NetWorthMath.primaryCurrency(totals: totals, home: NetWorthMath.homeCurrency(settings: settings))
     }
 
     private var currentTotal: Int64 {
-        visibleTotals.first { $0.currency.code == primaryCurrency.code }?.totalMinorUnits ?? 0
+        totals.first { $0.currency.code == currency.code }?.totalMinorUnits ?? 0
     }
 
-    private var dailyBalances: [(date: Date, balanceMinorUnits: Int64)] {
-        let end = Calendar.current.startOfDay(for: .now)
-        guard let start = Calendar.current.date(byAdding: .day, value: -range.days, to: end) else {
-            return []
-        }
-        return BalanceHistory.dailyBalances(
-            from: start,
-            through: end,
-            currentBalanceMinorUnits: currentTotal,
-            transactions: series
-        )
+    private var series: [(date: Date, balanceMinorUnits: Int64)] {
+        NetWorthMath.series(accounts: accounts, currency: currency, days: range.days)
     }
+
+    private var selectedPoint: (date: Date, balanceMinorUnits: Int64)? {
+        guard let selectedDate else { return nil }
+        let day = Calendar.current.startOfDay(for: selectedDate)
+        return series.first { Calendar.current.isDate($0.date, inSameDayAs: day) }
+    }
+
+    // MARK: - Chart
 
     private var chartCard: some View {
+        let points = series
+        let change = NetWorthMath.change(in: points)
+        let shown = selectedPoint?.balanceMinorUnits ?? currentTotal
+
+        return Card(padding: 20) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(selectedPoint.map { $0.date.formatted(date: .abbreviated, time: .omitted) } ?? "Today")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .contentTransition(.opacity)
+                        Spacer()
+                        SegmentedPicker(options: RangeOption.allCases, selection: $range) { $0.title }
+                            .frame(maxWidth: 220)
+                    }
+                    AmountText(
+                        money: Money(minorUnits: shown, currency: currency),
+                        font: .cairnHero,
+                        deemphasizeFraction: true
+                    )
+                    HStack(spacing: 8) {
+                        if let ratio = change.ratio {
+                            TrendPill(ratio: ratio, higherIsBad: false)
+                        }
+                        Text(changeSentence(change.delta))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                chart(points)
+                    .frame(height: 220)
+            }
+        }
+        .animation(CairnTheme.Motion.standard, value: range)
+    }
+
+    private func chart(_ points: [(date: Date, balanceMinorUnits: Int64)]) -> some View {
+        let values = points.map { NetWorthMath.doubleValue($0.balanceMinorUnits, currency: currency) }
+        let minValue = values.min() ?? 0
+        let maxValue = values.max() ?? 1
+        let pad = max((maxValue - minValue) * 0.15, 1)
+
+        return Chart {
+            ForEach(points, id: \.date) { point in
+                AreaMark(
+                    x: .value("Date", point.date),
+                    yStart: .value("Floor", minValue - pad),
+                    yEnd: .value("Balance", NetWorthMath.doubleValue(point.balanceMinorUnits, currency: currency))
+                )
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [CairnTheme.accent.opacity(0.30), CairnTheme.accent.opacity(0.0)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .interpolationMethod(.monotone)
+
+                LineMark(
+                    x: .value("Date", point.date),
+                    y: .value("Balance", NetWorthMath.doubleValue(point.balanceMinorUnits, currency: currency))
+                )
+                .foregroundStyle(CairnTheme.accent)
+                .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                .interpolationMethod(.monotone)
+            }
+
+            if let selected = selectedPoint {
+                RuleMark(x: .value("Selected", selected.date))
+                    .foregroundStyle(Color.secondary.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                PointMark(
+                    x: .value("Selected", selected.date),
+                    y: .value("Balance", NetWorthMath.doubleValue(selected.balanceMinorUnits, currency: currency))
+                )
+                .symbolSize(90)
+                .foregroundStyle(CairnTheme.accent)
+                PointMark(
+                    x: .value("Selected", selected.date),
+                    y: .value("Balance", NetWorthMath.doubleValue(selected.balanceMinorUnits, currency: currency))
+                )
+                .symbolSize(30)
+                .foregroundStyle(CairnTheme.surface)
+            }
+        }
+        .chartYScale(domain: (minValue - pad)...(maxValue + pad))
+        .chartXSelection(value: $selectedDate)
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                    .foregroundStyle(Color.secondary)
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
+                AxisGridLine().foregroundStyle(CairnTheme.hairline)
+                AxisValueLabel {
+                    if let amount = value.as(Double.self) {
+                        Text(compact(amount)).foregroundStyle(Color.secondary)
+                    }
+                }
+            }
+        }
+        .sensoryFeedback(.selection, trigger: selectedPoint?.date)
+    }
+
+    // MARK: - Breakdown
+
+    private var breakdownCard: some View {
+        let split = NetWorthMath.assetsAndLiabilities(accounts: accounts, currency: currency)
+        let total = split.assets + split.liabilities
+        let assetShare = total > 0 ? Double(split.assets) / Double(total) : 1
+
+        return Card {
+            VStack(alignment: .leading, spacing: 14) {
+                CardHeader("Assets & liabilities")
+
+                GeometryReader { proxy in
+                    HStack(spacing: 3) {
+                        Capsule()
+                            .fill(CairnTheme.positive)
+                            .frame(width: max(6, proxy.size.width * assetShare))
+                        if split.liabilities > 0 {
+                            Capsule().fill(CairnTheme.negative)
+                        }
+                    }
+                }
+                .frame(height: 8)
+
+                HStack(spacing: 12) {
+                    StatTile(title: "Assets", systemImage: "arrow.up.right", tint: CairnTheme.positive) {
+                        AmountText(money: Money(minorUnits: split.assets, currency: currency), font: .callout.weight(.semibold))
+                    }
+                    StatTile(title: "Liabilities", systemImage: "arrow.down.right", tint: CairnTheme.negative) {
+                        AmountText(money: Money(minorUnits: split.liabilities, currency: currency), font: .callout.weight(.semibold))
+                    }
+                }
+            }
+        }
+    }
+
+    private var currenciesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Net Worth")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                AmountText(
-                    money: Money(minorUnits: currentTotal, currency: primaryCurrency),
-                    font: .system(.largeTitle, weight: .bold)
-                )
-                .fixedSize(horizontal: false, vertical: true)
-                Picker("Range", selection: $range) {
-                    ForEach(RangeOption.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
-                Chart(dailyBalances, id: \.date) { point in
-                    AreaMark(
-                        x: .value("Date", point.date),
-                        y: .value("Balance", dollarValue(point.balanceMinorUnits))
-                    )
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.accentColor.opacity(0.35), Color.accentColor.opacity(0.02)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    LineMark(
-                        x: .value("Date", point.date),
-                        y: .value("Balance", dollarValue(point.balanceMinorUnits))
-                    )
-                    .foregroundStyle(Color.accentColor)
-                    .interpolationMethod(.monotone)
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading)
-                }
-                .frame(height: 200)
-            }
-        }
-    }
-
-    private var totalsCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Balances by currency")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(visibleTotals) { total in
+                CardHeader("Other currencies", subtitle: "Totals are kept per currency. Exchange rates are not used.")
+                ForEach(totals.filter { $0.currency.code != currency.code }) { total in
                     HStack {
                         Text(total.currency.displayLabel)
+                            .font(.callout)
                         Spacer()
-                        AmountText(money: Money(minorUnits: total.totalMinorUnits, currency: total.currency), font: .body.weight(.medium))
+                        AmountText(
+                            money: Money(minorUnits: total.totalMinorUnits, currency: total.currency),
+                            font: .callout.weight(.semibold)
+                        )
                     }
-                }
-                if visibleTotals.count > 1 {
-                    Text("Exchange rates are not used. Totals are kept per currency.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
         }
     }
 
-    private func dollarValue(_ minorUnits: Int64) -> Double {
-        NSDecimalNumber(decimal: MinorUnits.decimal(minorUnits, exponent: primaryCurrency.exponent)).doubleValue
+    private var accountsCard: some View {
+        let included = NetWorthMath.included(accounts).filter { $0.currency.code == currency.code }
+        return VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title: "Included accounts", trailing: "\(included.count)")
+            RowGroup {
+                ForEach(Array(included.enumerated()), id: \.element.persistentModelID) { index, account in
+                    NavigationLink {
+                        AccountDetailView(account: account)
+                    } label: {
+                        AccountRow(account: account)
+                    }
+                    .buttonStyle(.plain)
+                    if index < included.count - 1 { RowDivider() }
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func changeSentence(_ delta: Int64) -> String {
+        let money = Money(minorUnits: abs(delta), currency: currency)
+        let period = range.title == "1Y" ? "past year" : "past \(range.days) days"
+        if delta == 0 { return "No change over the \(period)" }
+        return "\(delta > 0 ? "Up" : "Down") \(money.formatted()) over the \(period)"
+    }
+
+    private func compact(_ value: Double) -> String {
+        Money(minorUnits: Int64(value * pow(10, Double(currency.exponent))), currency: currency).compactFormatted()
     }
 }
