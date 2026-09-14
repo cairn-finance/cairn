@@ -81,7 +81,7 @@ struct InsightFilteredListView: View {
                 transaction.userCategory == nil
                     && transaction.autoCategory == nil
                     && !transaction.isIgnored
-                    && !transaction.isTransfer
+                    && !transaction.countsAsTransfer
                     && !transaction.isPending
             }
         }
@@ -89,7 +89,7 @@ struct InsightFilteredListView: View {
 
     private var totalSpent: Int64 {
         filtered
-            .filter { $0.amountMinorUnits < 0 && !$0.isTransfer }
+            .filter { $0.amountMinorUnits < 0 && !$0.countsAsTransfer }
             .reduce(Int64(0)) { $0 + abs($1.amountMinorUnits) }
     }
 }

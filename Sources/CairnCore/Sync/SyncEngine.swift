@@ -661,46 +661,136 @@ public actor SyncEngine {
     }
 
     /// Re-runs categorization over transactions with no user category, using
-    /// rules plus merchant memory learned from the person's own corrections.
+    /// rules, merchant memory learned from the person's own corrections, and
+    /// deterministic hints for money movement and fees.
     ///
-    /// Never overwrites a user choice, and never downgrades an Apple
-    /// Intelligence suggestion.
+    /// Never overwrites a user choice. A rule or an exact remembered category
+    /// may replace an earlier on-device guess; a fuzzy match may not.
     @discardableResult
     public func recategorize(now: Date = .now) throws -> RecategorizeOutcome {
         let rules = try loadRuleSnapshots()
         let memory = try buildMerchantMemory()
         let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        let fees = try category(named: "Fees")
         var outcome = RecategorizeOutcome()
+        var didChange = false
 
         for transaction in transactions {
             guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
-            guard transaction.autoCategorySource != SuggestionSource.appleIntelligence.rawValue,
-                  transaction.autoCategorySource != "model" else { continue }
 
-            let merchant = transaction.normalizedMerchant.isEmpty
-                ? transaction.payeeDescription
-                : transaction.normalizedMerchant
-            guard let suggestion = CategorySuggester.suggest(
+            let merchant = Self.merchantName(transaction)
+            let suggestion = CategorySuggester.suggest(
                 description: transaction.payeeDescription,
                 merchant: merchant,
                 amountMinorUnits: transaction.amountMinorUnits,
                 rules: rules,
                 memory: memory
-            ) else { continue }
-            guard let category = try? category(withUUID: suggestion.categoryID) else { continue }
+            )
 
-            transaction.autoCategory = category
-            transaction.autoCategorySource = suggestion.source.rawValue
-            transaction.autoConfidence = suggestion.confidence
-            transaction.modifiedAt = now
-            outcome.categorized += 1
-            outcome.bySource[suggestion.source.rawValue, default: 0] += 1
+            let isModelSourced = transaction.autoCategorySource == SuggestionSource.appleIntelligence.rawValue
+                || transaction.autoCategorySource == "model"
+            if isModelSourced, suggestion?.source == .similarMerchant {
+                // Keep the model's guess rather than downgrade it to a fuzzy match.
+                continue
+            }
+
+            if let suggestion, let category = try? category(withUUID: suggestion.categoryID) {
+                transaction.autoCategory = category
+                transaction.autoCategorySource = suggestion.source.rawValue
+                transaction.autoConfidence = suggestion.confidence
+                if !transaction.isTransferUserSet {
+                    transaction.isTransfer = category.name == "Transfers"
+                }
+                transaction.modifiedAt = now
+                outcome.categorized += 1
+                outcome.bySource[suggestion.source.rawValue, default: 0] += 1
+                didChange = true
+                continue
+            }
+
+            // No rule or history: apply deterministic hints.
+            if TransactionHints.isExplicitFee(description: transaction.payeeDescription), let fees {
+                transaction.autoCategory = fees
+                transaction.autoCategorySource = SuggestionSource.heuristic.rawValue
+                transaction.autoConfidence = 0.9
+                if !transaction.isTransferUserSet { transaction.isTransfer = false }
+                transaction.modifiedAt = now
+                outcome.categorized += 1
+                outcome.bySource[SuggestionSource.heuristic.rawValue, default: 0] += 1
+                didChange = true
+                continue
+            }
+
+            if !transaction.isTransferUserSet,
+               TransactionHints.isInternalTransfer(
+                   description: transaction.payeeDescription,
+                   merchant: transaction.normalizedMerchant
+               ) {
+                if !transaction.isTransfer || transaction.autoCategory != nil {
+                    transaction.isTransfer = true
+                    transaction.autoCategory = nil
+                    transaction.autoCategorySource = nil
+                    transaction.autoConfidence = 0
+                    transaction.modifiedAt = now
+                    didChange = true
+                }
+                continue
+            }
         }
 
-        if outcome.categorized > 0 {
+        if didChange {
             try modelContext.save()
         }
         return outcome
+    }
+
+    /// Immediately applies a person's category choice to their other, still
+    /// automatic rows for the same merchant, so a correction sticks instead of
+    /// waiting for the next sync.
+    @discardableResult
+    public func propagateUserCategory(
+        transactionID: PersistentIdentifier,
+        now: Date = .now
+    ) throws -> Int {
+        guard let transaction = self[transactionID, as: LedgerTransaction.self],
+              let category = transaction.userCategory else { return 0 }
+        let key = MerchantMemory.key(for: Self.merchantName(transaction))
+        guard !key.isEmpty else { return 0 }
+
+        let all = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        var changed = 0
+        for other in all where other.persistentModelID != transactionID {
+            guard other.userCategory == nil, !other.isIgnored else { continue }
+            guard MerchantMemory.key(for: Self.merchantName(other)) == key else { continue }
+            if other.autoCategory?.uuid == category.uuid,
+               other.autoCategorySource == SuggestionSource.memory.rawValue {
+                continue
+            }
+            other.autoCategory = category
+            other.autoCategorySource = SuggestionSource.memory.rawValue
+            other.autoConfidence = 1
+            if !other.isTransferUserSet {
+                other.isTransfer = category.name == "Transfers"
+            }
+            other.modifiedAt = now
+            changed += 1
+        }
+        if changed > 0 {
+            try modelContext.save()
+        }
+        return changed
+    }
+
+    static func merchantName(_ transaction: LedgerTransaction) -> String {
+        transaction.normalizedMerchant.isEmpty
+            ? transaction.payeeDescription
+            : transaction.normalizedMerchant
+    }
+
+    private func category(named name: String) throws -> Category? {
+        var descriptor = FetchDescriptor<Category>(predicate: #Predicate { $0.name == name })
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
     }
 
     public struct CategorizationCounts: Sendable, Equatable {
@@ -748,7 +838,12 @@ public actor SyncEngine {
         var outcome = RecategorizeOutcome()
 
         let categories = try modelContext.fetch(FetchDescriptor<Category>())
-            .filter { !$0.isArchived && $0.name != "Income" && $0.name != "Transfers" }
+            .filter {
+                !$0.isArchived
+                    && $0.name != "Income"
+                    && $0.name != "Transfers"
+                    && $0.name != "Fees"
+            }
         guard !categories.isEmpty else { return outcome }
         let names = categories.map(\.name)
 
@@ -764,9 +859,25 @@ public actor SyncEngine {
         }
 
         for transaction in candidates.prefix(limit) {
-            let merchant = transaction.normalizedMerchant.isEmpty
-                ? transaction.payeeDescription
-                : transaction.normalizedMerchant
+            let merchant = Self.merchantName(transaction)
+
+            // Never ask the model about money movement. Mark it a transfer and
+            // move on; this is the guard that stops overdraft transfers and
+            // peer-to-peer payments from being guessed into a spending category.
+            if TransactionHints.isInternalTransfer(
+                description: transaction.payeeDescription,
+                merchant: transaction.normalizedMerchant
+            ), !transaction.isTransferUserSet {
+                transaction.isTransfer = true
+                transaction.autoCategory = nil
+                transaction.autoCategorySource = nil
+                transaction.autoConfidence = 0
+                transaction.autoCategorizeAttemptedAt = now
+                transaction.modifiedAt = now
+                outcome.attempted += 1
+                continue
+            }
+
             transaction.autoCategorizeAttemptedAt = now
             outcome.attempted += 1
 
@@ -790,10 +901,10 @@ public actor SyncEngine {
     }
 
     private static func needsCategory(_ transaction: LedgerTransaction) -> Bool {
-        transaction.userCategory == nil
+        !transaction.countsAsTransfer
+            && transaction.userCategory == nil
             && transaction.autoCategory == nil
             && !transaction.isIgnored
-            && !transaction.isTransfer
             && !transaction.isPending
     }
 
@@ -802,9 +913,7 @@ public actor SyncEngine {
         let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
         let samples = transactions.compactMap { transaction -> MemorySample? in
             guard let category = transaction.userCategory else { return nil }
-            let merchant = transaction.normalizedMerchant.isEmpty
-                ? transaction.payeeDescription
-                : transaction.normalizedMerchant
+            let merchant = Self.merchantName(transaction)
             guard !merchant.isEmpty else { return nil }
             return MemorySample(merchant: merchant, categoryID: category.uuid)
         }

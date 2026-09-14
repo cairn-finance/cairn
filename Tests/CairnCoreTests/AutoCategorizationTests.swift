@@ -81,4 +81,124 @@ struct AutoCategorizationTests {
         let engine = SyncEngine(modelContainer: container)
         #expect(try await engine.uncategorizedCount() == 1)
     }
+
+    @Test("Overdraft transfers and Zelle are transfers, never fees")
+    func moneyMovementIsTransfer() async throws {
+        let (container, context) = try makeContext()
+        context.insert(Category(name: "Fees", symbolName: "percent", colorHex: "#A2845E", sortOrder: 0))
+        context.insert(Category(
+            name: "Transfers",
+            symbolName: "arrow.left.arrow.right",
+            colorHex: "#32ADE6",
+            sortOrder: 1,
+            isSystem: true
+        ))
+        let account = Account(bankAccountID: "A1", name: "Checking", currency: .usd)
+        context.insert(account)
+
+        func make(_ id: String, _ description: String) -> LedgerTransaction {
+            let transaction = LedgerTransaction(
+                bankTransactionID: id,
+                payeeDescription: description,
+                amountMinorUnits: -2_500
+            )
+            transaction.account = account
+            transaction.accountIDIndex = "A1"
+            transaction.normalizedMerchant = MerchantNormalizer.normalize(description)
+            context.insert(transaction)
+            return transaction
+        }
+
+        _ = make("T1", "Overdraft to checking")
+        _ = make("T2", "Zelle payment to Jordan")
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        func refetch(_ id: String) throws -> LedgerTransaction {
+            try #require(
+                try context.fetch(
+                    FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == id })
+                ).first
+            )
+        }
+
+        #expect(try refetch("T1").isTransfer)
+        #expect(try refetch("T2").isTransfer)
+        #expect(try refetch("T1").autoCategory == nil)
+        #expect(try refetch("T2").autoCategory == nil)
+        #expect(try await engine.uncategorizedCount() == 0)
+    }
+
+    @Test("A real charge is recognized as a fee")
+    func explicitFeeIsCategorized() async throws {
+        let (container, context) = try makeContext()
+        context.insert(Category(name: "Fees", symbolName: "percent", colorHex: "#A2845E", sortOrder: 0))
+        let account = Account(bankAccountID: "A1", name: "Checking", currency: .usd)
+        context.insert(account)
+
+        let fee = LedgerTransaction(
+            bankTransactionID: "T1",
+            payeeDescription: "Overdraft fee",
+            amountMinorUnits: -3_500
+        )
+        fee.account = account
+        fee.accountIDIndex = "A1"
+        fee.normalizedMerchant = MerchantNormalizer.normalize("Overdraft fee")
+        context.insert(fee)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "T1" })
+            ).first
+        )
+        #expect(refreshed.autoCategory?.name == "Fees")
+        #expect(refreshed.autoCategorySource == "heuristic")
+        #expect(!refreshed.isTransfer)
+    }
+
+    @Test("A correction propagates to the same merchant's other rows")
+    func correctionPropagates() async throws {
+        let (container, context) = try makeContext()
+        let rent = Category(name: "Housing", symbolName: "house.fill", colorHex: "#8E8E93", sortOrder: 0)
+        context.insert(rent)
+        let account = Account(bankAccountID: "A1", name: "Checking", currency: .usd)
+        context.insert(account)
+
+        func make(_ id: String) -> LedgerTransaction {
+            let transaction = LedgerTransaction(
+                bankTransactionID: id,
+                payeeDescription: "Zelle payment to Jordan",
+                amountMinorUnits: -120_000
+            )
+            transaction.account = account
+            transaction.accountIDIndex = "A1"
+            transaction.normalizedMerchant = MerchantNormalizer.normalize("Zelle payment to Jordan")
+            context.insert(transaction)
+            return transaction
+        }
+
+        let corrected = make("T1")
+        let other = make("T2")
+        corrected.userCategory = rent
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        let changed = try await engine.propagateUserCategory(transactionID: corrected.persistentModelID)
+        #expect(changed == 1)
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "T2" })
+            ).first
+        )
+        #expect(refreshed.autoCategory?.name == "Housing")
+        #expect(refreshed.autoCategorySource == "memory")
+        #expect(!refreshed.isTransfer)
+    }
 }

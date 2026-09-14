@@ -365,7 +365,9 @@ public enum InsightsCalculator {
         let monthStart = startOfMonth(month, calendar: calendar)
         var income: Int64 = 0
         var spending: Int64 = 0
-        for transaction in transactions where isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
+        for transaction in transactions
+            where transaction.includedInInsights
+            && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
             if transaction.amountMinorUnits >= 0 {
                 income += transaction.amountMinorUnits
             } else {
@@ -401,7 +403,8 @@ public enum InsightsCalculator {
         var currentColor: [String: String] = [:]
         var previousSpend: [String: Int64] = [:]
 
-        for transaction in transactions where transaction.amountMinorUnits < 0 {
+        for transaction in transactions
+            where transaction.includedInInsights && transaction.amountMinorUnits < 0 {
             let name: String
             if let categoryName = transaction.categoryName, !categoryName.isEmpty {
                 name = categoryName
@@ -444,7 +447,8 @@ public enum InsightsCalculator {
     ) -> [MerchantTotal] {
         var totals: [String: Int64] = [:]
         for transaction in transactions
-            where transaction.amountMinorUnits < 0
+            where transaction.includedInInsights
+            && transaction.amountMinorUnits < 0
             && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
             let name = transaction.merchant.isEmpty ? "Unknown" : transaction.merchant
             totals[name, default: 0] += abs(transaction.amountMinorUnits)

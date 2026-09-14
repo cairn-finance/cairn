@@ -63,6 +63,12 @@ public struct MerchantMemory: Sendable {
 
     public var isEmpty: Bool { samples.isEmpty }
 
+    /// The stable grouping key used to look up a merchant in memory. Exposed so
+    /// callers can propagate a correction to the same merchant's other rows.
+    public static func key(for merchant: String) -> String {
+        memoryKey(for: merchant)
+    }
+
     /// The remembered category for a merchant, if any.
     public func category(forMerchant merchant: String) -> (categoryID: UUID, confidence: Double)? {
         let key = memoryKey(for: merchant)
@@ -116,6 +122,7 @@ public enum SuggestionSource: String, Sendable, Codable, CaseIterable {
     case rule
     case memory
     case similarMerchant
+    case heuristic
     case appleIntelligence
 
     public var displayName: String {
@@ -123,6 +130,7 @@ public enum SuggestionSource: String, Sendable, Codable, CaseIterable {
         case .rule: "Rule"
         case .memory: "Your history"
         case .similarMerchant: "Similar merchant"
+        case .heuristic: "Automatic detection"
         case .appleIntelligence: "Apple Intelligence"
         }
     }

@@ -418,6 +418,22 @@ final class AppModel {
         categorizationCounts = (try? await engine.categorizationCounts()) ?? SyncEngine.CategorizationCounts()
     }
 
+    /// Called right after the person changes a transaction's category, so the
+    /// same merchant's other automatic rows pick the correction up immediately.
+    func propagateUserCategory(of transactionID: PersistentIdentifier) {
+        Task {
+            do {
+                _ = try await engine.propagateUserCategory(transactionID: transactionID)
+            } catch {
+                await cairnLog(
+                    .warning,
+                    "Couldn't apply category to similar merchants: \(error.localizedDescription)"
+                )
+            }
+            await refreshCategorizationCounts()
+        }
+    }
+
     private func runAppleIntelligenceBatch(limit: Int = 12) async -> SyncEngine.RecategorizeOutcome? {
         do {
             return try await engine.appleIntelligenceCategorizeBatch(limit: limit)

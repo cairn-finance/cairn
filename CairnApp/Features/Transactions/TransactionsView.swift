@@ -142,7 +142,7 @@ struct TransactionsView: View {
     private func monthSummary(_ transactions: [LedgerTransaction]) -> (spent: Int64, received: Int64) {
         var spent: Int64 = 0
         var received: Int64 = 0
-        for transaction in transactions where !transaction.isTransfer && !transaction.isIgnored {
+        for transaction in transactions where !transaction.countsAsTransfer && !transaction.isIgnored {
             if transaction.amountMinorUnits < 0 {
                 spent += abs(transaction.amountMinorUnits)
             } else {

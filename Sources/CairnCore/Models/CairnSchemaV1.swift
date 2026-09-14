@@ -182,6 +182,9 @@ public enum CairnSchemaV1: VersionedSchema {
         @Attribute(.allowsCloudEncryption) public var note: String?
         public var userCategory: Category?
         public var isTransfer: Bool = false
+        /// True once the person has toggled Transfer themselves, so automatic
+        /// detection never flips their choice back.
+        public var isTransferUserSet: Bool = false
         public var isIgnored: Bool = false
         public var reviewedAt: Date?
 
@@ -225,6 +228,15 @@ public enum CairnSchemaV1: VersionedSchema {
 
         public var effectiveCategory: Category? {
             userCategory ?? autoCategory
+        }
+
+        /// True when this row should be treated as money movement for reporting:
+        /// either the Transfer flag is set, or the effective category is the
+        /// system "Transfers" category.
+        public var countsAsTransfer: Bool {
+            isTransfer
+                || userCategory?.name == "Transfers"
+                || autoCategory?.name == "Transfers"
         }
 
         public var isCategorizedByUser: Bool {

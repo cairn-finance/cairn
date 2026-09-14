@@ -158,6 +158,7 @@ struct AccountDetailView: View {
 
 struct TransactionDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppModel.self) private var model
     @Query(sort: \CairnSchemaV1.Category.sortOrder) private var categories: [CairnSchemaV1.Category]
 
     let transaction: LedgerTransaction
@@ -210,7 +211,11 @@ struct TransactionDetailView: View {
             Section("Options") {
                 Toggle("Transfer", isOn: Binding(
                     get: { transaction.isTransfer },
-                    set: { transaction.isTransfer = $0; touch() }
+                    set: {
+                        transaction.isTransfer = $0
+                        transaction.isTransferUserSet = true
+                        touch()
+                    }
                 ))
                 Toggle("Ignore", isOn: Binding(
                     get: { transaction.isIgnored },
@@ -255,11 +260,17 @@ struct TransactionDetailView: View {
             get: { transaction.effectiveCategory?.uuid },
             set: { newValue in
                 if let newValue {
-                    transaction.userCategory = categories.first { $0.uuid == newValue }
+                    let category = categories.first { $0.uuid == newValue }
+                    transaction.userCategory = category
+                    // Choosing a real category means this should be counted as
+                    // spending, not money movement. "Transfers" is the exception.
+                    transaction.isTransfer = category?.name == "Transfers"
+                    transaction.isTransferUserSet = true
                 } else {
                     transaction.userCategory = nil
                 }
                 touch()
+                model.propagateUserCategory(of: transaction.persistentModelID)
             }
         )
     }
@@ -269,6 +280,7 @@ struct TransactionDetailView: View {
         case "rule": "by a rule"
         case "memory": "from your history"
         case "similarMerchant": "from a similar merchant"
+        case "heuristic": "by automatic detection"
         case "appleIntelligence", "model": "by Apple Intelligence"
         default: "automatically"
         }

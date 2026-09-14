@@ -83,7 +83,7 @@ struct InsightsView: View {
                         ? transaction.payeeDescription
                         : transaction.normalizedMerchant,
                     accountName: account.displayName,
-                    isTransfer: transaction.isTransfer,
+                    isTransfer: transaction.countsAsTransfer,
                     isIgnored: transaction.isIgnored,
                     isPending: transaction.isPending
                 )

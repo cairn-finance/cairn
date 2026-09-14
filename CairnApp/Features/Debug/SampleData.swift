@@ -133,6 +133,30 @@ enum SampleData {
         unique.normalizedMerchant = MerchantNormalizer.normalize("Chevron Gas #4471")
         context.insert(unique)
 
+        // Money movement and a genuine charge, to exercise the deterministic
+        // hints: the two money-movement rows become transfers (no category) and
+        // the explicit fee is categorized as Fees — none of them hit the model.
+        let hinted: [(String, Int64)] = [
+            ("Zelle payment to Alex Morgan", -45_000),
+            ("Overdraft to checking", 50_000),
+            ("Overdraft fee", -3_500),
+        ]
+        for (index, item) in hinted.enumerated() {
+            let transaction = LedgerTransaction(
+                bankTransactionID: "TXN-HINT-\(index)",
+                payeeDescription: item.0,
+                amountMinorUnits: item.1
+            )
+            transaction.account = checking
+            transaction.accountIDIndex = checking.bankAccountID
+            transaction.currencyExponent = 2
+            transaction.postedDate = calendar.date(byAdding: .day, value: -3, to: now)
+            transaction.createdAt = transaction.effectiveDate
+            transaction.modifiedAt = transaction.createdAt
+            transaction.normalizedMerchant = MerchantNormalizer.normalize(item.0)
+            context.insert(transaction)
+        }
+
         try? context.save()
     }
 }

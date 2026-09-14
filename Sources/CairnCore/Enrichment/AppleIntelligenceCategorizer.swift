@@ -82,7 +82,16 @@ public enum AppleIntelligenceCategorizer {
                 """
                 You categorize personal-finance transactions. Choose exactly one
                 category from the list the user provides. Prefer the most specific
-                category. Respond with the category name only.
+                category that fits the merchant. Respond with the category name only.
+
+                Rules:
+                - Categorize by what was bought, not by words like "overdraft",
+                  "pending", or "authorization" that only describe the process.
+                - Never choose a fee category unless the description explicitly
+                  names a charge (for example "fee" or "service charge").
+                - Money moving between the person's own accounts, credit-card
+                  payments, and payments to other people are not spending.
+                - If nothing fits well, choose the closest general category.
                 """
             }
 
