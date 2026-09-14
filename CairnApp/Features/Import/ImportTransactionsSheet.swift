@@ -42,17 +42,22 @@ struct ImportTransactionsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("File") {
-                    LabeledContent("Columns", value: "\(document.headers.count)")
-                    Picker("Format", selection: $preset) {
-                        ForEach(CSVImportPreset.allCases, id: \.self) { preset in
-                            Text(preset.displayName).tag(preset)
+                Section {
+                    IconRow("Format", systemImage: "doc.text", tint: CairnTheme.accent) {
+                        Picker("Format", selection: $preset) {
+                            ForEach(CSVImportPreset.allCases, id: \.self) { preset in
+                                Text(preset.displayName).tag(preset)
+                            }
                         }
+                        .labelsHidden()
                     }
-                    Toggle("Expenses are positive numbers", isOn: $flipsSign)
-                    Text(preset.summary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Toggle(isOn: $flipsSign) {
+                        IconRow("Expenses are positive numbers", systemImage: "plusminus", tint: .orange)
+                    }
+                } header: {
+                    Text("File")
+                } footer: {
+                    Text("\(document.headers.count) columns detected. \(preset.summary)")
                 }
 
                 if mapping == nil {
@@ -62,13 +67,13 @@ struct ImportTransactionsSheet: View {
                             .font(.callout)
                     }
                 } else {
-                    Section("Preview") {
+                    Section {
                         if previewRows.isEmpty {
                             Text("No transactions could be read.")
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(Array(previewRows.enumerated()), id: \.offset) { _, row in
-                                HStack {
+                                HStack(spacing: 12) {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(row.description.isEmpty ? row.merchant : row.description)
                                             .lineLimit(1)
@@ -80,21 +85,20 @@ struct ImportTransactionsSheet: View {
                                     AmountText(
                                         money: Money(minorUnits: row.amountMinorUnits, currency: account.currency),
                                         showSign: true,
-                                        font: .callout.weight(.medium)
+                                        font: .callout.weight(.semibold),
+                                        colorOverride: row.amountMinorUnits > 0 ? CairnTheme.positive : nil
                                     )
                                 }
                             }
                         }
-                    }
-
-                    Section {
-                        LabeledContent("Transactions", value: "\(parsed?.transactions.count ?? 0)")
-                        if let skipped = parsed?.skippedRows, skipped > 0 {
-                            LabeledContent("Skipped rows", value: "\(skipped)")
-                        }
+                    } header: {
+                        Text("Preview")
+                    } footer: {
+                        summaryFooter
                     }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("Import to \(account.displayName)")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -107,15 +111,30 @@ struct ImportTransactionsSheet: View {
                     Button {
                         performImport()
                     } label: {
-                        if isImporting { ProgressView() } else { Text("Import") }
+                        if isImporting {
+                            ProgressView()
+                        } else {
+                            Text("Import \(parsed?.transactions.count ?? 0)")
+                        }
                     }
                     .disabled(isImporting || (parsed?.transactions.isEmpty ?? true))
                 }
             }
         }
         #if os(macOS)
-        .frame(minWidth: 480, minHeight: 520)
+        .frame(minWidth: 500, minHeight: 540)
         #endif
+    }
+
+    @ViewBuilder
+    private var summaryFooter: some View {
+        let count = parsed?.transactions.count ?? 0
+        let skipped = parsed?.skippedRows ?? 0
+        Text(
+            "\(count) transaction\(count == 1 ? "" : "s") ready to import"
+            + (skipped > 0 ? ", \(skipped) row\(skipped == 1 ? "" : "s") skipped." : ".")
+            + " Duplicates already in the account are skipped automatically."
+        )
     }
 
     private func performImport() {
