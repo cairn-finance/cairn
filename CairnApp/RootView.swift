@@ -18,18 +18,27 @@ struct RootView: View {
         }
         .overlay(alignment: .top) {
             if let banner = model.banner {
-                BannerView(text: banner) { model.banner = nil }
-                    .padding(.top, 8)
+                BannerView(text: banner)
+                    .padding(.top, 6)
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    // A toast must never intercept taps on the toolbar beneath.
+                    .allowsHitTesting(false)
             }
         }
         .animation(.snappy, value: model.banner)
+        // Banners are transient: clear them after a few seconds so they never
+        // sit over the toolbar.
+        .task(id: model.banner) {
+            guard model.banner != nil else { return }
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            model.banner = nil
+        }
     }
 }
 
 private struct BannerView: View {
     let text: String
-    let dismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -38,14 +47,6 @@ private struct BannerView: View {
             Text(text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -63,6 +64,9 @@ struct MainTabView: View {
             Tab("Accounts", systemImage: "building.columns.fill") {
                 NavigationStack { AccountsView() }
             }
+            Tab("Insights", systemImage: "chart.bar.xaxis") {
+                NavigationStack { InsightsView() }
+            }
             Tab("Transactions", systemImage: "list.bullet.rectangle") {
                 NavigationStack { TransactionsView() }
             }
@@ -79,13 +83,14 @@ struct MainTabView: View {
 
 #if os(macOS)
 enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
-    case accounts, transactions, netWorth, settings
+    case accounts, insights, transactions, netWorth, settings
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .accounts: "Accounts"
+        case .insights: "Insights"
         case .transactions: "Transactions"
         case .netWorth: "Net Worth"
         case .settings: "Settings"
@@ -95,6 +100,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .accounts: "building.columns.fill"
+        case .insights: "chart.bar.xaxis"
         case .transactions: "list.bullet.rectangle"
         case .netWorth: "chart.line.uptrend.xyaxis"
         case .settings: "gearshape.fill"
@@ -115,6 +121,7 @@ struct MainShellView: View {
         } detail: {
             switch selection {
             case .accounts: NavigationStack { AccountsView() }
+            case .insights: NavigationStack { InsightsView() }
             case .transactions: NavigationStack { TransactionsView() }
             case .netWorth: NavigationStack { NetWorthView() }
             case .settings: NavigationStack { SettingsView() }
