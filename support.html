@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support — Cairn</title>
+<meta name="description" content="Support and frequently asked questions for the Cairn personal finance app.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <nav class="site"><a href="index.html">Home</a><a href="privacy.html">Privacy Policy</a><a href="support.html">Support</a></nav>
+</header>
+<main>
+  <h1>Support</h1>
+  <p class="lede">Questions, bug reports, and feature requests are handled in the open.</p>
+
+  <div class="card">
+    <p><strong>Contact:</strong> <a href="https://github.com/sehejjain/cairn/issues">Open an issue on GitHub</a>.</p>
+  </div>
+
+  <h2>Frequently asked questions</h2>
+
+  <h3>How do I connect a bank?</h3>
+  <p>On the Accounts screen, tap <em>Add → Connect a Bank</em>. Create a setup token at your SimpleFIN server (or the SimpleFIN Bridge), then paste it into Cairn. The token is single-use; Cairn exchanges it for an access URL and stores that in your Keychain.</p>
+
+  <h3>Where is my data stored?</h3>
+  <p>On your device, in a private database. If iCloud Sync is on, it is stored in your own private iCloud database with end-to-end encrypted financial fields. Cairn has no server and cannot see your data. See the <a href="privacy.html">Privacy Policy</a> for details.</p>
+
+  <h3>Does Cairn work with Apple Card or Apple Savings?</h3>
+  <p>Yes. Apple Card and Apple Savings are not reliably available through aggregators, so Cairn imports their CSV exports into a manual account. Create a manual account (Add → Add Manual Account), open it, and choose <em>Import CSV</em>.</p>
+
+  <h3>How do I delete everything?</h3>
+  <p>Open Settings → Privacy &amp; Data → Delete All Data. This removes local data and, if sync is enabled, your data in iCloud. You can also revoke Cairn's access at your SimpleFIN Bridge.</p>
+
+  <h3>Is Cairn open source?</h3>
+  <p>Yes. The source is available at <a href="https://github.com/sehejjain/cairn">github.com/sehejjain/cairn</a> under the Apache-2.0 license.</p>
+
+  <hr>
+  <p class="muted">Cairn is not affiliated with SimpleFIN, Apple, or any financial institution.</p>
+</main>
+<footer class="site">
+  <p><a href="https://github.com/sehejjain/cairn">Source code</a> · Apache-2.0</p>
+</footer>
+</body>
+</html>
