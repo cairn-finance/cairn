@@ -103,7 +103,7 @@ struct AccountDetailView: View {
         }
     }
 
-    private func handleImportSelection(_ result: Result<[URL], Error>) {
+    private func handleImportSelection(_ result: Result<[URL], any Error>) {
         switch result {
         case let .success(urls):
             guard let url = urls.first else { return }
@@ -195,6 +195,15 @@ struct TransactionDetailView: View {
                     Text("Manually set. Automatic rules and on-device suggestions will not override it.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Button("Use automatic category") {
+                        transaction.userCategory = nil
+                        touch()
+                    }
+                    .font(.caption)
+                } else if transaction.autoCategory != nil {
+                    Text("Set automatically \(autoSourceLabel). Choose a category to override it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -240,7 +249,10 @@ struct TransactionDetailView: View {
 
     private var categoryBinding: Binding<UUID?> {
         Binding(
-            get: { transaction.userCategory?.uuid },
+            // Show the effective category, so an automatically assigned one is
+            // visible and can be overridden. Choosing one writes the user's
+            // choice; clearing it removes the manual override.
+            get: { transaction.effectiveCategory?.uuid },
             set: { newValue in
                 if let newValue {
                     transaction.userCategory = categories.first { $0.uuid == newValue }
@@ -250,6 +262,16 @@ struct TransactionDetailView: View {
                 touch()
             }
         )
+    }
+
+    private var autoSourceLabel: String {
+        switch transaction.autoCategorySource {
+        case "rule": "by a rule"
+        case "memory": "from your history"
+        case "similarMerchant": "from a similar merchant"
+        case "appleIntelligence", "model": "by Apple Intelligence"
+        default: "automatically"
+        }
     }
 
     private var noteBinding: Binding<String> {
