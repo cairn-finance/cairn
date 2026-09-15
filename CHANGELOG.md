@@ -1,0 +1,52 @@
+## [0.1.0] - 2026-09-15
+
+- Address release workflow review (e2959c5)
+- Add tag-driven release automation (490f254)
+- Revert "Log sync diagnostics to the Xcode console" (91f2e7e)
+- Log sync diagnostics to the Xcode console (aa89f53)
+- Detect investment accounts and show their positions (9e4b4c7)
+- Show Investments as a pushed screen, not a tab (569fe15)
+- Add an Investments screen for last-synced values (263152a)
+- Split SimpleFIN connections into separate institutions (de2a9f1)
+- Tidy Settings and expand sample data (76f7e2b)
+- Refresh onboarding and the import sheets (7f35aba)
+- Refresh account detail and Net Worth (53cb6cd)
+- Refresh the shared rows and Activity screen (98e9562)
+- Refine the design system and rebuild the app shell (1668876)
+- Introduce a calm design system and teal brand (96d60e5)
+- Project month end from the current run rate (0342928)
+- Teach the classifier to spot money movement and real fees (688b2da)
+- Ship the Peak app icon (a1cf5fd)
+- Replace icon concepts with abstract marks (6eae7cd)
+- Add generated app icon concepts (d99c8a8)
+- Improve Insights UX with pace view and drill-down (6b5cab5)
+- Show the effective category in the transaction detail picker, including automatic ones. (c594f18)
+- Add a sync diagnostics log, self-healing range-window retry, and automatic on-device categorization, with Apple Intelligence used only for what rules and history can't place. (1df3609)
+- Clamp SimpleFIN requests to the 90-day limit, surface errlist on HTTP errors, and stop institutions sticking on Connecting. (af155cb)
+- Add Insights to the app shell and make status banners transient and non-blocking. (b779450)
+- Group transactions by month with spending headers, category and account filters, and note/tag search. (26849fe)
+- Add an Insights screen with month-over-month spending, category breakdown, and 6-month trend charts. (ae08517)
+- Wire re-categorization into sync: rules, merchant memory, and optional Apple Intelligence. (9de1a10)
+- Test insights math, merchant memory, and the layered category suggester. (1f35b27)
+- Add on-device merchant-memory categorization with optional Apple Intelligence classification. (1f70e4e)
+- Add an insights calculator for month-over-month income, spending, and category breakdowns. (9a94f2e)
+- Test merchant normalization, CSV parsing, Apple Card import, debit/credit columns, and duplicate skipping. (0ca40c7)
+- Add manual accounts and a CSV import flow with preview, format presets, and a sign toggle. (480c932)
+- Import CSV rows with duplicate detection, recompute manual balances, and store normalized merchants during sync. (6ee2b57)
+- Add merchant normalization, tolerant CSV parsing with Apple Card and Savings presets, and manual-account schema fields. (dbb1d68)
+- Add Swift Testing coverage for money, matching, balance history, rules, export, persistence, and CloudKit schema requirements. (a56ec95)
+- Add SwiftUI app: onboarding, accounts, transactions, net worth, settings, app model, and design system. (15e0ac1)
+- Add sync engine with per-bank budget and pending-to-posted matching, balance history, rules engine, and CSV/JSON export. (c344398)
+- Add SimpleFIN claim and account-fetch client, typed models, error mapping, and untrusted-text sanitizer. (18c4dc1)
+- Store SimpleFIN credentials in the Keychain with optional iCloud sync, non-destructive writes, and a test double. (43f566f)
+- Add exact minor-unit money, CloudKit-compatible SwiftData schema with encrypted fields, container factory, and cloud availability gate. (8a67d58)
+- Document architecture, threat model, privacy policy, troubleshooting, and contributing; refresh README for v0.1. (a6572d7)
+- Add XcodeGen project, Swift package, CloudKit entitlements, signing xcconfig defaults, SwiftLint config, CI, and NOTICE. (eb00e58)
+- Initial commit (6f653f0)
+
+# Changelog
+
+All notable changes to Cairn are documented here. This project follows
+[Semantic Versioning](https://semver.org) and
+[Keep a Changelog](https://keepachangelog.com).
+
