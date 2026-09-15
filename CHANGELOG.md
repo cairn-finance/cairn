@@ -1,3 +1,15 @@
+## [0.2.0] - 2026-09-15
+
+- Require device unlock to open Cairn (17fd5b7)
+- Hide the SimpleFIN credential holder from the bank list (0d1fc5c)
+- Name new connections from their Access URL, not "Connecting…" (a92bc6e)
+- Identity Apple Wallet accounts clearly on Mac (1efefac)
+- Stop hammering the on-device model when it is throttled (8f8eeb7)
+- Add Apple Wallet as a second data source via FinanceKit (492de1b)
+- Make a missing credential an actionable notice (c94f9cf)
+- Make sync status honest and every chart scrubbable (e97b3b4)
+- Improve fee, income, transfer, and category handling (0e87ae5)
+
 ## [0.1.0] - 2026-09-15
 
 - Address release workflow review (e2959c5)
