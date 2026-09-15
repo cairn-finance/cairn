@@ -134,6 +134,9 @@ final class AppModel {
         async let seeding: Void = seedDefaultCategoriesWhenReady()
         await refreshBudget()
         migrateCredentials(synchronizable: useCloudKit)
+        // A connection interrupted mid-connect, or delivered by iCloud before
+        // its credential arrived, can still wear the old "Connecting…" name.
+        try? await engine.repairPlaceholderNames()
         if onboardingComplete {
             await syncAll(force: false)
         }
@@ -209,7 +212,9 @@ final class AppModel {
 
             let institution = Institution(
                 bankConnectionID: "",
-                name: "Connecting…",
+                // Named from the Access URL until the first fetch reports the
+                // bank's own name, so nothing ever shows a "Connecting…" ghost.
+                name: SyncEngine.fallbackName(for: accessURL),
                 credentialID: credentialID
             )
             institution.sfinURL = sfinURL

@@ -215,9 +215,9 @@ public actor SyncEngine {
                 let message = Self.describe(error)
                 await cairnLog(.error, "Sync failed: \(message)")
                 institution.lastSyncError = message
-                // A brand-new connection is inserted as "Connecting…". If the
-                // very first fetch fails, replace that placeholder.
-                if institution.name.isEmpty || institution.name == "Connecting…" {
+                // The very first fetch failed, so the connection still wears
+                // its stand-in name; make sure it is at least readable.
+                if Self.isPlaceholderName(institution.name, for: accessURL) {
                     institution.name = Self.fallbackName(for: accessURL)
                 }
                 try? modelContext.save()
@@ -229,6 +229,9 @@ public actor SyncEngine {
         let message = Self.describe(lastError)
         await cairnLog(.error, "Sync exhausted all windows: \(message)")
         institution.lastSyncError = message
+        if Self.isPlaceholderName(institution.name, for: accessURL) {
+            institution.name = Self.fallbackName(for: accessURL)
+        }
         try? modelContext.save()
         throw lastError
     }
@@ -256,8 +259,8 @@ public actor SyncEngine {
 
         let owners = try institutions(forConnections: accountSet.connections, owner: owner)
 
-        // Never leave a brand-new connection labeled "Connecting…".
-        if owner.name.isEmpty || owner.name == "Connecting…",
+        // Never leave a brand-new connection wearing its stand-in name.
+        if Self.isPlaceholderName(owner.name, for: accessURL),
            let first = owners.values.first {
             owner.name = first.name.isEmpty ? Self.fallbackName(for: accessURL) : first.name
         }
@@ -383,11 +386,45 @@ public actor SyncEngine {
     }
 
     /// A readable name for an institution when SimpleFIN never returned one.
-    static func fallbackName(for accessURL: URL) -> String {
+    public static func fallbackName(for accessURL: URL) -> String {
         if let host = accessURL.host, !host.isEmpty {
             return host
         }
         return "Institution"
+    }
+
+    /// Whether a name is still a stand-in rather than the bank's own name: the
+    /// Access URL host we knew before the first fetch, the legacy
+    /// "Connecting…" label, or nothing at all. Such a name is safe to replace
+    /// once SimpleFIN reports the real connection.
+    static func isPlaceholderName(_ name: String, for accessURL: URL) -> Bool {
+        name.isEmpty || name == "Connecting…" || name == fallbackName(for: accessURL)
+    }
+
+    /// Renames any connection still carrying the legacy "Connecting…"
+    /// placeholder. A connection only gets its real name from a fetch, so one
+    /// whose credential never reached this device (or that was interrupted
+    /// mid-connect) would otherwise show "Connecting…" forever. Prefer a sibling
+    /// connection's name, then the stored Access URL host.
+    public func repairPlaceholderNames() async throws {
+        let descriptor = FetchDescriptor<Institution>(
+            predicate: #Predicate { $0.name == "Connecting…" }
+        )
+        let placeholders = try modelContext.fetch(descriptor)
+        guard !placeholders.isEmpty else { return }
+
+        for institution in placeholders {
+            let siblings = try siblingInstitutions(credentialID: institution.credentialID)
+            if let named = siblings.first(where: { !$0.bankConnectionID.isEmpty && !$0.name.isEmpty }) {
+                institution.name = named.name
+            } else if let url = URL(string: institution.sfinURL), let host = url.host, !host.isEmpty {
+                institution.name = host
+            } else {
+                institution.name = "New connection"
+            }
+        }
+        try modelContext.save()
+        await cairnLog(.info, "Renamed \(placeholders.count) placeholder connection(s).")
     }
 
     /// Windows to try when the server rejects a range, longest first.

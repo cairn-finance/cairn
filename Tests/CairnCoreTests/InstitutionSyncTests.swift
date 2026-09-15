@@ -100,4 +100,49 @@ struct InstitutionSyncTests {
         #expect(byName["Bank A"]?.accounts?.first?.name == "A Checking")
         #expect(byName["Bank B"]?.accounts?.first?.name == "B Checking")
     }
+
+    @Test("Placeholder names are the host, the legacy label, or empty")
+    func placeholderDetection() {
+        let url = URL(string: "https://bridge.simplefin.org/simplefin")!
+        #expect(SyncEngine.fallbackName(for: url) == "bridge.simplefin.org")
+        #expect(SyncEngine.isPlaceholderName("", for: url))
+        #expect(SyncEngine.isPlaceholderName("Connecting…", for: url))
+        #expect(SyncEngine.isPlaceholderName("bridge.simplefin.org", for: url))
+        #expect(!SyncEngine.isPlaceholderName("Bank A", for: url))
+    }
+
+    @Test("A legacy Connecting… placeholder is renamed from its Access URL")
+    func repairsLegacyPlaceholder() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let owner = Institution(bankConnectionID: "", name: "Connecting…", credentialID: UUID())
+        owner.sfinURL = "https://example.com"
+        context.insert(owner)
+        try context.save()
+
+        try await engine.repairPlaceholderNames()
+
+        let institutions = try context.fetch(FetchDescriptor<Institution>())
+        #expect(institutions.count == 1)
+        #expect(institutions.first?.name == "example.com")
+    }
+
+    @Test("A placeholder prefers a sibling connection's real name")
+    func repairPrefersSiblingName() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let credentialID = UUID()
+        let owner = Institution(bankConnectionID: "", name: "Connecting…", credentialID: credentialID)
+        owner.sfinURL = "https://example.com"
+        let child = Institution(bankConnectionID: "CON-A", name: "Bank A", credentialID: credentialID)
+        context.insert(owner)
+        context.insert(child)
+        try context.save()
+
+        try await engine.repairPlaceholderNames()
+
+        let institutions = try context.fetch(FetchDescriptor<Institution>())
+        let holder = institutions.first { $0.bankConnectionID.isEmpty }
+        #expect(holder?.name == "Bank A")
+    }
 }
