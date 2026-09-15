@@ -5,7 +5,7 @@ import CairnCore
 /// connect a bank or skip straight in.
 struct OnboardingView: View {
     @Environment(AppModel.self) private var model
-    @State private var showingConnect = false
+    @State private var connection: AddConnectionSheet.ConnectionKind?
 
     var body: some View {
         ZStack {
@@ -26,9 +26,9 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .sheet(isPresented: $showingConnect) {
-            ConnectBankSheet {
-                showingConnect = false
+        .sheet(item: $connection) { kind in
+            AddConnectionSheet(initialKind: kind) {
+                connection = nil
                 model.completeOnboarding()
             }
         }
@@ -114,11 +114,22 @@ struct OnboardingView: View {
     private var actions: some View {
         VStack(spacing: 12) {
             Button {
-                showingConnect = true
+                connection = .simpleFIN
             } label: {
                 Label("Connect a Bank", systemImage: "building.columns")
             }
             .buttonStyle(OnboardingPrimaryStyle())
+
+            #if os(iOS)
+            if WalletAvailability.isSupported {
+                Button {
+                    connection = .wallet
+                } label: {
+                    Label("Connect Apple Wallet", systemImage: "wallet.pass")
+                }
+                .buttonStyle(OnboardingSecondaryStyle())
+            }
+            #endif
 
             Button {
                 model.completeOnboarding()
@@ -127,7 +138,7 @@ struct OnboardingView: View {
             }
             .buttonStyle(OnboardingSecondaryStyle())
 
-            Text("You can add SimpleFIN or manual accounts any time from Home.")
+            Text("You can add SimpleFIN, Apple Wallet, or manual accounts any time from Home.")
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.5))
                 .multilineTextAlignment(.center)

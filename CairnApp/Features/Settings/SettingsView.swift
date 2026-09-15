@@ -6,6 +6,8 @@ import CairnCore
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Query(sort: \Institution.name) private var institutions: [Institution]
+    @Query(filter: #Predicate<Account> { $0.sourceRaw == "financekit" })
+    private var walletAccounts: [Account]
 
     @State private var storageMode: StoreMode = .local
     @State private var exportDocument: ExportFile?
@@ -13,6 +15,7 @@ struct SettingsView: View {
     @State private var showingExporter = false
     @State private var showingDeleteConfirm = false
     @State private var showingConnect = false
+    @State private var showingWalletDisconnect = false
     @State private var institutionToDisconnect: Institution?
 
     /// The most recent successful fetch across all banks.
@@ -50,7 +53,7 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .onAppear { storageMode = model.storeMode }
         .sheet(isPresented: $showingConnect) {
-            ConnectBankSheet { showingConnect = false }
+            AddConnectionSheet { showingConnect = false }
         }
         .fileExporter(
             isPresented: $showingExporter,
@@ -93,6 +96,19 @@ struct SettingsView: View {
             Text("The stored credential is removed from the Keychain and local data is deleted. "
                 + "Banks that share this SimpleFIN connection are disconnected too. "
                 + "Revoke access at SimpleFIN as well if you want to be certain.")
+        }
+        .confirmationDialog(
+            "Remove Apple Wallet data?",
+            isPresented: $showingWalletDisconnect,
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                Task { await model.disconnectWallet() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This deletes the Wallet accounts and transactions Cairn imported. "
+                + "It can’t revoke access; change that in Settings › Privacy & Security › Financial Data.")
         }
     }
 
@@ -175,10 +191,32 @@ struct SettingsView: View {
                     }
                 }
             }
+            if !walletAccounts.isEmpty {
+                HStack(spacing: 12) {
+                    SettingsIcon(systemImage: "wallet.pass.fill", tint: CairnTheme.accent)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Apple Wallet")
+                        Text("\(walletAccounts.count) \(walletAccounts.count == 1 ? "account" : "accounts")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .swipeActions {
+                    Button("Remove", systemImage: "xmark.circle", role: .destructive) {
+                        showingWalletDisconnect = true
+                    }
+                }
+                .contextMenu {
+                    Button("Remove", systemImage: "xmark.circle", role: .destructive) {
+                        showingWalletDisconnect = true
+                    }
+                }
+            }
             Button {
                 showingConnect = true
             } label: {
-                IconRow("Connect a Bank", systemImage: "plus", tint: CairnTheme.positive)
+                IconRow("Add a Connection", systemImage: "plus", tint: CairnTheme.positive)
             }
         } header: {
             Text("Institutions")

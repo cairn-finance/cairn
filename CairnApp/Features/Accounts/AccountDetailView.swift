@@ -134,7 +134,7 @@ struct AccountDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.65))
                     AmountText(
-                        money: account.balance,
+                        money: displayBalance,
                         font: .cairnHero,
                         colorOverride: .white,
                         deemphasizeFraction: true
@@ -142,9 +142,9 @@ struct AccountDetailView: View {
                 }
 
                 HStack(spacing: 20) {
-                    if account.hasAvailableBalance, account.availableBalance.minorUnits != account.balance.minorUnits {
+                    if account.hasAvailableBalance, account.availableBalance.minorUnits != account.balanceMinorUnits {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Available")
+                            Text(account.accountType.isLiability ? "Available credit" : "Available")
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.6))
                             AmountText(money: account.availableBalance, font: .subheadline.weight(.semibold), colorOverride: .white)
@@ -171,6 +171,14 @@ struct AccountDetailView: View {
                 }
             }
         }
+    }
+
+    /// The hero figure. A liability is shown as a positive amount because the
+    /// label already says "owed"; the stored balance stays negative so net-worth
+    /// math subtracts it.
+    private var displayBalance: Money {
+        guard account.accountType.isLiability else { return account.balance }
+        return Money(minorUnits: abs(account.balanceMinorUnits), currency: account.currency)
     }
 
     private var subtitle: String {

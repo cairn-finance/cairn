@@ -46,7 +46,7 @@ struct HomeView: View {
         .toolbar { toolbarContent }
         .refreshable { await model.syncAll(force: true) }
         .sheet(isPresented: $showingConnect) {
-            ConnectBankSheet { showingConnect = false }
+            AddConnectionSheet { showingConnect = false }
         }
         .sheet(isPresented: $showingManualAccount) {
             ManualAccountSheet()
@@ -137,6 +137,10 @@ struct HomeView: View {
                 }
             }
 
+            if !walletAccounts.isEmpty {
+                accountGroup(title: "Apple Wallet", trailing: nil, accounts: walletAccounts)
+            }
+
             if !manualAccounts.isEmpty {
                 accountGroup(title: "Manual accounts", trailing: nil, accounts: manualAccounts)
             }
@@ -177,7 +181,7 @@ struct HomeView: View {
                         .foregroundStyle(CairnTheme.inkGlow)
                     Text("Welcome to Cairn")
                         .font(.title2.weight(.semibold))
-                    Text("Connect a bank through SimpleFIN or add an account by hand. Everything stays on your devices.")
+                    Text("Connect a bank through SimpleFIN, read Apple Wallet, or add an account by hand. Everything stays on your devices.")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.78))
                         .fixedSize(horizontal: false, vertical: true)
@@ -186,7 +190,7 @@ struct HomeView: View {
             Button {
                 showingConnect = true
             } label: {
-                Label("Connect a Bank", systemImage: "building.columns")
+                Label("Add a Connection", systemImage: "plus")
             }
             .buttonStyle(.cairnProminent)
             Button {
@@ -209,7 +213,7 @@ struct HomeView: View {
                 Button {
                     showingConnect = true
                 } label: {
-                    Label("Connect a Bank", systemImage: "building.columns")
+                    Label("Add a Connection", systemImage: "plus")
                 }
                 Button {
                     showingManualAccount = true
@@ -226,7 +230,11 @@ struct HomeView: View {
     }
 
     private var manualAccounts: [Account] {
-        accounts.filter { $0.institution == nil }
+        accounts.filter { $0.institution == nil && $0.source == .manual }
+    }
+
+    private var walletAccounts: [Account] {
+        accounts.filter { $0.source == .financeKit }
     }
 }
 
@@ -351,32 +359,3 @@ struct NetWorthHero: View {
     }
 }
 
-/// The "Connect a bank" form in a sheet, used from Home and Settings.
-struct ConnectBankSheet: View {
-    var onConnected: () -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                ConnectBankView(onConnected: onConnected)
-                    .padding(CairnTheme.Spacing.l)
-                    .frame(maxWidth: CairnTheme.screenMaxWidth)
-                    .frame(maxWidth: .infinity)
-            }
-            .cairnCanvas()
-            .navigationTitle("Connect a Bank")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-        }
-        #if os(macOS)
-        .frame(minWidth: 480, minHeight: 520)
-        #endif
-    }
-}

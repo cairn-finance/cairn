@@ -102,6 +102,46 @@ enum SampleData {
         card.lastSyncedAt = now
         context.insert(card)
 
+        // Apple Wallet accounts, so the FinanceKit source can be exercised in
+        // sample mode without a real Wallet authorization.
+        let appleCard = Account(bankAccountID: "wallet-ACT-CARD", name: "Apple Card", currency: .usd)
+        appleCard.sourceRaw = AccountSource.financeKit.rawValue
+        appleCard.accountTypeRaw = AccountType.credit.rawValue
+        appleCard.balanceMinorUnits = -84_215
+        appleCard.availableBalanceMinorUnits = 466_500
+        appleCard.hasAvailableBalance = true
+        appleCard.balanceDate = now
+        appleCard.lastSyncedAt = now
+        context.insert(appleCard)
+
+        let appleSavings = Account(bankAccountID: "wallet-ACT-SAV", name: "Savings", currency: .usd)
+        appleSavings.sourceRaw = AccountSource.financeKit.rawValue
+        appleSavings.accountTypeRaw = AccountType.savings.rawValue
+        appleSavings.balanceMinorUnits = 250_000
+        appleSavings.balanceDate = now
+        appleSavings.lastSyncedAt = now
+        context.insert(appleSavings)
+
+        let walletSamples: [(String, Int64, Int)] = [
+            ("Apple Store", -24_900, -2),
+            ("Uber", -1_840, -4),
+        ]
+        for (index, item) in walletSamples.enumerated() {
+            let transaction = LedgerTransaction(
+                bankTransactionID: "wallet-TXN-\(index)",
+                payeeDescription: item.0,
+                amountMinorUnits: item.1
+            )
+            transaction.account = appleCard
+            transaction.accountIDIndex = appleCard.bankAccountID
+            transaction.currencyExponent = 2
+            transaction.postedDate = calendar.date(byAdding: .day, value: item.2, to: now)
+            transaction.createdAt = transaction.effectiveDate
+            transaction.modifiedAt = transaction.createdAt
+            transaction.normalizedMerchant = MerchantNormalizer.normalize(item.0)
+            context.insert(transaction)
+        }
+
         // swiftlint:disable:next large_tuple
         let samples: [(String, Int64, String, String, Int)] = [
             ("Payroll Deposit", 512_500, "Income", "ACT-CHK", -1),

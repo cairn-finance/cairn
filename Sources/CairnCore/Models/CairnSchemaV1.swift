@@ -148,6 +148,9 @@ public enum CairnSchemaV1: VersionedSchema {
         public var source: AccountSource { AccountSource(rawValue: sourceRaw) ?? .simpleFIN }
         public var accountType: AccountType { AccountType(rawValue: accountTypeRaw) ?? .other }
         public var isManual: Bool { source == .manual }
+        /// True for accounts read from Apple Wallet through FinanceKit. They are
+        /// refreshed in place and never take a manual CSV import.
+        public var isWallet: Bool { source == .financeKit }
 
         public var balance: Money {
             Money(minorUnits: balanceMinorUnits, currency: currency)
@@ -531,11 +534,15 @@ public enum AccountSource: String, Sendable, CaseIterable, Codable {
     case simpleFIN = "simplefin"
     /// Created by the user and filled by CSV import or manual entry.
     case manual
+    /// Read from Apple Wallet through FinanceKit (Apple Card, Apple Cash,
+    /// Apple Savings). Read-only and never routed through SimpleFIN.
+    case financeKit = "financekit"
 
     public var displayName: String {
         switch self {
         case .simpleFIN: "SimpleFIN"
         case .manual: "Manual"
+        case .financeKit: "Apple Wallet"
         }
     }
 }

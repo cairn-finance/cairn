@@ -32,6 +32,10 @@ final class AppModel {
     @ObservationIgnored let cloudFallbackReason: String?
     @ObservationIgnored let requestedCloud: Bool
     @ObservationIgnored let engine: SyncEngine
+    #if os(iOS)
+    /// Reads eligible Apple Wallet data through FinanceKit. iPhone/iPad only.
+    @ObservationIgnored let walletEngine: WalletSyncEngine
+    #endif
     @ObservationIgnored let client: SimpleFINClient
     @ObservationIgnored let credentials: any CredentialStore
 
@@ -108,6 +112,9 @@ final class AppModel {
         storeMode = result.mode
         cloudFallbackReason = result.cloudFallbackReason
         engine = SyncEngine(modelContainer: result.container)
+        #if os(iOS)
+        walletEngine = WalletSyncEngine(modelContainer: result.container)
+        #endif
 
         Task { await bootstrap() }
     }
@@ -224,18 +231,105 @@ final class AppModel {
         }
     }
 
+    // MARK: - Apple Wallet (FinanceKit)
+
+    /// Whether eligible Wallet accounts exist locally.
+    var walletAccountCount: Int {
+        #if os(iOS)
+        let source = AccountSource.financeKit.rawValue
+        return (try? container.mainContext.fetchCount(
+            FetchDescriptor<Account>(predicate: #Predicate { $0.sourceRaw == source })
+        )) ?? 0
+        #else
+        return 0
+        #endif
+    }
+
+    /// Removes Wallet accounts (and their transactions) from this device. It
+    /// cannot revoke the system authorization; only Settings can. Cross-platform
+    /// so a Mac can clear rows it received through iCloud.
+    func disconnectWallet() async {
+        let source = AccountSource.financeKit.rawValue
+        let context = container.mainContext
+        let accounts = (try? context.fetch(
+            FetchDescriptor<Account>(predicate: #Predicate { $0.sourceRaw == source })
+        )) ?? []
+        for account in accounts { context.delete(account) }
+        try? context.save()
+        await syncAll(force: false)
+    }
+
+    #if os(iOS)
+    /// Connects Apple Wallet: asks FinanceKit for access, then imports whatever
+    /// the person selected. There is no SimpleFIN token or request budget, so
+    /// this never touches a bank server.
+    @discardableResult
+    func connectWallet() async -> Bool {
+        syncState = .syncing
+        await cairnLog(.info, "connectWallet: requesting Wallet authorization.")
+        do {
+            guard try await walletEngine.requestAuthorization() else {
+                syncState = .idle
+                banner = "Cairn wasn’t granted access to Wallet financial data."
+                return false
+            }
+            await syncAll(force: false)
+            return syncState.errorMessage == nil
+        } catch {
+            let message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+            syncState = .failed(message)
+            await cairnLog(.error, "connectWallet failed: \(message)")
+            return false
+        }
+    }
+
+    /// True when FinanceKit access has been granted, so Wallet should refresh.
+    private func isWalletConnected() async -> Bool {
+        guard WalletAvailability.isSupported else { return false }
+        return await walletEngine.isAuthorized()
+    }
+
+    /// Refreshes Wallet and returns an error message on failure, so it can join
+    /// the same failure list as SimpleFIN.
+    private func refreshWallet() async -> String? {
+        do {
+            let outcome = try await walletEngine.sync(now: Date())
+            await cairnLog(
+                .info,
+                "Wallet: accounts=\(outcome.accountsUpserted) inserted=\(outcome.transactionsInserted) "
+                    + "updated=\(outcome.transactionsUpdated) removed=\(outcome.accountsRemoved)"
+            )
+            return nil
+        } catch {
+            let reason = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+            await cairnLog(.error, "Wallet sync failed: \(reason)")
+            return "Apple Wallet: \(reason)"
+        }
+    }
+    #else
+    private func isWalletConnected() async -> Bool { false }
+    private func refreshWallet() async -> String? { nil }
+    #endif
+
     // MARK: - Sync
 
     func syncAll(force: Bool) async {
         let context = container.mainContext
-        guard let institutions = try? context.fetch(FetchDescriptor<Institution>()),
-              !institutions.isEmpty else {
+        let institutions = (try? context.fetch(FetchDescriptor<Institution>())) ?? []
+        // Apple Wallet is refreshed through FinanceKit, so a device with only
+        // Wallet accounts still has something to sync.
+        let walletReady = await isWalletConnected()
+
+        guard walletReady || !institutions.isEmpty else {
             syncState = .idle
             return
         }
 
         syncState = .syncing
-        await cairnLog(.info, "syncAll: \(institutions.count) institution(s), force=\(force)")
+        await cairnLog(
+            .info,
+            "syncAll: \(institutions.count) institution(s), force=\(force), wallet=\(walletReady)"
+        )
         var failures: [String] = []
         var missingCredentialIDs: [UUID] = []
         var missingCredentialNames: [String] = []
@@ -300,6 +394,10 @@ final class AppModel {
                 await cairnLog(.error, "\(name): \(reason)")
                 failures.append("\(name): \(reason)")
             }
+        }
+
+        if walletReady, let walletFailure = await refreshWallet() {
+            failures.append(walletFailure)
         }
 
         await refreshBudget()

@@ -44,6 +44,11 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_ENTITLEMENTS: Config/Cairn.entitlements
+        # FinanceKit is iPhone/iPad only, so the iOS entitlement (which adds the
+        # FinanceKit financial-data capability) is selected per SDK; macOS keeps
+        # the base file.
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]": Config/Cairn-iOS.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": Config/Cairn-iOS.entitlements
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: CairnApp/Resources/Info.plist
         ENABLE_PREVIEWS: YES

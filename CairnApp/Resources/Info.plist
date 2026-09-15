@@ -26,6 +26,8 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.finance</string>
+	<key>NSFinancialDataUsageDescription</key>
+	<string>Cairn reads the Apple Wallet accounts you choose — Apple Card, Apple Cash, and Savings — so it can show their balances and transactions. It is read-only and stays on your device.</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<!--
