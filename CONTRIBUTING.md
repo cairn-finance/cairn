@@ -47,6 +47,8 @@ SimpleFIN demo token; use the `URLProtocol` stubs.
 - Keep changes focused and explain the "why".
 - Run `swift test` and build both platforms before opening a PR.
 - Update docs when behavior or the schema changes.
+- Maintainers: see [`docs/releasing.md`](docs/releasing.md) before tagging a
+  release.
 
 ## Commit messages
 

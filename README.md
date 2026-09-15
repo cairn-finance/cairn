@@ -117,6 +117,19 @@ If the console looks noisy, see
 [`docs/troubleshooting.md`](docs/troubleshooting.md) — most of it is framework
 logging, and it explains the two or three messages that aren't.
 
+## Releasing
+
+Releases are cut from `main` by pushing a `vX.Y.Z` tag. CI runs the tests,
+uploads iOS and macOS builds to TestFlight, and publishes a GitHub Release with
+generated notes and dSYMs:
+
+```sh
+Scripts/release.sh patch    # or minor / major
+```
+
+See [`docs/releasing.md`](docs/releasing.md) for the versioning scheme, the
+required repository secrets, and the hotfix flow.
+
 ## Contributing
 
 Contributions are welcome — please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
