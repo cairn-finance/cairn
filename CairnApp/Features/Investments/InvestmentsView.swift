@@ -156,3 +156,55 @@ struct InvestmentsView: View {
         .cairnAppear(delay: 0.1)
     }
 }
+
+/// A compact, tappable summary of investment accounts shown on Home. It exists
+/// so Investments stays a focused pushed screen without adding a fifth tab.
+struct InvestmentsSummaryRow: View {
+    let accounts: [Account]
+    let settings: [AppSettings]
+
+    private var totals: [CurrencyTotal] { NetWorthMath.totals(accounts: accounts) }
+
+    private var currency: Currency {
+        NetWorthMath.primaryCurrency(totals: totals, home: NetWorthMath.homeCurrency(settings: settings))
+    }
+
+    private var total: Int64 {
+        totals.first { $0.currency.code == currency.code }?.totalMinorUnits ?? 0
+    }
+
+    var body: some View {
+        Card {
+            HStack(spacing: CairnTheme.Spacing.m) {
+                ZStack {
+                    Circle()
+                        .fill(CairnTheme.accent.opacity(0.14))
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(CairnTheme.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Investments")
+                        .font(.body.weight(.medium))
+                    Text("\(accounts.count) account\(accounts.count == 1 ? "" : "s") · as of last sync")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: CairnTheme.Spacing.m)
+
+                AmountText(
+                    money: Money(minorUnits: total, currency: currency),
+                    font: .body.weight(.semibold)
+                )
+                .fixedSize(horizontal: true, vertical: false)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+}

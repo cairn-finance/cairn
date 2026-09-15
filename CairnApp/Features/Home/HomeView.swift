@@ -34,6 +34,16 @@ struct HomeView: View {
                     syncStatus
                         .cairnAppear(delay: 0.05)
 
+                    if !investmentAccounts.isEmpty {
+                        NavigationLink {
+                            InvestmentsView()
+                        } label: {
+                            InvestmentsSummaryRow(accounts: investmentAccounts, settings: settings)
+                        }
+                        .buttonStyle(.pressableCard)
+                        .cairnAppear(delay: 0.075)
+                    }
+
                     institutionsSection
                         .cairnAppear(delay: 0.1)
                 }
@@ -201,6 +211,10 @@ struct HomeView: View {
 
     private var manualAccounts: [Account] {
         accounts.filter { $0.institution == nil }
+    }
+
+    private var investmentAccounts: [Account] {
+        accounts.filter { $0.accountType == .investment }
     }
 }
 
