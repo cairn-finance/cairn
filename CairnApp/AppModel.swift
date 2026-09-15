@@ -20,10 +20,10 @@ final class AppModel {
         case idle
         case syncing
         case success
-        /// The pass finished with nothing actually wrong, but something is still
-        /// pending — for example a credential iCloud Keychain hasn't delivered
-        /// yet. This is a notice, not a failure.
-        case waiting(String)
+        /// The pass finished with nothing actually wrong, but something still
+        /// needs attention — for example a saved connection whose credential
+        /// isn't on this device. This is a notice, not a failure.
+        case waiting(title: String, detail: String, credentialIDs: [UUID])
         case failed(String)
     }
 
@@ -237,7 +237,8 @@ final class AppModel {
         syncState = .syncing
         await cairnLog(.info, "syncAll: \(institutions.count) institution(s), force=\(force)")
         var failures: [String] = []
-        var skippedForCredential = 0
+        var missingCredentialIDs: [UUID] = []
+        var missingCredentialNames: [String] = []
         var reportedBudget = false
         var reportedThrottle = false
 
@@ -272,8 +273,12 @@ final class AppModel {
                 case .proceed:
                     guard let secret = try credentials.secret(for: institution.credentialID),
                           let accessURL = URL(string: secret) else {
-                        await cairnLog(.warning, "\(name): credential not available yet (waiting for iCloud Keychain).")
-                        skippedForCredential += 1
+                        let reason = useCloudKit
+                            ? "no stored credential on this device yet (may still arrive via iCloud Keychain)"
+                            : "no stored credential on this device (This Device Only, so it can’t arrive later)"
+                        await cairnLog(.warning, "\(name): \(reason); skipping.")
+                        missingCredentialIDs.append(institution.credentialID)
+                        missingCredentialNames.append(name)
                         continue
                     }
                     let outcome = try await engine.performSync(
@@ -298,13 +303,14 @@ final class AppModel {
         }
 
         await refreshBudget()
-        await cairnLog(.info, "syncAll finished: failures=\(failures.count) skipped=\(skippedForCredential)")
+        await cairnLog(.info, "syncAll finished: failures=\(failures.count) skipped=\(missingCredentialIDs.count)")
         if let first = failures.first {
             syncState = .failed(first)
-        } else if skippedForCredential > 0 {
-            syncState = .waiting(
-                "Waiting for iCloud Keychain to deliver the credential for \(skippedForCredential) "
-                + "institution\(skippedForCredential == 1 ? "" : "s"). Make sure iCloud Keychain is on for the same Apple Account."
+        } else if !missingCredentialIDs.isEmpty {
+            syncState = Self.missingCredentialState(
+                names: missingCredentialNames,
+                credentialIDs: missingCredentialIDs,
+                cloudBacked: useCloudKit
             )
         } else {
             syncState = .success
@@ -312,6 +318,28 @@ final class AppModel {
 
         // Categorize in the background so the sync UI finishes immediately.
         Task { await autoCategorize() }
+    }
+
+    /// The notice shown when one or more saved connections have no credential on
+    /// this device. A cloud-backed store may still deliver it through iCloud
+    /// Keychain; a This-Device-Only store never will, so say so plainly instead
+    /// of blaming iCloud Keychain.
+    private static func missingCredentialState(
+        names: [String],
+        credentialIDs: [UUID],
+        cloudBacked: Bool
+    ) -> SyncState {
+        let count = credentialIDs.count
+        let title = count == 1
+            ? "A connection can’t sync yet"
+            : "\(count) connections can’t sync yet"
+        let list = names.isEmpty ? "A saved connection" : names.joined(separator: ", ")
+        let detail = cloudBacked
+            ? "No credential on this device for \(list). If you connected it on another device, iCloud "
+                + "Keychain may still be delivering it; otherwise remove it and connect again with a new token."
+            : "No credential on this device for \(list). This Device Only means it will never arrive, so "
+                + "remove it and connect again with a new token."
+        return .waiting(title: title, detail: detail, credentialIDs: credentialIDs)
     }
 
     func refreshBudget() async {
@@ -324,14 +352,20 @@ final class AppModel {
     /// several connections (banks), every institution sharing its credential is
     /// removed together — otherwise the next sync would recreate them.
     func disconnect(_ institution: Institution) async {
-        let credentialID = institution.credentialID
+        await removeConnections(credentialIDs: [institution.credentialID])
+    }
+
+    /// Removes every saved connection that shares one of these credentials,
+    /// along with the credentials themselves. Used by the disconnect action and
+    /// by the notice for connections whose credential never arrived.
+    func removeConnections(credentialIDs: [UUID]) async {
         let context = container.mainContext
-        let siblings = (try? context.fetch(
-            FetchDescriptor<Institution>(predicate: #Predicate { $0.credentialID == credentialID })
-        )) ?? []
-        try? credentials.delete(id: credentialID)
-        for sibling in siblings.isEmpty ? [institution] : siblings {
-            context.delete(sibling)
+        for credentialID in credentialIDs {
+            let siblings = (try? context.fetch(
+                FetchDescriptor<Institution>(predicate: #Predicate { $0.credentialID == credentialID })
+            )) ?? []
+            try? credentials.delete(id: credentialID)
+            siblings.forEach(context.delete)
         }
         try? context.save()
         await syncAll(force: false)

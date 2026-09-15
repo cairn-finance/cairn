@@ -159,10 +159,17 @@ extension AppModel.SyncState {
         return nil
     }
 
-    /// A non-fatal message worth surfacing in diagnostics (for example, a
-    /// credential still on its way through iCloud Keychain). Not a failure.
+    /// A non-fatal message worth surfacing in diagnostics (for example, a saved
+    /// connection whose credential isn't on this device). Not a failure.
     var noticeMessage: String? {
-        if case let .waiting(message) = self { return message }
+        if case let .waiting(_, detail, _) = self { return detail }
+        return nil
+    }
+
+    /// Credentials for connections that answered a sync but had no stored
+    /// secret, so the person can remove them.
+    var missingCredentialIDs: [UUID]? {
+        if case let .waiting(_, _, ids) = self, !ids.isEmpty { return ids }
         return nil
     }
 

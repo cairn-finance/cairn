@@ -16,6 +16,7 @@ struct HomeView: View {
 
     @State private var showingConnect = false
     @State private var showingManualAccount = false
+    @State private var connectionsToRemove: [UUID] = []
 
     var body: some View {
         ScrollView {
@@ -50,6 +51,22 @@ struct HomeView: View {
         .sheet(isPresented: $showingManualAccount) {
             ManualAccountSheet()
         }
+        .alert(
+            "Remove connection?",
+            isPresented: Binding(
+                get: { !connectionsToRemove.isEmpty },
+                set: { if !$0 { connectionsToRemove = [] } }
+            )
+        ) {
+            Button("Remove", role: .destructive) {
+                let ids = connectionsToRemove
+                connectionsToRemove = []
+                Task { await model.removeConnections(credentialIDs: ids) }
+            }
+            Button("Cancel", role: .cancel) { connectionsToRemove = [] }
+        } message: {
+            Text("This removes the saved connection and its credential. Connecting again needs a new SimpleFIN setup token.")
+        }
     }
 
     // MARK: - Sections
@@ -65,11 +82,11 @@ struct HomeView: View {
                     .foregroundStyle(CairnTheme.warning)
                 Text("Last sync had a problem")
                     .accessibilityHint(message)
-            case let .waiting(message):
-                Image(systemName: "key.icloud")
+            case let .waiting(title, detail, _):
+                Image(systemName: "exclamationmark.circle")
                     .foregroundStyle(.secondary)
-                Text("Waiting for iCloud Keychain")
-                    .accessibilityHint(message)
+                Text(title)
+                    .accessibilityHint(detail)
             case .idle, .success:
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(CairnTheme.positive)
@@ -80,6 +97,10 @@ struct HomeView: View {
                 }
             }
             Spacer()
+            if let ids = model.syncState.missingCredentialIDs {
+                Button("Remove") { connectionsToRemove = ids }
+                    .font(.footnote.weight(.semibold))
+            }
             if model.syncState.hasDetails {
                 NavigationLink {
                     SyncDiagnosticsView()
