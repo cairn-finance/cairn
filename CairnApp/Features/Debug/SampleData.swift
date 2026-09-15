@@ -50,6 +50,22 @@ enum SampleData {
         savings.lastSyncedAt = now
         context.insert(savings)
 
+        let brokerage = Account(bankAccountID: "ACT-INV", name: "Brokerage", currency: .usd)
+        brokerage.accountTypeRaw = AccountType.investment.rawValue
+        brokerage.balanceMinorUnits = 3_450_000
+        brokerage.balanceDate = now
+        brokerage.institution = institution
+        brokerage.lastSyncedAt = now
+        context.insert(brokerage)
+
+        let retirement = Account(bankAccountID: "ACT-IRA", name: "Roth IRA", currency: .usd)
+        retirement.accountTypeRaw = AccountType.investment.rawValue
+        retirement.balanceMinorUnits = 8_120_500
+        retirement.balanceDate = now
+        retirement.institution = institution
+        retirement.lastSyncedAt = now
+        context.insert(retirement)
+
         let card = Account(bankAccountID: "ACT-CC", name: "Travel Card", currency: .usd)
         card.accountTypeRaw = AccountType.credit.rawValue
         card.balanceMinorUnits = -120_432
