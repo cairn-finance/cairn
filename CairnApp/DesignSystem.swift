@@ -578,12 +578,17 @@ struct SegmentedPicker<Option: Hashable & Identifiable>: View {
 
 // MARK: - Sparkline
 
-/// A tiny axis-free line chart for cards and rows.
+/// A tiny axis-free line chart for cards and rows. When `selection` is bound,
+/// pressing and holding (or dragging) shows a vertical rule and dot at the
+/// nearest point, and reports that point's index.
 struct Sparkline: View {
     let values: [Double]
     var tint: Color = CairnTheme.accent
     var lineWidth: CGFloat = 1.8
     var showsArea: Bool = true
+    /// When set, the chart becomes interactive and writes the dragged
+    /// point's index here. The default no-op binding leaves it static.
+    var selection: Binding<Int?> = .constant(nil)
 
     var body: some View {
         let domain = yDomain
@@ -605,13 +610,29 @@ struct Sparkline: View {
                 .foregroundStyle(tint)
                 .lineStyle(StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.catmullRom)
+
+            if let picked = pickedIndex {
+                RuleMark(x: .value("i", picked))
+                    .foregroundStyle(Color.secondary.opacity(0.4))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                PointMark(x: .value("i", picked), y: .value("v", values[picked]))
+                    .symbolSize(70)
+                    .foregroundStyle(tint)
+            }
         }
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
         .chartYScale(domain: domain)
         .chartLegend(.hidden)
         .chartPlotStyle { $0.clipped() }
+        .chartXSelection(value: selection)
         .accessibilityHidden(true)
+    }
+
+    /// The selected index, clamped to the data that's actually plotted.
+    private var pickedIndex: Int? {
+        guard let index = selection.wrappedValue, values.indices.contains(index) else { return nil }
+        return index
     }
 
     private var yDomain: ClosedRange<Double> {

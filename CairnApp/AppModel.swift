@@ -20,6 +20,10 @@ final class AppModel {
         case idle
         case syncing
         case success
+        /// The pass finished with nothing actually wrong, but something is still
+        /// pending — for example a credential iCloud Keychain hasn't delivered
+        /// yet. This is a notice, not a failure.
+        case waiting(String)
         case failed(String)
     }
 
@@ -77,7 +81,12 @@ final class AppModel {
         appLockEnabled = defaults.bool(forKey: Self.Keys.appLockEnabled)
         useAppleIntelligence = (defaults.object(forKey: Self.Keys.useAppleIntelligence) as? Bool) ?? true
 
-        credentials = inMemory ? InMemoryCredentialStore() : KeychainCredentialStore()
+        #if DEBUG
+        let sampleMode = ProcessInfo.processInfo.arguments.contains(SampleData.launchArgument)
+        #else
+        let sampleMode = false
+        #endif
+        credentials = (inMemory || sampleMode) ? InMemoryCredentialStore() : KeychainCredentialStore()
         client = SimpleFINClient(session: SimpleFINClient.ephemeralSession())
 
         let result: ModelContainerFactory.Result
@@ -293,7 +302,7 @@ final class AppModel {
         if let first = failures.first {
             syncState = .failed(first)
         } else if skippedForCredential > 0 {
-            syncState = .failed(
+            syncState = .waiting(
                 "Waiting for iCloud Keychain to deliver the credential for \(skippedForCredential) "
                 + "institution\(skippedForCredential == 1 ? "" : "s"). Make sure iCloud Keychain is on for the same Apple Account."
             )

@@ -14,6 +14,8 @@ struct InsightsView: View {
 
     @State private var month: Date = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var showAllCategories = false
+    @State private var paceSelection: Int?
+    @State private var trendSelection: Date?
 
     var body: some View {
         let data = snapshot
@@ -41,6 +43,10 @@ struct InsightsView: View {
         .cairnCanvas()
         .navigationTitle("Insights")
         .task { await model.refreshCategorizationCounts() }
+        .onChange(of: month) { _, _ in
+            paceSelection = nil
+            trendSelection = nil
+        }
         .sensoryFeedback(.selection, trigger: month)
     }
 
@@ -271,9 +277,13 @@ struct InsightsView: View {
     }
 
     private func paceCard(_ data: InsightsSnapshot) -> some View {
-        Card {
+        let selected = paceSelection.flatMap { day in data.cumulative.first { $0.day == day } }
+        return Card {
             VStack(alignment: .leading, spacing: 12) {
-                CardHeader("Spending pace", subtitle: paceSubtitle(data))
+                CardHeader(
+                    "Spending pace",
+                    subtitle: selected.map { "Day \($0.day): \(moneyText($0.amountMinorUnits)) spent" } ?? paceSubtitle(data)
+                )
 
                 if data.cumulative.isEmpty {
                     Text("No spending recorded yet.")
@@ -330,8 +340,20 @@ struct InsightsView: View {
                             .symbolSize(70)
                             .foregroundStyle(CairnTheme.accent)
                         }
+                        if let selected {
+                            RuleMark(x: .value("Selected", selected.day))
+                                .foregroundStyle(Color.secondary.opacity(0.4))
+                                .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            PointMark(
+                                x: .value("Selected", selected.day),
+                                y: .value("Spent", dollars(selected.amountMinorUnits))
+                            )
+                            .symbolSize(70)
+                            .foregroundStyle(CairnTheme.accent)
+                        }
                     }
                     .chartXScale(domain: 1...data.daysInMonth)
+                    .chartXSelection(value: $paceSelection)
                     .chartXAxis {
                         AxisMarks(values: [1, 8, 15, 22, data.daysInMonth]) { value in
                             AxisValueLabel {
@@ -348,6 +370,7 @@ struct InsightsView: View {
                         }
                     }
                     .frame(height: 180)
+                    .sensoryFeedback(.selection, trigger: paceSelection)
 
                     HStack(spacing: 14) {
                         legend("This month", color: CairnTheme.accent, dashed: false)
@@ -397,9 +420,17 @@ struct InsightsView: View {
 
     private func trendCard(_ data: InsightsSnapshot) -> some View {
         let average = data.months.isEmpty ? 0 : data.months.reduce(Int64(0)) { $0 + $1.spendingMinorUnits } / Int64(data.months.count)
+        let selected = trendSelection.flatMap { date in
+            data.months.first { Calendar.current.isDate($0.monthStart, equalTo: date, toGranularity: .month) }
+        }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                CardHeader("Six-month trend", subtitle: "Average \(moneyText(average)) per month")
+                CardHeader(
+                    "Six-month trend",
+                    subtitle: selected.map {
+                        "\($0.monthStart.formatted(.dateTime.month(.wide))): \(moneyText($0.spendingMinorUnits)) spent"
+                    } ?? "Average \(moneyText(average)) per month"
+                )
 
                 Chart(data.months) { totals in
                     BarMark(
@@ -416,7 +447,13 @@ struct InsightsView: View {
                     RuleMark(y: .value("Average", dollars(average)))
                         .foregroundStyle(Color.secondary.opacity(0.4))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    if let selected {
+                        RuleMark(x: .value("Selected", selected.monthStart, unit: .month))
+                            .foregroundStyle(Color.secondary.opacity(0.4))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    }
                 }
+                .chartXSelection(value: $trendSelection)
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                         AxisGridLine().foregroundStyle(CairnTheme.hairline)
@@ -432,6 +469,7 @@ struct InsightsView: View {
                     }
                 }
                 .frame(height: 150)
+                .sensoryFeedback(.selection, trigger: trendSelection)
             }
         }
     }

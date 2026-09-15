@@ -158,4 +158,14 @@ extension AppModel.SyncState {
         if case let .failed(message) = self { return message }
         return nil
     }
+
+    /// A non-fatal message worth surfacing in diagnostics (for example, a
+    /// credential still on its way through iCloud Keychain). Not a failure.
+    var noticeMessage: String? {
+        if case let .waiting(message) = self { return message }
+        return nil
+    }
+
+    /// Whether there is anything to explain in the diagnostics sheet.
+    var hasDetails: Bool { errorMessage != nil || noticeMessage != nil }
 }

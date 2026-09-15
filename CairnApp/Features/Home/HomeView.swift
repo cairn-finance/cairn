@@ -65,6 +65,11 @@ struct HomeView: View {
                     .foregroundStyle(CairnTheme.warning)
                 Text("Last sync had a problem")
                     .accessibilityHint(message)
+            case let .waiting(message):
+                Image(systemName: "key.icloud")
+                    .foregroundStyle(.secondary)
+                Text("Waiting for iCloud Keychain")
+                    .accessibilityHint(message)
             case .idle, .success:
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(CairnTheme.positive)
@@ -75,7 +80,7 @@ struct HomeView: View {
                 }
             }
             Spacer()
-            if model.syncState.errorMessage != nil {
+            if model.syncState.hasDetails {
                 NavigationLink {
                     SyncDiagnosticsView()
                 } label: {
@@ -225,6 +230,8 @@ struct NetWorthHero: View {
     let accounts: [Account]
     let settings: [AppSettings]
 
+    @State private var selectedIndex: Int?
+
     private var totals: [CurrencyTotal] { NetWorthMath.totals(accounts: accounts) }
     private var currency: Currency {
         NetWorthMath.primaryCurrency(totals: totals, home: NetWorthMath.homeCurrency(settings: settings))
@@ -235,17 +242,23 @@ struct NetWorthHero: View {
     private var series: [(date: Date, balanceMinorUnits: Int64)] {
         NetWorthMath.series(accounts: accounts, currency: currency, days: 30)
     }
+    private var selectedPoint: (date: Date, balanceMinorUnits: Int64)? {
+        guard let selectedIndex, series.indices.contains(selectedIndex) else { return nil }
+        return series[selectedIndex]
+    }
 
     var body: some View {
         let change = NetWorthMath.change(in: series)
         let split = NetWorthMath.assetsAndLiabilities(accounts: accounts, currency: currency)
+        let shown = selectedPoint?.balanceMinorUnits ?? total
 
         HeroCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Net worth")
+                    Text(selectedPoint.map { $0.date.formatted(date: .abbreviated, time: .omitted) } ?? "Net worth")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.75))
+                        .contentTransition(.opacity)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
@@ -253,28 +266,37 @@ struct NetWorthHero: View {
                 }
 
                 AmountText(
-                    money: Money(minorUnits: total, currency: currency),
+                    money: Money(minorUnits: shown, currency: currency),
                     font: .cairnHero,
                     colorOverride: .white,
                     deemphasizeFraction: true
                 )
 
                 HStack(spacing: 8) {
-                    if let ratio = change.ratio {
-                        TrendPill(ratio: ratio, higherIsBad: false, onInk: true)
+                    if let selected = selectedPoint {
+                        Text("Balance on \(selected.date.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.7))
+                    } else {
+                        if let ratio = change.ratio {
+                            TrendPill(ratio: ratio, higherIsBad: false, onInk: true)
+                        }
+                        Text(changeText(change.delta))
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.7))
                     }
-                    Text(changeText(change.delta))
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.7))
                 }
 
                 if series.count > 2 {
                     Sparkline(
                         values: series.map { NetWorthMath.doubleValue($0.balanceMinorUnits, currency: currency) },
                         tint: CairnTheme.inkGlow,
-                        lineWidth: 2
+                        lineWidth: 2,
+                        selection: $selectedIndex
                     )
                     .frame(height: 56)
+                    .onChange(of: series.count) { _, _ in selectedIndex = nil }
+                    .sensoryFeedback(.selection, trigger: selectedIndex)
                 }
 
                 HStack(spacing: 20) {
@@ -289,6 +311,7 @@ struct NetWorthHero: View {
                 }
             }
         }
+        .animation(CairnTheme.Motion.quick, value: selectedIndex)
     }
 
     private func heroMetric(_ title: String, _ money: Money) -> some View {

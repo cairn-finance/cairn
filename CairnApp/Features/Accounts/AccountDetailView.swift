@@ -13,6 +13,7 @@ struct AccountDetailView: View {
     @State private var showingImporter = false
     @State private var importPayload: ImportPayload?
     @State private var searchText = ""
+    @State private var historySelection: Int?
 
     private struct ImportPayload: Identifiable {
         let id = UUID()
@@ -200,23 +201,37 @@ struct AccountDetailView: View {
     private var historyCard: some View {
         let series = NetWorthMath.series(account: account, days: 90)
         let change = NetWorthMath.change(in: series)
+        let selected = historySelection.flatMap { series.indices.contains($0) ? series[$0] : nil }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 CardHeader("Last 90 days") {
-                    if let ratio = change.ratio {
+                    if let selected {
+                        AmountText(
+                            money: Money(minorUnits: selected.balanceMinorUnits, currency: account.currency),
+                            font: .callout.weight(.semibold)
+                        )
+                    } else if let ratio = change.ratio {
                         TrendPill(ratio: ratio, higherIsBad: account.accountType.isLiability)
                     }
                 }
                 Sparkline(
                     values: series.map { NetWorthMath.doubleValue($0.balanceMinorUnits, currency: account.currency) },
-                    tint: AccountGlyphStyle.forAccount(account).tint
+                    tint: AccountGlyphStyle.forAccount(account).tint,
+                    selection: $historySelection
                 )
                 .frame(height: 72)
-                Text(changeSentence(change.delta))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .onChange(of: series.count) { _, _ in historySelection = nil }
+                .sensoryFeedback(.selection, trigger: historySelection)
+                Text(
+                    selected.map { "Balance on \($0.date.formatted(date: .abbreviated, time: .omitted))" }
+                        ?? changeSentence(change.delta)
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .contentTransition(.opacity)
             }
         }
+        .animation(CairnTheme.Motion.quick, value: historySelection)
     }
 
     private func changeSentence(_ delta: Int64) -> String {

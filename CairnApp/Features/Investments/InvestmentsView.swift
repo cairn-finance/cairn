@@ -11,6 +11,8 @@ struct InvestmentsView: View {
     @Query private var accounts: [Account]
     @Query private var settings: [AppSettings]
 
+    @State private var selectedIndex: Int?
+
     private var investments: [Account] {
         accounts.filter { !$0.isHidden && $0.accountType == .investment }
     }
@@ -27,6 +29,11 @@ struct InvestmentsView: View {
 
     private var series: [(date: Date, balanceMinorUnits: Int64)] {
         NetWorthMath.series(accounts: investments, currency: currency, days: 90)
+    }
+
+    private var selectedPoint: (date: Date, balanceMinorUnits: Int64)? {
+        guard let selectedIndex, series.indices.contains(selectedIndex) else { return nil }
+        return series[selectedIndex]
     }
 
     /// The freshest balance date across the portfolio, used to make clear that
@@ -63,13 +70,15 @@ struct InvestmentsView: View {
 
     private var hero: some View {
         let change = NetWorthMath.change(in: series)
+        let shown = selectedPoint?.balanceMinorUnits ?? totalMinorUnits
 
         return HeroCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Invested")
+                    Text(selectedPoint.map { $0.date.formatted(date: .abbreviated, time: .omitted) } ?? "Invested")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.75))
+                        .contentTransition(.opacity)
                     Spacer()
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .font(.subheadline.weight(.semibold))
@@ -77,32 +86,42 @@ struct InvestmentsView: View {
                 }
 
                 AmountText(
-                    money: Money(minorUnits: totalMinorUnits, currency: currency),
+                    money: Money(minorUnits: shown, currency: currency),
                     font: .cairnHero,
                     colorOverride: .white,
                     deemphasizeFraction: true
                 )
 
                 HStack(spacing: 8) {
-                    if let ratio = change.ratio {
-                        TrendPill(ratio: ratio, higherIsBad: false, onInk: true)
+                    if let selected = selectedPoint {
+                        Text("Balance on \(selected.date.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.7))
+                    } else {
+                        if let ratio = change.ratio {
+                            TrendPill(ratio: ratio, higherIsBad: false, onInk: true)
+                        }
+                        Text(asOfText)
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.7))
                     }
-                    Text(asOfText)
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.7))
                 }
 
                 if series.count > 2 {
                     Sparkline(
                         values: series.map { NetWorthMath.doubleValue($0.balanceMinorUnits, currency: currency) },
                         tint: CairnTheme.inkGlow,
-                        lineWidth: 2
+                        lineWidth: 2,
+                        selection: $selectedIndex
                     )
                     .frame(height: 56)
+                    .onChange(of: series.count) { _, _ in selectedIndex = nil }
+                    .sensoryFeedback(.selection, trigger: selectedIndex)
                 }
             }
         }
         .cairnAppear()
+        .animation(CairnTheme.Motion.quick, value: selectedIndex)
     }
 
     private var asOfText: String {
