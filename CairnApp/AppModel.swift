@@ -135,6 +135,9 @@ final class AppModel {
             await waitForFirstCloudImport()
         }
         try? await engine.seedDefaultCategoriesIfNeeded()
+        // Collapse any duplicate set a second device may have seeded before
+        // iCloud delivered the first one's categories.
+        _ = try? await engine.deduplicateCategories()
     }
 
     /// Waits until CloudKit reports that its initial setup or import has ended,

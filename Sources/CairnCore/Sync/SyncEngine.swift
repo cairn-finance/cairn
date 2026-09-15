@@ -814,7 +814,7 @@ public actor SyncEngine {
 
     /// Re-runs categorization over transactions with no user category, using
     /// rules, merchant memory learned from the person's own corrections, and
-    /// deterministic hints for money movement and fees.
+    /// deterministic hints for money movement, income, and fees.
     ///
     /// Never overwrites a user choice. A rule or an exact remembered category
     /// may replace an earlier on-device guess; a fuzzy match may not.
@@ -824,8 +824,10 @@ public actor SyncEngine {
         let memory = try buildMerchantMemory()
         let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
         let fees = try category(named: "Fees")
+        let income = try category(named: "Income")
+        let counterparties = try knownTransferCounterparties()
         var outcome = RecategorizeOutcome()
-        var didChange = false
+        var didChange = clearInvalidModelCategories(in: transactions, now: now)
 
         for transaction in transactions {
             guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
@@ -860,8 +862,14 @@ public actor SyncEngine {
                 continue
             }
 
-            // No rule or history: apply deterministic hints.
-            if TransactionHints.isExplicitFee(description: transaction.payeeDescription), let fees {
+            // Deterministic hints. A genuine charge is named and negative; money
+            // movement and pay are recognized by their own labels. Fees require
+            // an explicit charge word and a debit, so a payroll deposit can never
+            // be swept into "Fees" again.
+            if TransactionHints.isExplicitFee(
+                description: transaction.payeeDescription,
+                amountMinorUnits: transaction.amountMinorUnits
+            ), let fees {
                 transaction.autoCategory = fees
                 transaction.autoCategorySource = SuggestionSource.heuristic.rawValue
                 transaction.autoConfidence = 0.9
@@ -883,10 +891,57 @@ public actor SyncEngine {
                     transaction.autoCategory = nil
                     transaction.autoCategorySource = nil
                     transaction.autoConfidence = 0
+                    transaction.autoCategorizeAttemptedAt = nil
                     transaction.modifiedAt = now
                     didChange = true
                 }
                 continue
+            }
+
+            if TransactionHints.isIncome(
+                description: transaction.payeeDescription,
+                amountMinorUnits: transaction.amountMinorUnits
+            ), let income {
+                transaction.autoCategory = income
+                transaction.autoCategorySource = SuggestionSource.heuristic.rawValue
+                transaction.autoConfidence = 0.85
+                if !transaction.isTransferUserSet { transaction.isTransfer = false }
+                transaction.modifiedAt = now
+                outcome.categorized += 1
+                outcome.bySource[SuggestionSource.heuristic.rawValue, default: 0] += 1
+                didChange = true
+                continue
+            }
+
+            // Money sent to another financial institution is movement between
+            // the person's own accounts, not spending — even when the generic
+            // keywords don't name it.
+            if !transaction.isTransferUserSet,
+               TransactionHints.isTransferToInstitution(
+                   description: transaction.payeeDescription,
+                   merchant: transaction.normalizedMerchant,
+                   counterparties: counterparties
+               ) {
+                if !transaction.isTransfer || transaction.autoCategory != nil {
+                    transaction.isTransfer = true
+                    transaction.autoCategory = nil
+                    transaction.autoCategorySource = nil
+                    transaction.autoConfidence = 0
+                    transaction.autoCategorizeAttemptedAt = nil
+                    transaction.modifiedAt = now
+                    didChange = true
+                }
+                continue
+            }
+
+            // Nothing matches now. Clear a deterministic guess the previous
+            // rules assigned, so a stale heuristic category can't linger.
+            if transaction.autoCategorySource == SuggestionSource.heuristic.rawValue {
+                transaction.autoCategory = nil
+                transaction.autoCategorySource = nil
+                transaction.autoConfidence = 0
+                transaction.modifiedAt = now
+                didChange = true
             }
         }
 
@@ -894,6 +949,56 @@ public actor SyncEngine {
             try modelContext.save()
         }
         return outcome
+    }
+
+    /// Clears on-device model guesses that the current rules would never produce:
+    /// "Fees", "Transfers", and "Uncategorized" are decided deterministically, and
+    /// a debit can't be "Income". This is how a stale "Fees" label left by an
+    /// earlier build gets lifted and recomputed, without touching anything else.
+    private func clearInvalidModelCategories(
+        in transactions: [LedgerTransaction],
+        now: Date
+    ) -> Bool {
+        var didChange = false
+        for transaction in transactions where transaction.userCategory == nil {
+            guard isInvalidModelCategory(transaction) else { continue }
+            transaction.autoCategory = nil
+            transaction.autoCategorySource = nil
+            transaction.autoConfidence = 0
+            // Let the hints and the model look at it again.
+            transaction.autoCategorizeAttemptedAt = nil
+            transaction.modifiedAt = now
+            didChange = true
+        }
+        return didChange
+    }
+
+    private func isInvalidModelCategory(_ transaction: LedgerTransaction) -> Bool {
+        let source = transaction.autoCategorySource
+        guard source == SuggestionSource.appleIntelligence.rawValue || source == "model",
+              let name = transaction.autoCategory?.name else {
+            return false
+        }
+        if name == "Fees" || name == "Transfers" || name == "Uncategorized" {
+            return true
+        }
+        return name == "Income" && transaction.amountMinorUnits <= 0
+    }
+
+    /// Names of the person's own accounts and institutions, so a transfer to one
+    /// of them can be recognized even when the description doesn't say
+    /// "transfer".
+    private func knownTransferCounterparties() throws -> [String] {
+        let accounts = try modelContext.fetch(FetchDescriptor<Account>())
+        var names: [String] = []
+        for account in accounts {
+            if !account.name.isEmpty { names.append(account.name) }
+            if let custom = account.customDisplayName, !custom.isEmpty { names.append(custom) }
+            if let institution = account.institution?.name, !institution.isEmpty {
+                names.append(institution)
+            }
+        }
+        return names
     }
 
     /// Immediately applies a person's category choice to their other, still
@@ -989,15 +1094,17 @@ public actor SyncEngine {
     ) async throws -> RecategorizeOutcome {
         var outcome = RecategorizeOutcome()
 
+        // System routing categories are never model targets: money movement is
+        // handled by hints, "Fees" is reserved for explicit charges the hints
+        // recognize, and "Uncategorized" is the absence of a choice.
         let categories = try modelContext.fetch(FetchDescriptor<Category>())
             .filter {
                 !$0.isArchived
-                    && $0.name != "Income"
                     && $0.name != "Transfers"
                     && $0.name != "Fees"
+                    && $0.name != "Uncategorized"
             }
         guard !categories.isEmpty else { return outcome }
-        let names = categories.map(\.name)
 
         let all = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
         let candidates = all
@@ -1010,15 +1117,18 @@ public actor SyncEngine {
             return outcome
         }
 
+        let counterparties = try knownTransferCounterparties()
+
         for transaction in candidates.prefix(limit) {
             let merchant = Self.merchantName(transaction)
 
             // Never ask the model about money movement. Mark it a transfer and
             // move on; this is the guard that stops overdraft transfers and
             // peer-to-peer payments from being guessed into a spending category.
-            if TransactionHints.isInternalTransfer(
+            if TransactionHints.isMoneyMovement(
                 description: transaction.payeeDescription,
-                merchant: transaction.normalizedMerchant
+                merchant: transaction.normalizedMerchant,
+                counterparties: counterparties
             ), !transaction.isTransferUserSet {
                 transaction.isTransfer = true
                 transaction.autoCategory = nil
@@ -1033,11 +1143,17 @@ public actor SyncEngine {
             transaction.autoCategorizeAttemptedAt = now
             outcome.attempted += 1
 
+            // A debit can't be income, so don't offer that category on the way out.
+            let isCredit = transaction.amountMinorUnits > 0
+            let allowed = isCredit ? categories : categories.filter { $0.name != "Income" }
+            guard !allowed.isEmpty else { continue }
+            let names = allowed.map(\.name)
+
             if let name = try? await AppleIntelligenceCategorizer.classify(
                 merchant: merchant,
                 description: transaction.payeeDescription,
                 categories: names
-            ), let category = categories.first(where: { $0.name == name }) {
+            ), let category = allowed.first(where: { $0.name == name }) {
                 transaction.autoCategory = category
                 transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
                 transaction.autoConfidence = 0.8
@@ -1075,21 +1191,16 @@ public actor SyncEngine {
     // MARK: - Categories
 
     /// Seeds a small, sensible default set once, so categorization works before
-    /// the user creates anything.
+    /// the user creates anything. Idempotent by name: a partial set is completed
+    /// without inserting a second copy of anything already present.
     public func seedDefaultCategoriesIfNeeded(now: Date = .now) throws {
         let settings = try loadOrCreateSettings()
         guard !settings.hasSeededDefaultCategories else { return }
 
-        // A second device could reach this point before iCloud has delivered the
-        // first device's categories. If any category already exists, mark the
-        // seed as done instead of inserting a duplicate set.
-        let existingCategories = try modelContext.fetchCount(FetchDescriptor<Category>())
-        guard existingCategories == 0 else {
-            settings.hasSeededDefaultCategories = true
-            settings.modifiedAt = now
-            try modelContext.save()
-            return
-        }
+        let existing = try modelContext.fetch(FetchDescriptor<Category>())
+        let existingNames = Set(
+            existing.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        )
 
         let defaults: [(String, String, String)] = [
             ("Income", "arrow.down.circle.fill", "#34C759"),
@@ -1107,7 +1218,7 @@ public actor SyncEngine {
             ("Uncategorized", "questionmark.circle", "#8E8E93"),
         ]
 
-        for (index, item) in defaults.enumerated() {
+        for (index, item) in defaults.enumerated() where !existingNames.contains(item.0.lowercased()) {
             let category = Category(
                 name: item.0,
                 symbolName: item.1,
@@ -1121,6 +1232,58 @@ public actor SyncEngine {
         settings.hasSeededDefaultCategories = true
         settings.modifiedAt = now
         try modelContext.save()
+    }
+
+    /// Collapses duplicate categories that can appear when two devices each seed
+    /// the default set before iCloud delivers the other's records. Every
+    /// transaction and rule pointing at a duplicate is repointed at the surviving
+    /// category, then the duplicate is deleted. Idempotent and safe to run often.
+    @discardableResult
+    public func deduplicateCategories() throws -> Int {
+        let all = try modelContext.fetch(FetchDescriptor<Category>())
+        var groups: [String: [Category]] = [:]
+        for category in all {
+            let key = category.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !key.isEmpty else { continue }
+            groups[key, default: []].append(category)
+        }
+
+        var removed = 0
+        for group in groups.values where group.count > 1 {
+            guard let canonical = group.max(by: { !isPreferred($0, over: $1) }) else { continue }
+            for duplicate in group where duplicate.persistentModelID != canonical.persistentModelID {
+                for transaction in duplicate.userTransactions ?? [] {
+                    transaction.userCategory = canonical
+                }
+                for transaction in duplicate.autoTransactions ?? [] {
+                    transaction.autoCategory = canonical
+                }
+                for rule in duplicate.rules ?? [] {
+                    rule.assignedCategory = canonical
+                }
+                modelContext.delete(duplicate)
+                removed += 1
+            }
+        }
+        if removed > 0 { try modelContext.save() }
+        return removed
+    }
+
+    /// Prefers, in order: a system category, the one more records already point
+    /// at, then the oldest. Deterministic so every device keeps the same row.
+    private func isPreferred(_ lhs: Category, over rhs: Category) -> Bool {
+        if lhs.isSystem != rhs.isSystem { return lhs.isSystem }
+        let lhsReferences = referenceCount(lhs)
+        let rhsReferences = referenceCount(rhs)
+        if lhsReferences != rhsReferences { return lhsReferences > rhsReferences }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        return lhs.uuid.uuidString < rhs.uuid.uuidString
+    }
+
+    private func referenceCount(_ category: Category) -> Int {
+        (category.userTransactions?.count ?? 0)
+            + (category.autoTransactions?.count ?? 0)
+            + (category.rules?.count ?? 0)
     }
 
     // MARK: - Import
