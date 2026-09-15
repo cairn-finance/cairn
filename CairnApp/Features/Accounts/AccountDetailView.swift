@@ -117,7 +117,7 @@ struct AccountDetailView: View {
                 HStack(spacing: 12) {
                     AccountGlyph(account: account, size: 40, onInk: true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(account.institution?.name.nonEmpty ?? (account.isManual ? "Manual account" : "Account"))
+                        Text(account.institution?.name.nonEmpty ?? sourceLabel)
                             .font(.subheadline.weight(.semibold))
                         Text(subtitle)
                             .font(.caption)
@@ -183,9 +183,20 @@ struct AccountDetailView: View {
 
     private var subtitle: String {
         var parts: [String] = []
+        // Wallet data is only ever refreshed on iPhone/iPad; elsewhere say so
+        // instead of implying the local device keeps it current.
+        if account.isWallet, !WalletAvailability.isSupported {
+            parts.append("Updates on your iPhone")
+        }
         parts.append(account.accountType.displayName)
         if account.currency.code != "USD" || account.currency.isCustom { parts.append(account.currency.displayLabel) }
         return parts.joined(separator: " · ")
+    }
+
+    /// What the account is "from", shown in the hero header.
+    private var sourceLabel: String {
+        if account.isWallet { return AccountSource.financeKit.displayName }
+        return account.isManual ? "Manual account" : "Account"
     }
 
     // MARK: - History
@@ -250,15 +261,27 @@ struct AccountDetailView: View {
 
     private var emptyTransactions: some View {
         EmptyStateView(
-            systemImage: account.isManual ? "square.and.arrow.down" : "arrow.triangle.2.circlepath",
+            systemImage: emptyStateIcon,
             title: "No transactions yet",
-            message: account.isManual
-                ? "Import a CSV export from your bank or card to fill this account."
-                : "Sync to fetch recent activity for this account.",
+            message: emptyStateMessage,
             actionTitle: account.isManual ? "Import CSV" : nil
         ) {
             showingImporter = true
         }
+    }
+
+    private var emptyStateIcon: String {
+        if account.isWallet { return "wallet.pass" }
+        return account.isManual ? "square.and.arrow.down" : "arrow.triangle.2.circlepath"
+    }
+
+    private var emptyStateMessage: String {
+        if account.isWallet {
+            return "Wallet activity appears here after Cairn refreshes on your iPhone."
+        }
+        return account.isManual
+            ? "Import a CSV export from your bank or card to fill this account."
+            : "Sync to fetch recent activity for this account."
     }
 
     // MARK: - Import

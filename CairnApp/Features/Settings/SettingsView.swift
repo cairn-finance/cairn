@@ -39,6 +39,18 @@ struct SettingsView: View {
         }
     }
 
+    /// Wallet accounts are written by FinanceKit on iPhone/iPad and reach other
+    /// devices through iCloud, so the count alone understates how they update.
+    private var walletSubtitle: String {
+        let count = walletAccounts.count
+        let base = "\(count) \(count == 1 ? "account" : "accounts")"
+        #if os(macOS)
+        return base + " · Updates on your iPhone"
+        #else
+        return base
+        #endif
+    }
+
     var body: some View {
         Form {
             syncSection
@@ -196,7 +208,7 @@ struct SettingsView: View {
                     SettingsIcon(systemImage: "wallet.pass.fill", tint: CairnTheme.accent)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Apple Wallet")
-                        Text("\(walletAccounts.count) \(walletAccounts.count == 1 ? "account" : "accounts")")
+                        Text(walletSubtitle)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

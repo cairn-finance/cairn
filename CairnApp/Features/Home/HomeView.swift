@@ -138,7 +138,7 @@ struct HomeView: View {
             }
 
             if !walletAccounts.isEmpty {
-                accountGroup(title: "Apple Wallet", trailing: nil, accounts: walletAccounts)
+                accountGroup(title: "Apple Wallet", trailing: walletTrailing, accounts: walletAccounts)
             }
 
             if !manualAccounts.isEmpty {
@@ -235,6 +235,17 @@ struct HomeView: View {
 
     private var walletAccounts: [Account] {
         accounts.filter { $0.source == .financeKit }
+    }
+
+    /// Wallet data can only be refreshed on iPhone/iPad, so a Mac shows when it
+    /// arrived rather than a live sync. A note keeps it from looking stale.
+    private var walletTrailing: String? {
+        #if os(macOS)
+        return "Updates on your iPhone"
+        #else
+        guard let date = walletAccounts.compactMap(\.lastSyncedAt).max() else { return nil }
+        return date.formatted(.relative(presentation: .named))
+        #endif
     }
 }
 
