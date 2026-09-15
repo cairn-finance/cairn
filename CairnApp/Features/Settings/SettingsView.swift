@@ -280,16 +280,38 @@ struct SettingsView: View {
     private var privacySection: some View {
         Section {
             Toggle(isOn: Binding(
-                get: { model.appLockEnabled },
+                get: { model.lock.isEnabled },
                 set: { model.setAppLock(enabled: $0) }
             )) {
-                IconRow("Require unlock to open", systemImage: "faceid", tint: CairnTheme.positive)
+                IconRow("Require unlock to open", systemImage: appLockIcon, tint: CairnTheme.positive)
             }
+            // Disabled only when it cannot be turned on. If it is already on, the
+            // toggle must stay usable so it can always be turned back off.
+            .disabled(!model.lock.canAuthenticate && !model.lock.isEnabled)
         } header: {
             Text("Privacy")
         } footer: {
-            Text("The app lock guards the interface. The SimpleFIN credential stays in the Keychain so background sync can work, and can be revoked at any time from your SimpleFIN Bridge.")
+            Text(appLockFooter)
         }
+    }
+
+    /// The device's own biometry glyph when there is one.
+    private var appLockIcon: String {
+        switch model.lock.biometryName {
+        case "Face ID": "faceid"
+        case "Touch ID": "touchid"
+        default: "lock.shield"
+        }
+    }
+
+    private var appLockFooter: String {
+        guard model.lock.canAuthenticate else {
+            return "Set a device passcode or password to use the app lock; until then it stays off."
+        }
+        let method = model.lock.biometryName.map { "\($0) or your device passcode" } ?? "your device passcode"
+        return "Cairn asks for \(method) when it opens or returns to the foreground. "
+            + "The SimpleFIN credential stays in the Keychain so background sync can work, "
+            + "and can be revoked any time from your SimpleFIN Bridge."
     }
 
     // MARK: - Data

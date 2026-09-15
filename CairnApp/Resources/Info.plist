@@ -28,6 +28,8 @@
 	<string>public.app-category.finance</string>
 	<key>NSFinancialDataUsageDescription</key>
 	<string>Cairn reads the Apple Wallet accounts you choose — Apple Card, Apple Cash, and Savings — so it can show their balances and transactions. It is read-only and stays on your device.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Cairn uses Face ID to unlock the app when you turn on Require unlock to open.</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<!--

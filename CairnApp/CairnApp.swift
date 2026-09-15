@@ -6,15 +6,19 @@ struct CairnApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(model)
-                .modelContainer(model.container)
+            LockGate {
+                RootView()
+            }
+            .environment(model)
+            .modelContainer(model.container)
         }
         #if os(macOS)
         Settings {
-            SettingsView()
-                .environment(model)
-                .modelContainer(model.container)
+            LockGate {
+                SettingsView()
+            }
+            .environment(model)
+            .modelContainer(model.container)
         }
         #endif
     }

@@ -38,9 +38,10 @@ final class AppModel {
     #endif
     @ObservationIgnored let client: SimpleFINClient
     @ObservationIgnored let credentials: any CredentialStore
+    /// The "require unlock to open" state machine. UI reads `lock.isLocked`.
+    @ObservationIgnored let lock: AppLockController
 
     private(set) var onboardingComplete: Bool
-    private(set) var appLockEnabled: Bool
     var useCloudKit: Bool
     var syncState: SyncState = .idle
     var remainingBudget: Int = SyncEngine.dailyRequestLimit
@@ -82,7 +83,10 @@ final class AppModel {
         useCloudKit = cloud
         requestedCloud = cloud
         onboardingComplete = defaults.bool(forKey: Self.Keys.onboardingComplete)
-        appLockEnabled = defaults.bool(forKey: Self.Keys.appLockEnabled)
+        lock = AppLockController(
+            enabled: defaults.bool(forKey: Self.Keys.appLockEnabled),
+            authenticator: LocalAuthenticator()
+        )
         useAppleIntelligence = (defaults.object(forKey: Self.Keys.useAppleIntelligence) as? Bool) ?? true
 
         #if DEBUG
@@ -611,9 +615,12 @@ final class AppModel {
     // MARK: - Lock
 
     func setAppLock(enabled: Bool) {
-        appLockEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: Self.Keys.appLockEnabled)
-        Task { try? await engine.setAppLock(enabled: enabled) }
+        lock.setEnabled(enabled)
+        if enabled, !lock.isEnabled {
+            banner = "Set a device passcode or password first — the app lock needs one."
+        }
+        UserDefaults.standard.set(lock.isEnabled, forKey: Self.Keys.appLockEnabled)
+        Task { try? await engine.setAppLock(enabled: lock.isEnabled) }
     }
 
     // MARK: - Export & deletion
