@@ -42,8 +42,6 @@ public actor DiagnosticsLog {
         if entries.count > limit {
             entries.removeFirst(entries.count - limit)
         }
-        // Mirror to the Xcode console too, so a sync can be watched live.
-        CairnConsole.log("[\(level.rawValue.uppercased())] \(message)")
     }
 
     public func snapshot() -> [Entry] { entries }
