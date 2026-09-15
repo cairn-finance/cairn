@@ -542,7 +542,9 @@ final class AppModel {
                     aiCategorized += outcome.categorized
                     processed += outcome.attempted
                     modelProgress = ModelProgress(processed: min(processed, total), total: total)
-                    if outcome.attempted == 0 { break }
+                    // Stop as soon as the model stops making progress or reports a
+                    // throttle; either way it is not worth continuing right now.
+                    if outcome.attempted == 0 || outcome.throttled { break }
                     try? await Task.sleep(for: .milliseconds(150))
                 }
             }

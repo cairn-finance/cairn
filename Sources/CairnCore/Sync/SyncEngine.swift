@@ -808,6 +808,10 @@ public actor SyncEngine {
         /// Uncategorized transactions still awaiting the on-device model.
         public var remaining: Int = 0
         public var bySource: [String: Int] = [:]
+        /// True when the on-device model refused the request (typically a system
+        /// throttle). The caller should stop trying for now; nothing was marked,
+        /// so the transactions are retried on a later pass.
+        public var throttled: Bool = false
 
         public init() {}
     }
@@ -1140,26 +1144,41 @@ public actor SyncEngine {
                 continue
             }
 
-            transaction.autoCategorizeAttemptedAt = now
-            outcome.attempted += 1
-
             // A debit can't be income, so don't offer that category on the way out.
             let isCredit = transaction.amountMinorUnits > 0
             let allowed = isCredit ? categories : categories.filter { $0.name != "Income" }
             guard !allowed.isEmpty else { continue }
             let names = allowed.map(\.name)
 
-            if let name = try? await AppleIntelligenceCategorizer.classify(
-                merchant: merchant,
-                description: transaction.payeeDescription,
-                categories: names
-            ), let category = allowed.first(where: { $0.name == name }) {
-                transaction.autoCategory = category
-                transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
-                transaction.autoConfidence = 0.8
-                transaction.modifiedAt = now
-                outcome.categorized += 1
-                outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += 1
+            // Marking is deferred until the model actually answers. A transient
+            // failure — the system throttling the on-device model is the common
+            // one — must leave the transaction eligible for a later pass.
+            guard AppleIntelligenceCategorizer.isAvailable else {
+                outcome.throttled = true
+                break
+            }
+            do {
+                let name = try await AppleIntelligenceCategorizer.classify(
+                    merchant: merchant,
+                    description: transaction.payeeDescription,
+                    categories: names
+                )
+                transaction.autoCategorizeAttemptedAt = now
+                outcome.attempted += 1
+                if let name, let category = allowed.first(where: { $0.name == name }) {
+                    transaction.autoCategory = category
+                    transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
+                    transaction.autoConfidence = 0.8
+                    transaction.modifiedAt = now
+                    outcome.categorized += 1
+                    outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += 1
+                }
+            } catch {
+                // Stop this pass instead of hammering a throttled model. Nothing
+                // was marked, so these rows are picked up again on a later pass.
+                await cairnLog(.warning, "On-device model unavailable; pausing categorization for now.")
+                outcome.throttled = true
+                break
             }
         }
 
