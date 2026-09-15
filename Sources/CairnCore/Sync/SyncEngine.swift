@@ -275,6 +275,11 @@ public actor SyncEngine {
         }
         outcome.serverErrors = accountSet.errors.map(\.message)
 
+        CairnConsole.log(
+            "account set: connections=\(accountSet.connections.count) accounts=\(accountSet.accounts.count) "
+                + "withPositions=\(accountSet.accounts.filter { !$0.holdings.isEmpty }.count)"
+        )
+
         // Accounts synced before connections were split out may still sit on the
         // connection-less holder; move them onto their real connection. Accounts
         // already owned by another connection are left untouched.
@@ -484,6 +489,11 @@ public actor SyncEngine {
         } else if account.accountTypeRaw == AccountType.other.rawValue {
             account.accountTypeRaw = Self.inferAccountType(from: simpleAccount.name).rawValue
         }
+        CairnConsole.log(
+            "resolved '\(account.name)': type=\(account.accountType.rawValue) "
+                + "positions=\(simpleAccount.holdings.count) "
+                + "hidden=\(account.isHidden) inNetWorth=\(account.includeInNetWorth)"
+        )
         outcome.accountsUpserted += 1
         return account
     }

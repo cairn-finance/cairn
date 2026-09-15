@@ -314,6 +314,16 @@ extension SimpleFINAccountSetDTO {
                     purchasePriceMinorUnits: purchasePrice
                 )
             }
+
+            // Investment detection is the common "why isn't my account showing
+            // up?" question, so record whether the server sent positions at all.
+            let rawHoldingCount = dto.holdings?.count
+            CairnConsole.log(
+                "account '\(ErrorSanitizer.sanitize(dto.name ?? "Account"))' currency=\(currency.code) "
+                    + "holdingsKey=\(rawHoldingCount == nil ? "absent" : "present") "
+                    + "raw=\(rawHoldingCount ?? 0) parsed=\(holdings.count)"
+            )
+
             return SimpleFINAccount(
                 id: id,
                 name: ErrorSanitizer.sanitize(dto.name ?? "Account"),
