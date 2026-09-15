@@ -145,4 +145,30 @@ struct InstitutionSyncTests {
         let holder = institutions.first { $0.bankConnectionID.isEmpty }
         #expect(holder?.name == "Bank A")
     }
+
+    @Test("The credential holder is never listed as a bank, unless it failed")
+    func credentialHolderVisibility() async throws {
+        let (container, _) = try makeEngine()
+        let context = container.mainContext
+
+        // A holder with per-connection children is hidden; the children show.
+        let credentialID = UUID()
+        let holder = Institution(bankConnectionID: "", name: "Bank A", credentialID: credentialID)
+        let child = Institution(bankConnectionID: "CON-A", name: "Bank A", credentialID: credentialID)
+        context.insert(holder)
+        context.insert(child)
+        try context.save()
+        #expect(Institution.listedAsBanks([holder, child]).map(\.name) == ["Bank A"])
+
+        // A lone holder — an interrupted connect, or a device without the
+        // credential — is phantom noise and is hidden...
+        let lone = Institution(bankConnectionID: "", name: "beta-bridge.simplefin.org", credentialID: UUID())
+        context.insert(lone)
+        try context.save()
+        #expect(Institution.listedAsBanks([lone]).isEmpty)
+
+        // ...until it actually failed, so it can be disconnected.
+        lone.lastSyncError = "Something went wrong"
+        #expect(Institution.listedAsBanks([lone]).count == 1)
+    }
 }

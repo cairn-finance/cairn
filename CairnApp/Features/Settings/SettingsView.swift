@@ -23,20 +23,10 @@ struct SettingsView: View {
         institutions.compactMap(\.lastSuccessfulFetch).max()
     }
 
-    /// Hides the connection-less credential holder once its connections have
-    /// been split out, but keeps it visible when it is the only record (for
-    /// example a first connect that never succeeded) so it can be disconnected.
+    /// The banks to list. `Institution.listedAsBanks` hides the connection-less
+    /// credential holder so a SimpleFIN Access URL never looks like a bank.
     private var visibleInstitutions: [Institution] {
-        institutions.filter { institution in
-            if !institution.bankConnectionID.isEmpty || institution.lastSyncError != nil {
-                return true
-            }
-            let hasChildren = institutions.contains {
-                $0.credentialID == institution.credentialID
-                    && $0.persistentModelID != institution.persistentModelID
-            }
-            return !hasChildren
-        }
+        Institution.listedAsBanks(institutions)
     }
 
     /// Wallet accounts are written by FinanceKit on iPhone/iPad and reach other

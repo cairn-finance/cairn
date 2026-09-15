@@ -496,6 +496,31 @@ public typealias CategorizationRule = CairnSchemaV1.CategorizationRule
 public typealias BalanceSnapshot = CairnSchemaV1.BalanceSnapshot
 public typealias AppSettings = CairnSchemaV1.AppSettings
 
+// MARK: - How connections are listed
+
+extension Institution {
+    /// A connection-less record that owns one SimpleFIN Access URL. It holds the
+    /// credential; the per-connection institutions carry the accounts.
+    public var isCredentialHolder: Bool { bankConnectionID.isEmpty }
+
+    /// The institutions worth listing as banks. A credential holder is an
+    /// implementation detail: hide it once its per-connection institutions
+    /// exist, and show it only when it failed, so a broken connection can still
+    /// be disconnected. Without this, a holder that never produced children — an
+    /// interrupted connect, or a device that never received its credential —
+    /// shows up as a phantom bank named after the SimpleFIN host.
+    public static func listedAsBanks(_ all: [Institution]) -> [Institution] {
+        all.filter { institution in
+            guard institution.isCredentialHolder else { return true }
+            let hasPerConnection = all.contains {
+                $0.credentialID == institution.credentialID
+                    && $0.persistentModelID != institution.persistentModelID
+            }
+            return !hasPerConnection && institution.lastSyncError != nil
+        }
+    }
+}
+
 /// How a rule inspects a transaction.
 public enum RuleField: String, Sendable, CaseIterable, Codable {
     case payee
