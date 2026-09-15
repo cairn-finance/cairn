@@ -16,6 +16,7 @@ public enum CairnSchemaV1: VersionedSchema {
         [
             Institution.self,
             Account.self,
+            Holding.self,
             LedgerTransaction.self,
             Category.self,
             Tag.self,
@@ -106,6 +107,10 @@ public enum CairnSchemaV1: VersionedSchema {
         @Relationship(deleteRule: .cascade, inverse: \BalanceSnapshot.account)
         public var snapshots: [BalanceSnapshot]?
 
+        /// Investment positions reported by the bank, when it provides them.
+        @Relationship(deleteRule: .cascade, inverse: \Holding.account)
+        public var holdings: [Holding]?
+
         public init(
             bankAccountID: String = "",
             name: String = "",
@@ -150,6 +155,84 @@ public enum CairnSchemaV1: VersionedSchema {
 
         public var availableBalance: Money {
             Money(minorUnits: availableBalanceMinorUnits, currency: currency)
+        }
+    }
+
+    /// One investment position inside an account, as reported by the bank at the
+    /// last sync. Shares and values are stored exactly as received; no live
+    /// market price is ever fetched. Values are never summed across currencies.
+    @Model
+    public final class Holding {
+        public var holdingID: String = ""
+        @Attribute(.allowsCloudEncryption) public var symbol: String?
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        /// Exact decimal string from the bank, kept verbatim so fractional
+        /// share counts never lose precision.
+        @Attribute(.allowsCloudEncryption) public var sharesRaw: String?
+
+        public var currencyCode: String = "USD"
+        public var currencyExponent: Int = 2
+        public var isCustomCurrency: Bool = false
+        public var customCurrencyName: String?
+        public var customCurrencyAbbreviation: String?
+
+        @Attribute(.allowsCloudEncryption) public var marketValueMinorUnits: Int64 = 0
+        @Attribute(.allowsCloudEncryption) public var costBasisMinorUnits: Int64 = 0
+        public var hasCostBasis: Bool = false
+        @Attribute(.allowsCloudEncryption) public var purchasePriceMinorUnits: Int64 = 0
+        public var hasPurchasePrice: Bool = false
+        public var displayOrder: Int = 0
+
+        public var account: Account?
+
+        public init(holdingID: String = "", name: String = "", currency: Currency = .usd) {
+            self.holdingID = holdingID
+            self.name = name
+            apply(currency: currency)
+        }
+
+        public var currency: Currency {
+            Currency(
+                code: currencyCode,
+                exponent: currencyExponent,
+                isCustom: isCustomCurrency,
+                customName: customCurrencyName,
+                customAbbreviation: customCurrencyAbbreviation
+            )
+        }
+
+        public func apply(currency: Currency) {
+            currencyCode = currency.code
+            currencyExponent = currency.exponent
+            isCustomCurrency = currency.isCustom
+            customCurrencyName = currency.customName
+            customCurrencyAbbreviation = currency.customAbbreviation
+        }
+
+        public var shares: Decimal? {
+            guard let sharesRaw, !sharesRaw.isEmpty else { return nil }
+            return Decimal(string: sharesRaw)
+        }
+
+        public var marketValue: Money {
+            Money(minorUnits: marketValueMinorUnits, currency: currency)
+        }
+
+        public var costBasis: Money? {
+            hasCostBasis ? Money(minorUnits: costBasisMinorUnits, currency: currency) : nil
+        }
+
+        /// Market value minus cost basis, from last-sync figures only. `nil` when
+        /// the bank reported no cost basis.
+        public var gain: Money? {
+            guard hasCostBasis else { return nil }
+            return Money(minorUnits: marketValueMinorUnits - costBasisMinorUnits, currency: currency)
+        }
+
+        /// The leading label: the ticker when we have one, otherwise the name.
+        public var displayLabel: String {
+            if let symbol, !symbol.isEmpty { return symbol }
+            return name.isEmpty ? "Holding" : name
         }
     }
 
@@ -402,6 +485,7 @@ public enum CairnSchemaV1: VersionedSchema {
 
 public typealias Institution = CairnSchemaV1.Institution
 public typealias Account = CairnSchemaV1.Account
+public typealias Holding = CairnSchemaV1.Holding
 public typealias LedgerTransaction = CairnSchemaV1.LedgerTransaction
 public typealias Category = CairnSchemaV1.Category
 public typealias Tag = CairnSchemaV1.Tag

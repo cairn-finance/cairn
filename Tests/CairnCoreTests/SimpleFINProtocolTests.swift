@@ -122,6 +122,69 @@ struct SimpleFINProtocolTests {
         #expect(SimpleFINClient.decodeToken("not base64!!") == nil)
         #expect(SimpleFINClient.decodeToken("") == nil)
     }
+
+    @Test("Decodes investment positions")
+    func decodesHoldings() throws {
+        let json = """
+        {
+          "accounts": [
+            {
+              "id": "A",
+              "name": "Brokerage",
+              "currency": "USD",
+              "balance": "100.00",
+              "holdings": [
+                {
+                  "id": "H1",
+                  "symbol": "AAPL",
+                  "description": "Shares of Apple",
+                  "shares": "550.0",
+                  "market_value": "105884.8",
+                  "cost_basis": "55.00",
+                  "purchase_price": "0.10",
+                  "currency": "USD",
+                  "created": null
+                }
+              ]
+            }
+          ]
+        }
+        """
+        let dto = try JSONDecoder().decode(SimpleFINAccountSetDTO.self, from: Data(json.utf8))
+        let account = try #require(dto.toDomain().accounts.first)
+        #expect(account.holdings.count == 1)
+
+        let holding = try #require(account.holdings.first)
+        #expect(holding.id == "H1")
+        #expect(holding.symbol == "AAPL")
+        #expect(holding.name == "Shares of Apple")
+        #expect(holding.sharesRaw == "550.0")
+        #expect(holding.marketValueMinorUnits == 10_588_480)
+        #expect(holding.costBasisMinorUnits == 5_500)
+        #expect(holding.purchasePriceMinorUnits == 10)
+    }
+
+    @Test("A position can carry its own currency and omit a cost basis")
+    func holdingCurrencyAndOptionalCostBasis() throws {
+        let json = """
+        {
+          "accounts": [
+            {
+              "id": "A", "name": "Global", "currency": "USD", "balance": "100.00",
+              "holdings": [
+                { "id": "H1", "symbol": "ASML", "description": "ASML", "shares": "2",
+                  "market_value": "1200.00", "currency": "EUR" }
+              ]
+            }
+          ]
+        }
+        """
+        let dto = try JSONDecoder().decode(SimpleFINAccountSetDTO.self, from: Data(json.utf8))
+        let holding = try #require(dto.toDomain().accounts.first?.holdings.first)
+        #expect(holding.currency.code == "EUR")
+        #expect(holding.marketValueMinorUnits == 120_000)
+        #expect(holding.costBasisMinorUnits == nil)
+    }
 }
 
 @Suite("Error sanitizer")

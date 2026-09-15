@@ -55,13 +55,34 @@ struct SimpleFINAccountDTO: Decodable {
     let availableBalance: String?
     let balanceDate: Double?
     let transactions: [SimpleFINTransactionDTO]?
+    let holdings: [SimpleFINHoldingDTO]?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, currency, balance, transactions
+        case id, name, currency, balance, transactions, holdings
         case connID = "conn_id"
         case connName = "conn_name"
         case availableBalance = "available-balance"
         case balanceDate = "balance-date"
+    }
+}
+
+/// Investment positions are an extension some servers return. The official
+/// protocol does not require them, so a missing `holdings` key is normal.
+struct SimpleFINHoldingDTO: Decodable {
+    let id: String?
+    let symbol: String?
+    let description: String?
+    let shares: String?
+    let marketValue: String?
+    let costBasis: String?
+    let purchasePrice: String?
+    let currency: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, symbol, description, shares, currency
+        case marketValue = "market_value"
+        case costBasis = "cost_basis"
+        case purchasePrice = "purchase_price"
     }
 }
 
@@ -133,6 +154,7 @@ public struct SimpleFINAccount: Sendable {
     public let availableBalanceMinorUnits: Int64?
     public let balanceDate: Date?
     public let transactions: [SimpleFINTransaction]
+    public let holdings: [SimpleFINHolding]
 
     public init(
         id: String,
@@ -143,7 +165,8 @@ public struct SimpleFINAccount: Sendable {
         balanceMinorUnits: Int64,
         availableBalanceMinorUnits: Int64? = nil,
         balanceDate: Date? = nil,
-        transactions: [SimpleFINTransaction] = []
+        transactions: [SimpleFINTransaction] = [],
+        holdings: [SimpleFINHolding] = []
     ) {
         self.id = id
         self.name = name
@@ -154,6 +177,40 @@ public struct SimpleFINAccount: Sendable {
         self.availableBalanceMinorUnits = availableBalanceMinorUnits
         self.balanceDate = balanceDate
         self.transactions = transactions
+        self.holdings = holdings
+    }
+}
+
+/// One investment position, exactly as the bank reported it at the last sync.
+public struct SimpleFINHolding: Sendable, Hashable {
+    public let id: String
+    public let symbol: String?
+    public let name: String
+    /// Exact decimal string; kept verbatim to preserve fractional shares.
+    public let sharesRaw: String?
+    public let currency: Currency
+    public let marketValueMinorUnits: Int64
+    public let costBasisMinorUnits: Int64?
+    public let purchasePriceMinorUnits: Int64?
+
+    public init(
+        id: String,
+        symbol: String? = nil,
+        name: String,
+        sharesRaw: String? = nil,
+        currency: Currency,
+        marketValueMinorUnits: Int64,
+        costBasisMinorUnits: Int64? = nil,
+        purchasePriceMinorUnits: Int64? = nil
+    ) {
+        self.id = id
+        self.symbol = symbol
+        self.name = name
+        self.sharesRaw = sharesRaw
+        self.currency = currency
+        self.marketValueMinorUnits = marketValueMinorUnits
+        self.costBasisMinorUnits = costBasisMinorUnits
+        self.purchasePriceMinorUnits = purchasePriceMinorUnits
     }
 }
 
@@ -239,6 +296,24 @@ extension SimpleFINAccountSetDTO {
                     isPending: txn.pending ?? false
                 )
             }
+            let holdings = (dto.holdings ?? []).compactMap { holding -> SimpleFINHolding? in
+                guard let holdingID = holding.id, !holdingID.isEmpty else { return nil }
+                let holdingCurrency = Currency.simpleFIN(holding.currency ?? dto.currency ?? "USD")
+                let holdingExponent = holdingCurrency.exponent
+                let marketValue = MinorUnits.parse(holding.marketValue ?? "0", exponent: holdingExponent) ?? 0
+                let costBasis = holding.costBasis.flatMap { MinorUnits.parse($0, exponent: holdingExponent) }
+                let purchasePrice = holding.purchasePrice.flatMap { MinorUnits.parse($0, exponent: holdingExponent) }
+                return SimpleFINHolding(
+                    id: holdingID,
+                    symbol: holding.symbol.map(ErrorSanitizer.sanitize),
+                    name: ErrorSanitizer.sanitize(holding.description ?? ""),
+                    sharesRaw: holding.shares,
+                    currency: holdingCurrency,
+                    marketValueMinorUnits: marketValue,
+                    costBasisMinorUnits: costBasis,
+                    purchasePriceMinorUnits: purchasePrice
+                )
+            }
             return SimpleFINAccount(
                 id: id,
                 name: ErrorSanitizer.sanitize(dto.name ?? "Account"),
@@ -248,7 +323,8 @@ extension SimpleFINAccountSetDTO {
                 balanceMinorUnits: balance,
                 availableBalanceMinorUnits: available,
                 balanceDate: Self.date(from: dto.balanceDate),
-                transactions: transactions
+                transactions: transactions,
+                holdings: holdings
             )
         }
 

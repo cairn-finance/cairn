@@ -159,3 +159,96 @@ struct RowDivider: View {
             .padding(.leading, leadingInset)
     }
 }
+
+/// One investment position: the ticker or name, shares and cost basis, the
+/// market value as of the last sync, and the gain since purchase when the bank
+/// reported a cost basis.
+struct HoldingRow: View {
+    let holding: Holding
+
+    var body: some View {
+        HStack(alignment: .top, spacing: CairnTheme.Spacing.m) {
+            badge
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(holding.displayLabel)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .trailing, spacing: 3) {
+                AmountText(
+                    money: holding.marketValue,
+                    font: .body.weight(.semibold)
+                )
+                .fixedSize(horizontal: true, vertical: false)
+
+                if let gain = holding.gain {
+                    HStack(spacing: 4) {
+                        Text(gainText(gain))
+                        if let percent = gainPercent {
+                            Text(percent)
+                        }
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(gain.minorUnits < 0 ? CairnTheme.negative : CairnTheme.positive)
+                }
+            }
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 14)
+    }
+
+    private var badge: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(CairnTheme.accent.opacity(0.12))
+                .frame(width: 40, height: 40)
+            if let symbol = holding.symbol, !symbol.isEmpty {
+                Text(symbol.uppercased().prefix(4))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(CairnTheme.accent)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .padding(.horizontal, 3)
+            } else {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(CairnTheme.accent)
+            }
+        }
+    }
+
+    private var subtitle: String {
+        var parts: [String] = []
+        if holding.symbol?.isEmpty == false, !holding.name.isEmpty {
+            parts.append(holding.name)
+        }
+        if let shares = holding.shares {
+            let text = shares.formatted(.number.precision(.fractionLength(0...4)))
+            parts.append("\(text) \(shares == 1 ? "share" : "shares")")
+        }
+        if let cost = holding.costBasis {
+            parts.append("Cost \(cost.formatted())")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func gainText(_ gain: Money) -> String {
+        let formatted = gain.formatted()
+        return gain.minorUnits > 0 ? "+\(formatted)" : formatted
+    }
+
+    private var gainPercent: String? {
+        guard let cost = holding.costBasis, cost.minorUnits > 0, let gain = holding.gain else { return nil }
+        let ratio = Double(gain.minorUnits) / Double(cost.minorUnits)
+        return ratio.formatted(.percent.precision(.fractionLength(1)))
+    }
+}

@@ -475,25 +475,83 @@ public actor SyncEngine {
         account.balanceDate = simpleAccount.balanceDate
         account.lastSyncedAt = now
         account.institution = institution
-        if account.accountTypeRaw == AccountType.other.rawValue {
+        applyHoldings(simpleAccount.holdings, to: account)
+        // A bank that reports positions is an investment account regardless of
+        // what it is named. Only fall back to the name for accounts without
+        // positions, and never override a type we already inferred.
+        if !simpleAccount.holdings.isEmpty {
+            account.accountTypeRaw = AccountType.investment.rawValue
+        } else if account.accountTypeRaw == AccountType.other.rawValue {
             account.accountTypeRaw = Self.inferAccountType(from: simpleAccount.name).rawValue
         }
         outcome.accountsUpserted += 1
         return account
     }
 
+    /// Replaces an account's positions with the ones just received. Positions
+    /// are matched by their stable id so a sync updates rather than duplicates
+    /// them; positions the bank no longer reports are removed.
+    private func applyHoldings(_ incoming: [SimpleFINHolding], to account: Account) {
+        var existing = Dictionary(
+            (account.holdings ?? []).map { ($0.holdingID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        for (index, simple) in incoming.enumerated() {
+            let holding: Holding
+            if let match = existing.removeValue(forKey: simple.id) {
+                holding = match
+            } else {
+                holding = Holding(holdingID: simple.id)
+                modelContext.insert(holding)
+                holding.account = account
+            }
+
+            holding.symbol = simple.symbol
+            holding.name = simple.name
+            holding.sharesRaw = simple.sharesRaw
+            holding.apply(currency: simple.currency)
+            holding.marketValueMinorUnits = simple.marketValueMinorUnits
+            holding.costBasisMinorUnits = simple.costBasisMinorUnits ?? 0
+            holding.hasCostBasis = simple.costBasisMinorUnits != nil
+            holding.purchasePriceMinorUnits = simple.purchasePriceMinorUnits ?? 0
+            holding.hasPurchasePrice = simple.purchasePriceMinorUnits != nil
+            holding.displayOrder = index
+        }
+
+        for orphan in existing.values {
+            modelContext.delete(orphan)
+        }
+    }
+
     /// Best-effort account type from its name, used when SimpleFIN provides no
-    /// type information.
+    /// positions and no type information.
     private static func inferAccountType(from name: String) -> AccountType {
         let lowered = name.lowercased()
         if lowered.contains("credit") || lowered.contains("card") { return .credit }
+        if lowered.contains("loan") || lowered.contains("mortgage") { return .loan }
+        if isInvestmentName(lowered) { return .investment }
         if lowered.contains("saving") { return .savings }
         if lowered.contains("checking") { return .checking }
-        if lowered.contains("invest") || lowered.contains("brokerage") || lowered.contains("retire") {
-            return .investment
-        }
-        if lowered.contains("loan") || lowered.contains("mortgage") { return .loan }
         return .other
+    }
+
+    /// Names that reliably signal an investment account, including the
+    /// retirement plan names the plain "retire" check used to miss (IRA, 401k,
+    /// 529, HSA) and common brokerages.
+    private static func isInvestmentName(_ lowered: String) -> Bool {
+        let markers = [
+            "invest", "broker", "retire", "securit", "portfolio", "annuit", "pension",
+            "roth", "crypto", "bitcoin", "vanguard", "fidelity", "schwab", "robinhood",
+            "merrill", "etrade", "e*trade", "wealthfront", "betterment", "coinbase",
+            "kraken", "401", "403", "457", "529",
+        ]
+        if markers.contains(where: lowered.contains) { return true }
+
+        // Short tokens need word-boundary matching: "ira" would otherwise match
+        // inside words like "aspiration".
+        let tokens = Set(lowered.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+        return tokens.contains("ira") || tokens.contains("hsa") || tokens.contains("sep")
     }
 
     // swiftlint:disable:next function_parameter_count

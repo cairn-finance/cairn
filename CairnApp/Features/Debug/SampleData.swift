@@ -58,6 +58,15 @@ enum SampleData {
         brokerage.lastSyncedAt = now
         context.insert(brokerage)
 
+        insertHolding(
+            into: brokerage, id: "H-AAPL", symbol: "AAPL", name: "Shares of Apple",
+            shares: "100", market: 2_000_000, cost: 1_200_000, order: 0, context: context
+        )
+        insertHolding(
+            into: brokerage, id: "H-VTI", symbol: "VTI", name: "Vanguard Total Stock Market ETF",
+            shares: "50", market: 1_450_000, cost: 1_100_000, order: 1, context: context
+        )
+
         let retirement = Account(bankAccountID: "ACT-IRA", name: "Roth IRA", currency: .usd)
         retirement.accountTypeRaw = AccountType.investment.rawValue
         retirement.balanceMinorUnits = 8_120_500
@@ -65,6 +74,25 @@ enum SampleData {
         retirement.institution = institution
         retirement.lastSyncedAt = now
         context.insert(retirement)
+
+        insertHolding(
+            into: retirement, id: "H-VFIAX", symbol: "VFIAX", name: "Vanguard 500 Index Fund",
+            shares: "1000", market: 8_120_500, cost: 6_000_000, order: 0, context: context
+        )
+
+        let european = Account(bankAccountID: "ACT-EU", name: "European Equities", currency: Currency(code: "EUR"))
+        european.accountTypeRaw = AccountType.investment.rawValue
+        european.balanceMinorUnits = 1_200_000
+        european.balanceDate = now
+        european.institution = institution
+        european.lastSyncedAt = now
+        context.insert(european)
+
+        insertHolding(
+            into: european, id: "H-ASML", symbol: "ASML", name: "ASML Holding N.V.",
+            shares: "20", market: 1_200_000, cost: 980_000, order: 0,
+            currency: Currency(code: "EUR"), context: context
+        )
 
         let card = Account(bankAccountID: "ACT-CC", name: "Travel Card", currency: .usd)
         card.accountTypeRaw = AccountType.credit.rawValue
@@ -177,6 +205,32 @@ enum SampleData {
         }
 
         try? context.save()
+    }
+
+    /// Creates one sample position. `cost` is the total cost basis; both values
+    /// are in the position's currency (USD unless stated otherwise).
+    // swiftlint:disable:next function_parameter_count
+    private static func insertHolding(
+        into account: Account,
+        id: String,
+        symbol: String,
+        name: String,
+        shares: String,
+        market: Int64,
+        cost: Int64,
+        order: Int,
+        currency: Currency = .usd,
+        context: ModelContext
+    ) {
+        let holding = Holding(holdingID: id, name: name, currency: currency)
+        holding.symbol = symbol
+        holding.sharesRaw = shares
+        holding.marketValueMinorUnits = market
+        holding.costBasisMinorUnits = cost
+        holding.hasCostBasis = true
+        holding.displayOrder = order
+        holding.account = account
+        context.insert(holding)
     }
 }
 #endif

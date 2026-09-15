@@ -46,6 +46,10 @@ struct AccountDetailView: View {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
                 summary
                     .cairnAppear()
+                if !holdings.isEmpty {
+                    holdingsCard
+                        .cairnAppear(delay: 0.03)
+                }
                 if transactions.count > 1 {
                     historyCard
                         .cairnAppear(delay: 0.05)
@@ -176,6 +180,22 @@ struct AccountDetailView: View {
     }
 
     // MARK: - History
+
+    private var holdings: [Holding] {
+        (account.holdings ?? []).sorted { $0.displayOrder < $1.displayOrder }
+    }
+
+    private var holdingsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title: "Positions", trailing: "\(holdings.count)")
+            RowGroup {
+                ForEach(Array(holdings.enumerated()), id: \.element.persistentModelID) { index, holding in
+                    HoldingRow(holding: holding)
+                    if index < holdings.count - 1 { RowDivider() }
+                }
+            }
+        }
+    }
 
     private var historyCard: some View {
         let series = NetWorthMath.series(account: account, days: 90)

@@ -69,7 +69,7 @@ private struct BannerView: View {
 /// The app's top-level destinations, shared by the iOS tab bar and the macOS
 /// sidebar so both platforms have the same information architecture.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case home, activity, insights, settings
+    case home, activity, insights, investments, settings
 
     var id: String { rawValue }
 
@@ -78,6 +78,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .home: "Home"
         case .activity: "Activity"
         case .insights: "Insights"
+        case .investments: "Investments"
         case .settings: "Settings"
         }
     }
@@ -87,6 +88,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .home: "house.fill"
         case .activity: "list.bullet.rectangle.fill"
         case .insights: "chart.bar.xaxis"
+        case .investments: "chart.line.uptrend.xyaxis"
         case .settings: "gearshape.fill"
         }
     }
@@ -110,6 +112,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .home: HomeView()
         case .activity: TransactionsView()
         case .insights: InsightsView()
+        case .investments: InvestmentsView()
         case .settings: SettingsView()
         }
     }

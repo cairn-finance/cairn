@@ -2,10 +2,11 @@ import SwiftUI
 import SwiftData
 import CairnCore
 
-/// Investment accounts and their values as of the last sync.
+/// Investment accounts, their positions, and the values the bank last reported.
 ///
-/// SimpleFIN reports balances, not holdings or cost basis, so Cairn never shows
-/// a live market price — only what each institution last told us.
+/// SimpleFIN reports positions (symbol, shares, market value, cost basis) at the
+/// last sync, so Cairn can show what you hold and the gain since purchase — but
+/// it never fetches a live market price.
 struct InvestmentsView: View {
     @Query private var accounts: [Account]
     @Query private var settings: [AppSettings]
@@ -106,7 +107,7 @@ struct InvestmentsView: View {
 
     private var asOfText: String {
         guard let asOf else { return "Waiting for the first sync" }
-        return "Values as of \(asOf.formatted(.relative(presentation: .named)))"
+        return "Values as of \(asOf.formatted(date: .abbreviated, time: .shortened))"
     }
 
     // MARK: - Accounts
@@ -126,16 +127,27 @@ struct InvestmentsView: View {
     private func accountGroup(title: String, accounts: [Account]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: title, trailing: "\(accounts.count)")
-            RowGroup {
-                ForEach(Array(accounts.enumerated()), id: \.element.persistentModelID) { index, account in
-                    NavigationLink {
-                        AccountDetailView(account: account)
-                    } label: {
-                        AccountRow(account: account)
-                    }
-                    .buttonStyle(.plain)
-                    if index < accounts.count - 1 { RowDivider() }
+            VStack(spacing: 12) {
+                ForEach(accounts, id: \.persistentModelID) { account in
+                    accountCard(account)
                 }
+            }
+        }
+    }
+
+    private func accountCard(_ account: Account) -> some View {
+        let holdings = (account.holdings ?? []).sorted { $0.displayOrder < $1.displayOrder }
+        return RowGroup {
+            NavigationLink {
+                AccountDetailView(account: account)
+            } label: {
+                AccountRow(account: account)
+            }
+            .buttonStyle(.plain)
+
+            ForEach(holdings, id: \.persistentModelID) { holding in
+                RowDivider()
+                HoldingRow(holding: holding)
             }
         }
     }
@@ -146,65 +158,13 @@ struct InvestmentsView: View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 CardHeader("How these numbers work")
-                Text("Cairn shows the value your bank reported at the last sync. "
-                    + "It does not fetch live market prices or track cost basis, so this is a snapshot — not a real-time portfolio value.")
+                Text("Cairn shows the positions and value your bank reported at the last sync. "
+                    + "It does not fetch live market prices, so these figures are a snapshot — not a real-time portfolio value.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .cairnAppear(delay: 0.1)
-    }
-}
-
-/// A compact, tappable summary of investment accounts shown on Home. It exists
-/// so Investments stays a focused pushed screen without adding a fifth tab.
-struct InvestmentsSummaryRow: View {
-    let accounts: [Account]
-    let settings: [AppSettings]
-
-    private var totals: [CurrencyTotal] { NetWorthMath.totals(accounts: accounts) }
-
-    private var currency: Currency {
-        NetWorthMath.primaryCurrency(totals: totals, home: NetWorthMath.homeCurrency(settings: settings))
-    }
-
-    private var total: Int64 {
-        totals.first { $0.currency.code == currency.code }?.totalMinorUnits ?? 0
-    }
-
-    var body: some View {
-        Card {
-            HStack(spacing: CairnTheme.Spacing.m) {
-                ZStack {
-                    Circle()
-                        .fill(CairnTheme.accent.opacity(0.14))
-                        .frame(width: 42, height: 42)
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(CairnTheme.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Investments")
-                        .font(.body.weight(.medium))
-                    Text("\(accounts.count) account\(accounts.count == 1 ? "" : "s") · as of last sync")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: CairnTheme.Spacing.m)
-
-                AmountText(
-                    money: Money(minorUnits: total, currency: currency),
-                    font: .body.weight(.semibold)
-                )
-                .fixedSize(horizontal: true, vertical: false)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-        }
     }
 }
