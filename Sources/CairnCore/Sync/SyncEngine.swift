@@ -1,6 +1,29 @@
 import Foundation
 import SwiftData
 
+/// Identifies a transaction by the fields the store actually persists, so a row
+/// can be re-fetched after an `await`.
+///
+/// `PersistentIdentifier` plus `isDeleted` is not enough: that flag only reflects
+/// deletions made in the same context, so batch deletes and deletions made from
+/// the main context slip through.
+struct RowKey: Hashable {
+    let bankTransactionID: String
+    let accountIDIndex: String
+
+    init(bankTransactionID: String, accountIDIndex: String) {
+        self.bankTransactionID = bankTransactionID
+        self.accountIDIndex = accountIDIndex
+    }
+
+    init(_ transaction: LedgerTransaction) {
+        self.init(
+            bankTransactionID: transaction.bankTransactionID,
+            accountIDIndex: transaction.accountIDIndex
+        )
+    }
+}
+
 /// A summary of one sync pass, surfaced to the UI.
 public struct SyncOutcome: Sendable, Equatable {
     public var accountsUpserted: Int = 0
@@ -166,23 +189,26 @@ public actor SyncEngine {
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
 
         let label = institution.name.isEmpty ? "institution" : institution.name
-        await cairnLog(
-            .info,
-            "Sync started for \(label). lastSync=\(institution.lastSyncDate.map(Self.iso) ?? "never")"
-        )
-
+        // Read everything off the row before the first await, then let it go.
+        let lastSyncDescription = institution.lastSyncDate.map(Self.iso) ?? "never"
         let candidates = Self.candidateStartDates(
             lastSyncDate: institution.lastSyncDate,
             now: now,
             calendar: calendar
         )
+        await cairnLog(.info, "Sync started for \(label). lastSync=\(lastSyncDescription)")
 
         var lastError: any Error = SimpleFINError.httpStatus(-1)
         for (index, startDate) in candidates.enumerated() {
             let isLast = index == candidates.count - 1
             let windowDays = Int(now.timeIntervalSince(startDate) / 86_400)
             await cairnLog(.info, "Requesting a \(windowDays)-day window (attempt \(index + 1) of \(candidates.count)).")
-            institution.dailyRequestCount += 1
+            // Re-resolve: a previous iteration's network call may have outlived
+            // the row, and writing to a deleted model traps.
+            guard let live = self[institutionID, as: Institution.self] else {
+                throw SimpleFINError.transport("This institution is no longer in the local database.")
+            }
+            live.dailyRequestCount += 1
 
             do {
                 let accountSet = try await client.fetchAccounts(
@@ -201,7 +227,7 @@ public actor SyncEngine {
 
                 return try await applyAccountSet(
                     accountSet,
-                    institutionID: institution.persistentModelID,
+                    institutionID: institutionID,
                     accessURL: accessURL,
                     now: now,
                     calendar: calendar
@@ -214,13 +240,17 @@ public actor SyncEngine {
                 }
                 let message = Self.describe(error)
                 await cairnLog(.error, "Sync failed: \(message)")
-                institution.lastSyncError = message
-                // The very first fetch failed, so the connection still wears
-                // its stand-in name; make sure it is at least readable.
-                if Self.isPlaceholderName(institution.name, for: accessURL) {
-                    institution.name = Self.fallbackName(for: accessURL)
+                // The fetch can outlive the connection; only write if it is still
+                // there.
+                if let live = self[institutionID, as: Institution.self] {
+                    live.lastSyncError = message
+                    // The very first fetch failed, so the connection still wears
+                    // its stand-in name; make sure it is at least readable.
+                    if Self.isPlaceholderName(live.name, for: accessURL) {
+                        live.name = Self.fallbackName(for: accessURL)
+                    }
+                    try? modelContext.save()
                 }
-                try? modelContext.save()
                 throw error
             }
         }
@@ -228,11 +258,13 @@ public actor SyncEngine {
         // Every candidate window was rejected.
         let message = Self.describe(lastError)
         await cairnLog(.error, "Sync exhausted all windows: \(message)")
-        institution.lastSyncError = message
-        if Self.isPlaceholderName(institution.name, for: accessURL) {
-            institution.name = Self.fallbackName(for: accessURL)
+        if let live = self[institutionID, as: Institution.self] {
+            live.lastSyncError = message
+            if Self.isPlaceholderName(live.name, for: accessURL) {
+                live.name = Self.fallbackName(for: accessURL)
+            }
+            try? modelContext.save()
         }
-        try? modelContext.save()
         throw lastError
     }
 
@@ -1438,7 +1470,7 @@ public actor SyncEngine {
         // running in that window can remove the rows. Writing to a deleted
         // SwiftData row traps.
         struct MerchantGroup {
-            var ids: [PersistentIdentifier] = []
+            var keys: [RowKey] = []
             var merchant = ""
             var description = ""
             var isCredit = false
@@ -1469,8 +1501,8 @@ public actor SyncEngine {
             let key = "\(MerchantMemory.key(for: merchant))|\(direction)"
             if groups[key] == nil { order.append(key) }
             var group = groups[key] ?? MerchantGroup()
-            let isFirst = group.ids.isEmpty
-            group.ids.append(transaction.persistentModelID)
+            let isFirst = group.keys.isEmpty
+            group.keys.append(RowKey(transaction))
             // The longest description stands in for the merchant, as before.
             if isFirst || transaction.payeeDescription.count > group.description.count {
                 group.merchant = merchant
@@ -1528,7 +1560,7 @@ public actor SyncEngine {
         // their identifiers after every suspension, so a row deleted mid-pass by
         // a sync, disconnect, or delete is skipped rather than written to.
         for (index, group) in selected.enumerated() {
-            var rows = liveTransactions(group.ids)
+            var rows = liveTransactions(group.keys)
             guard !rows.isEmpty else { continue }
 
             guard let allowed = allowedByIndex[index] else {
@@ -1549,7 +1581,7 @@ public actor SyncEngine {
                         categories: allowed
                     )
                     chosen = name.flatMap { candidate in allowed.first { $0 == candidate } }
-                    rows = liveTransactions(group.ids)
+                    rows = liveTransactions(group.keys)
                 } catch {
                     await cairnLog(.warning, "On-device model unavailable; pausing categorization for now.")
                     outcome.throttled = true
@@ -1606,16 +1638,24 @@ public actor SyncEngine {
             && !transaction.isPending
     }
 
-    /// Resolves snapshot identifiers back to live rows, dropping any that were
-    /// deleted while this actor was suspended at an `await`. The actor can
-    /// re-enter during a model call — a sync, a Wallet disconnect, or Delete All
-    /// Data — and writing to a deleted SwiftData row is a fatal error.
-    private func liveTransactions(_ ids: [PersistentIdentifier]) -> [LedgerTransaction] {
-        ids.compactMap { id -> LedgerTransaction? in
-            guard let transaction: LedgerTransaction = modelContext.registeredModel(for: id),
-                  !transaction.isDeleted
-            else { return nil }
-            return transaction
+    /// Re-fetches rows from the store after a suspension, dropping any that are
+    /// gone.
+    ///
+    /// `isDeleted` only reflects deletions made in *this* context, so a batch
+    /// delete (`delete(model:)`), a Delete All Data, or a deletion made from the
+    /// main context — disconnecting Wallet, removing a connection — would slip
+    /// through and writing to the row would trap. Asking the store is the only
+    /// reliable check.
+    private func liveTransactions(_ keys: [RowKey]) -> [LedgerTransaction] {
+        guard !keys.isEmpty else { return [] }
+        let identifiers = keys.map(\.bankTransactionID)
+        let descriptor = FetchDescriptor<LedgerTransaction>(
+            predicate: #Predicate { identifiers.contains($0.bankTransactionID) }
+        )
+        guard let rows = try? modelContext.fetch(descriptor) else { return [] }
+        let wanted = Set(keys)
+        return rows.filter {
+            wanted.contains(RowKey(bankTransactionID: $0.bankTransactionID, accountIDIndex: $0.accountIDIndex))
         }
     }
 
