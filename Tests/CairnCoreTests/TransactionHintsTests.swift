@@ -98,6 +98,38 @@ struct TransactionHintsTests {
         }
     }
 
+    @Test("An account named Chase doesn't match a card purchase")
+    func ownAccountNamesUseWordBoundaries() {
+        // SimpleFIN usually names the connection just "Chase", so a Chase
+        // customer would otherwise see every "PURCHASE AUTHORIZED ON…" row
+        // become a transfer.
+        let counterparties = ["Chase", "Everyday Checking", "SoFi"]
+        for description in [
+            "PURCHASE AUTHORIZED ON 09/12 CARD 1234",
+            "POS PURCHASE 4471",
+            "PURCHASING DEPARTMENT",
+        ] {
+            #expect(
+                !TransactionHints.isTransferToInstitution(
+                    description: description,
+                    counterparties: counterparties
+                ),
+                "\(description) must not be money movement"
+            )
+        }
+
+        // A real transfer to that same account still matches.
+        for description in ["CHASE CREDIT CRD AUTOPAY", "Transfer to Everyday Checking", "ACH: SOFI"] {
+            #expect(
+                TransactionHints.isTransferToInstitution(
+                    description: description,
+                    counterparties: counterparties
+                ),
+                "\(description) should be money movement"
+            )
+        }
+    }
+
     @Test("Money to a financial institution is movement")
     func financialCounterpartiesAreTransfers() {
         for description in ["ACH: CAPITAL ONE", "ACH: AMERICAN EXPRESS", "ACH: CHASE", "ACH: VANGUARD"] {

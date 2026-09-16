@@ -190,13 +190,14 @@ public enum TransactionHints {
         return incomeSubstrings.contains { haystack.contains($0) }
     }
 
-    /// A counterparty name only counts when the whole normalized name appears,
-    /// so "American Express" matches but "American" alone never does. Partial
-    /// brand matching is handled by `financialCounterparties` instead.
+    /// A counterparty name only counts when the whole normalized name appears on
+    /// word boundaries, so "American Express" matches but "American" alone never
+    /// does — and an account named "Chase" no longer matches "pur**chase**".
+    /// Partial brand matching is handled by `financialCounterparties` instead.
     private static func matchesCounterparty(_ haystack: String, name: String) -> Bool {
         let key = normalized(description: name, merchant: "")
         guard key.count >= 4 else { return false }
-        return haystack.contains(key)
+        return containsWord(key, in: haystack)
     }
 
     /// Whether `needle` appears in `haystack` on word boundaries.
