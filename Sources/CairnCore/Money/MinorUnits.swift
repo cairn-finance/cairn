@@ -71,6 +71,32 @@ public enum MinorUnits {
         return result
     }
 
+    // MARK: - Non-trapping arithmetic
+
+    /// Adds two minor-unit amounts without trapping.
+    ///
+    /// Bank and CSV values are untrusted input, and summing `Int64` traps on
+    /// overflow. Clamping keeps a corrupted total finite and obviously wrong
+    /// instead of crashing the app in the middle of a sync.
+    public static func addClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        guard overflow else { return sum }
+        return rhs >= 0 ? .max : .min
+    }
+
+    /// Subtracts without trapping, for the same reason as ``addClamped``.
+    public static func subtractClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (difference, overflow) = lhs.subtractingReportingOverflow(rhs)
+        guard overflow else { return difference }
+        return rhs >= 0 ? .min : .max
+    }
+
+    /// `abs` without trapping on `Int64.min`, whose magnitude is not
+    /// representable.
+    public static func absClamped(_ value: Int64) -> Int64 {
+        value == .min ? .max : Swift.abs(value)
+    }
+
     private static func powerOfTenDecimal(_ exponent: Int) -> Decimal {
         var result = Decimal(1)
         for _ in 0..<exponent { result *= 10 }

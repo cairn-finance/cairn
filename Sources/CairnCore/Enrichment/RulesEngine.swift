@@ -88,10 +88,46 @@ public enum RulesEngine {
         case .equals:
             return description.compare(pattern, options: .caseInsensitive) == .orderedSame
         case .regularExpression:
-            return (try? Regex(pattern)) != nil
-                ? description.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
-                : false
+            // Rules are re-evaluated for every transaction, so the pattern is
+            // compiled once per process rather than twice per transaction.
+            guard let regex = RegexCache.shared.regex(for: pattern) else { return false }
+            let range = NSRange(description.startIndex..<description.endIndex, in: description)
+            return regex.firstMatch(in: description, range: range) != nil
         }
+    }
+}
+
+/// A small, bounded cache of compiled regular expressions for regex rules.
+///
+/// `NSRegularExpression` is immutable and thread-safe, so sharing compiled
+/// instances behind a lock is safe. The cache is cleared rather than grown
+/// without bound when a person edits many patterns.
+private final class RegexCache: @unchecked Sendable {
+    static let shared = RegexCache()
+
+    private let lock = NSLock()
+    private var compiled: [String: NSRegularExpression] = [:]
+    private var invalid: Set<String> = []
+    private let limit = 128
+
+    func regex(for pattern: String) -> NSRegularExpression? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let hit = compiled[pattern] { return hit }
+        if invalid.contains(pattern) { return nil }
+
+        if compiled.count + invalid.count >= limit {
+            compiled.removeAll()
+            invalid.removeAll()
+        }
+
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            invalid.insert(pattern)
+            return nil
+        }
+        compiled[pattern] = regex
+        return regex
     }
 }
 

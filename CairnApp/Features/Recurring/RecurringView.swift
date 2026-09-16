@@ -32,11 +32,11 @@ struct RecurringView: View {
     }
 
     private var monthlyOutgoing: Int64 {
-        outgoing.reduce(Int64(0)) { $0 + $1.monthlyEquivalentMinorUnits }
+        outgoing.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.monthlyEquivalentMinorUnits) }
     }
 
     private var monthlyIncoming: Int64 {
-        incoming.reduce(Int64(0)) { $0 + $1.monthlyEquivalentMinorUnits }
+        incoming.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.monthlyEquivalentMinorUnits) }
     }
 
     /// The soonest upcoming charge, used for the hero's secondary line.
@@ -232,7 +232,7 @@ struct RecurringSummaryCard: View {
     }
 
     private var monthlyOutgoing: Int64 {
-        outgoing.reduce(Int64(0)) { $0 + $1.monthlyEquivalentMinorUnits }
+        outgoing.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.monthlyEquivalentMinorUnits) }
     }
 
     var body: some View {

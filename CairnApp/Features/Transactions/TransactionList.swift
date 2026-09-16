@@ -86,7 +86,7 @@ struct TransactionDayList: View {
         let currency = group.transactions.first?.account?.currency ?? .usd
         let spent = group.transactions
             .filter { $0.amountMinorUnits < 0 && !$0.countsAsTransfer && !$0.isIgnored }
-            .reduce(Int64(0)) { $0 + abs($1.amountMinorUnits) }
+            .reduce(Int64(0)) { MinorUnits.addClamped($0, MinorUnits.absClamped($1.amountMinorUnits)) }
         guard spent > 0 else { return nil }
         return Money(minorUnits: spent, currency: currency).formatted()
     }

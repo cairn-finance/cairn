@@ -28,6 +28,15 @@ public actor SimpleFINClient {
 
     // MARK: - Claim
 
+    /// User-Agent sent to SimpleFIN. The version is read from the app bundle so
+    /// it can never go stale; the package and tests fall back to a plain name.
+    static var userAgent: String {
+        guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+              !version.isEmpty
+        else { return "Cairn" }
+        return "Cairn/\(version)"
+    }
+
     /// Exchanges a SimpleFIN setup token (a Base64-encoded claim URL) for the
     /// long-lived Access URL. The Access URL is a bearer credential and must be
     /// stored in the Keychain.
@@ -41,9 +50,11 @@ public actor SimpleFINClient {
 
         var request = URLRequest(url: claimURL)
         request.httpMethod = "POST"
-        request.setValue("Cairn/0.1", forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
 
-        await cairnLog(.info, "POST \(claimURL.host ?? "?")\(claimURL.path)")
+        // The claim path *is* the setup token, and a failed claim leaves it
+        // unused, so never write it to a log the person is asked to share.
+        await cairnLog(.info, "POST \(claimURL.host ?? "?"): claiming a setup token (path withheld).")
         let (data, response) = try await perform(request)
 
         guard let http = response as? HTTPURLResponse else {
@@ -125,7 +136,7 @@ public actor SimpleFINClient {
 
         var request = URLRequest(url: requestURL)
         request.httpMethod = "GET"
-        request.setValue("Cairn/0.1", forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let credentials {
             request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
@@ -185,7 +196,7 @@ public actor SimpleFINClient {
             throw SimpleFINError.insecureURL
         }
         var request = URLRequest(url: url)
-        request.setValue("Cairn/0.1", forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await perform(request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {

@@ -1881,8 +1881,8 @@ public actor SyncEngine {
         let transactions = try modelContext.fetch(
             FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.accountIDIndex == accountBankID })
         )
-        let sum = transactions.reduce(Int64(0)) { $0 + $1.amountMinorUnits }
-        account.balanceMinorUnits = account.startingBalanceMinorUnits + sum
+        let sum = transactions.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
+        account.balanceMinorUnits = MinorUnits.addClamped(account.startingBalanceMinorUnits, sum)
         account.balanceDate = .now
     }
 

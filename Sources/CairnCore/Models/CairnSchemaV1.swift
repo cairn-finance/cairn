@@ -229,7 +229,10 @@ public enum CairnSchemaV1: VersionedSchema {
         /// the bank reported no cost basis.
         public var gain: Money? {
             guard hasCostBasis else { return nil }
-            return Money(minorUnits: marketValueMinorUnits - costBasisMinorUnits, currency: currency)
+            return Money(
+                minorUnits: MinorUnits.subtractClamped(marketValueMinorUnits, costBasisMinorUnits),
+                currency: currency
+            )
         }
 
         /// The leading label: the ticker when we have one, otherwise the name.

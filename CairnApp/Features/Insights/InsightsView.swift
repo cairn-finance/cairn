@@ -423,7 +423,7 @@ struct InsightsView: View {
     // MARK: - Trend
 
     private func trendCard(_ data: InsightsSnapshot) -> some View {
-        let average = data.months.isEmpty ? 0 : data.months.reduce(Int64(0)) { $0 + $1.spendingMinorUnits } / Int64(data.months.count)
+        let average = data.months.isEmpty ? 0 : data.months.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.spendingMinorUnits) } / Int64(data.months.count)
         let selected = trendSelection.flatMap { date in
             data.months.first { Calendar.current.isDate($0.monthStart, equalTo: date, toGranularity: .month) }
         }
@@ -519,7 +519,7 @@ struct InsightsView: View {
     }
 
     private func categoryRow(_ slice: CategoryBreakdown, in data: InsightsSnapshot) -> some View {
-        let total = data.categories.reduce(Int64(0)) { $0 + $1.amountMinorUnits }
+        let total = data.categories.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
         let share = total > 0 ? Double(slice.amountMinorUnits) / Double(total) : 0
         let tint = CairnTheme.color(hex: slice.colorHex)
         let fraction = fraction(slice, in: data)

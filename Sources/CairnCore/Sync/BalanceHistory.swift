@@ -25,7 +25,7 @@ public enum BalanceHistory {
         let cutoff = day
         let laterSum = transactions
             .filter { $0.date > cutoff }
-            .reduce(Int64(0)) { $0 + $1.amountMinorUnits }
+            .reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
         return currentBalanceMinorUnits - laterSum
     }
 

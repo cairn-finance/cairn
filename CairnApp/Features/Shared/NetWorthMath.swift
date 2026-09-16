@@ -27,7 +27,7 @@ enum NetWorthMath {
             guard let currency = group.first?.currency else { return nil }
             return CurrencyTotal(
                 currency: currency,
-                totalMinorUnits: group.reduce(Int64(0)) { $0 + $1.balanceMinorUnits }
+                totalMinorUnits: group.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.balanceMinorUnits) }
             )
         }
         .sorted { $0.currency.code < $1.currency.code }
@@ -67,7 +67,7 @@ enum NetWorthMath {
                 .filter { !$0.isPending }
                 .map { BalanceHistory.Entry(date: $0.effectiveDate, amountMinorUnits: $0.amountMinorUnits) }
         }
-        let current = relevant.reduce(Int64(0)) { $0 + $1.balanceMinorUnits }
+        let current = relevant.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.balanceMinorUnits) }
         return balances(current: current, entries: entries, days: days, calendar: calendar)
     }
 

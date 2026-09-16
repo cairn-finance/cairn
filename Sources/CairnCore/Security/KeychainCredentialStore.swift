@@ -5,9 +5,12 @@ import Security
 /// Keychain-backed credential storage.
 ///
 /// SimpleFIN Access URLs are bearer credentials, so they live here and never in
-/// SwiftData, CloudKit, logs, or backups in plain text. Items are stored with
-/// `kSecAttrAccessibleAfterFirstUnlock` because synchronizable items cannot use
-/// `...ThisDeviceOnly`; the device passcode still protects them at rest.
+/// SwiftData, CloudKit, logs, or backups in plain text. A synchronizable item
+/// must use `kSecAttrAccessibleAfterFirstUnlock`, because `...ThisDeviceOnly` is
+/// not valid for iCloud Keychain. A device-only item uses
+/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` so it cannot ride along in
+/// an encrypted backup or move to a new device — otherwise "never leaves the
+/// device" would not be true.
 ///
 /// On macOS, iCloud Keychain sync and per-app access groups require the **data
 /// protection keychain** (Apple TN3137), so every operation targets it
@@ -46,9 +49,12 @@ public struct KeychainCredentialStore: CredentialStore {
             throw CredentialStoreError.malformedSecret
         }
 
+        let accessibility: CFString = synchronizable
+            ? kSecAttrAccessibleAfterFirstUnlock
+            : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let valueAttributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrAccessible as String: accessibility,
             kSecAttrLabel as String: Self.label,
         ]
 
@@ -77,14 +83,27 @@ public struct KeychainCredentialStore: CredentialStore {
             throw CredentialStoreError.unexpectedStatus(status)
         }
 
-        try? delete(id: id, synchronizable: !synchronizable)
+        // Switching to iCloud may replace this device's own copy. Switching to
+        // This Device Only must not delete the iCloud item: it belongs to the
+        // whole iCloud Keychain, so removing it would silently stop sync on every
+        // other signed-in device. Reads prefer the local copy instead.
+        if synchronizable {
+            try? delete(id: id, synchronizable: false)
+        }
     }
 
     public func secret(for id: UUID) throws -> String? {
+        // Prefer this device's own copy when both exist, so choosing This Device
+        // Only keeps reading what the person chose.
+        if let local = try secret(id: id, synchronizable: false) { return local }
+        return try secret(id: id, synchronizable: true)
+    }
+
+    private func secret(id: UUID, synchronizable: Bool) throws -> String? {
         var query = commonAttributes(id: id)
         query[kSecReturnData as String] = kCFBooleanTrue
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        query[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
+        query[kSecAttrSynchronizable as String] = synchronizable
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)

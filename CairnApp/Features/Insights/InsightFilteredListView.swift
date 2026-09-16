@@ -96,6 +96,6 @@ struct InsightFilteredListView: View {
     private var totalSpent: Int64 {
         filtered
             .filter { $0.amountMinorUnits < 0 && !$0.countsAsTransfer }
-            .reduce(Int64(0)) { $0 + abs($1.amountMinorUnits) }
+            .reduce(Int64(0)) { MinorUnits.addClamped($0, MinorUnits.absClamped($1.amountMinorUnits)) }
     }
 }

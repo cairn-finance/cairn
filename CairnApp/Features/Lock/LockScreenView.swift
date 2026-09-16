@@ -15,14 +15,25 @@ struct LockGate<Content: View>: View {
 
     var body: some View {
         ZStack {
-            content
-                .disabled(model.lock.isLocked)
-                .allowsHitTesting(!model.lock.isLocked)
-
+            // Removing the content while locked also tears down anything it
+            // presented. A sheet is drawn above its presenting view, so an
+            // overlay would leave an open transaction detail or rule editor
+            // visible on top of the lock screen.
             if model.lock.isLocked {
                 LockScreenView()
                     .transition(.opacity)
-                    .zIndex(1)
+            } else {
+                content
+            }
+
+            // The app switcher snapshots a scene as it goes inactive, and macOS
+            // window thumbnails refresh then too, so cover the content without
+            // engaging the lock — locking on every Control Center pull would
+            // prompt for Face ID constantly.
+            if model.lock.isEnabled, scenePhase != .active {
+                PrivacyCoverView()
+                    .transition(.opacity)
+                    .zIndex(2)
             }
         }
         .animation(CairnTheme.Motion.standard, value: model.lock.isLocked)
@@ -31,6 +42,13 @@ struct LockGate<Content: View>: View {
             case .background:
                 // Leaving the foreground re-engages the lock.
                 model.lock.lock()
+            #if os(macOS)
+            case .inactive:
+                // A Mac app usually goes inactive rather than to the background
+                // when the person switches away, so .background alone would
+                // leave the lock disengaged.
+                model.lock.lock()
+            #endif
             case .active:
                 // Prompt only once the scene is actually frontmost. Asking
                 // during launch makes LAContext fail with `.notInteractive`,
@@ -46,6 +64,21 @@ struct LockGate<Content: View>: View {
             guard locked, scenePhase == .active else { return }
             Task { await model.lock.unlock() }
         }
+    }
+}
+
+/// An opaque curtain over the app while the scene is inactive, so the app
+/// switcher and window thumbnails never capture balances. It is not the lock:
+/// it has no unlock action and disappears when the scene becomes active again.
+struct PrivacyCoverView: View {
+    var body: some View {
+        ZStack {
+            CairnTheme.inkGradient.ignoresSafeArea()
+            Image(systemName: "lock.fill")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(CairnTheme.inkGlow)
+        }
+        .accessibilityHidden(true)
     }
 }
 
