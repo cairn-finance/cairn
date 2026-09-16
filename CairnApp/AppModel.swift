@@ -15,6 +15,7 @@ final class AppModel {
         static let appLockEnabled = "cairn.appLockEnabled"
         static let useAppleIntelligence = "cairn.useAppleIntelligenceCategorization"
         static let categorizeOnlyWhileCharging = "cairn.categorizeOnlyWhileCharging"
+        static let walletSyncEnabled = "cairn.walletSyncEnabled"
     }
 
     enum SyncState: Equatable {
@@ -44,6 +45,15 @@ final class AppModel {
 
     private(set) var onboardingComplete: Bool
     var useCloudKit: Bool
+    /// Whether Wallet data should be read from FinanceKit. The person can clear
+    /// Wallet rows without being able to revoke the system authorization, so
+    /// this records that choice; otherwise the next sync imports them straight
+    /// back.
+    private(set) var walletSyncEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(walletSyncEnabled, forKey: Self.Keys.walletSyncEnabled)
+        }
+    }
     var syncState: SyncState = .idle
     var remainingBudget: Int = SyncEngine.dailyRequestLimit
     var banner: String?
@@ -116,6 +126,7 @@ final class AppModel {
         useCloudKit = cloud
         requestedCloud = cloud
         onboardingComplete = defaults.bool(forKey: Self.Keys.onboardingComplete)
+        walletSyncEnabled = (defaults.object(forKey: Self.Keys.walletSyncEnabled) as? Bool) ?? true
         lock = AppLockController(
             enabled: defaults.bool(forKey: Self.Keys.appLockEnabled),
             authenticator: LocalAuthenticator()
@@ -296,16 +307,28 @@ final class AppModel {
     }
 
     /// Removes Wallet accounts (and their transactions) from this device. It
-    /// cannot revoke the system authorization; only Settings can. Cross-platform
-    /// so a Mac can clear rows it received through iCloud.
+    /// cannot revoke the system authorization; only Settings can, so it also
+    /// remembers the choice and stops reading Wallet until the person connects
+    /// again. Cross-platform so a Mac can clear rows it received through iCloud.
     func disconnectWallet() async {
+        // Without this the next sync would re-import the same rows, because
+        // FinanceKit access is still granted.
+        walletSyncEnabled = false
+
         let source = AccountSource.financeKit.rawValue
         let context = container.mainContext
         let accounts = (try? context.fetch(
             FetchDescriptor<Account>(predicate: #Predicate { $0.sourceRaw == source })
         )) ?? []
         for account in accounts { context.delete(account) }
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            await cairnLog(
+                .error,
+                "disconnectWallet: couldn't remove Wallet rows: \(error.localizedDescription)"
+            )
+        }
         await syncAll(force: false)
     }
 
@@ -323,6 +346,7 @@ final class AppModel {
                 banner = "Cairn wasn’t granted access to Wallet financial data."
                 return false
             }
+            walletSyncEnabled = true
             await syncAll(force: false)
             return syncState.errorMessage == nil
         } catch {
@@ -333,9 +357,10 @@ final class AppModel {
         }
     }
 
-    /// True when FinanceKit access has been granted, so Wallet should refresh.
+    /// True when the person has Wallet sync turned on and FinanceKit access is
+    /// granted, so Wallet should refresh.
     private func isWalletConnected() async -> Bool {
-        guard WalletAvailability.isSupported else { return false }
+        guard WalletAvailability.isSupported, walletSyncEnabled else { return false }
         return await walletEngine.isAuthorized()
     }
 

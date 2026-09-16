@@ -20,9 +20,10 @@ public actor WalletSyncEngine {
 
     public struct WalletOutcome: Sendable, Equatable {
         public var accountsUpserted = 0
+        public var accountsRemoved = 0
         public var transactionsInserted = 0
         public var transactionsUpdated = 0
-        public var accountsRemoved = 0
+        public var transactionsRemoved = 0
         public init() {}
     }
 
@@ -72,8 +73,8 @@ public actor WalletSyncEngine {
 
     // MARK: - Sync
 
-    /// Mirrors every account Wallet currently exposes, then drops any Wallet
-    /// account it no longer reports.
+    /// Mirrors every account Wallet currently exposes, then removes only the
+    /// accounts this device has seen before and no longer sees.
     @discardableResult
     public func sync(now: Date = .now, calendar: Calendar = .current) async throws -> WalletOutcome {
         guard Self.isSupported else { throw WalletError.unsupported }
@@ -122,7 +123,8 @@ public actor WalletSyncEngine {
         await cairnLog(
             .info,
             "Wallet sync: accounts=\(outcome.accountsUpserted) inserted=\(outcome.transactionsInserted) "
-                + "updated=\(outcome.transactionsUpdated) removed=\(outcome.accountsRemoved)"
+                + "updated=\(outcome.transactionsUpdated) removed=\(outcome.transactionsRemoved) "
+                + "accountsRemoved=\(outcome.accountsRemoved)"
         )
         return outcome
     }
@@ -182,15 +184,38 @@ public actor WalletSyncEngine {
         return account
     }
 
+    /// Wallet account keys this device last saw. Device-local on purpose: it
+    /// records what *this* device can read from Wallet, which is what scopes
+    /// removal safely. See `WalletAccountRetention`.
+    private static let seenAccountsDefaultsKey = "cairn.wallet.seenAccountKeys"
+
+    /// Removes only the Wallet accounts this device has seen before and no
+    /// longer sees. Accounts it has never seen may belong to another device, and
+    /// an empty result is never treated as "everything is gone".
     private func removeMissingAccounts(seen: Set<String>, outcome: inout WalletOutcome) throws {
+        // A transient empty result (no access, a locked Wallet, a failed query)
+        // must never delete anything.
+        guard !seen.isEmpty else { return }
+
+        let defaults = UserDefaults.standard
+        let previouslySeen = Set(defaults.stringArray(forKey: Self.seenAccountsDefaultsKey) ?? [])
+
         let source = AccountSource.financeKit.rawValue
         let accounts = try modelContext.fetch(
             FetchDescriptor<Account>(predicate: #Predicate { $0.sourceRaw == source })
         )
-        for account in accounts where !seen.contains(account.bankAccountID) {
+        let storedKeys = Set(accounts.map(\.bankAccountID))
+        let gone = WalletAccountRetention.keysToRemove(
+            previouslySeen: previouslySeen,
+            currentlySeen: seen,
+            storedKeys: storedKeys
+        )
+        for account in accounts where gone.contains(account.bankAccountID) {
             modelContext.delete(account)
             outcome.accountsRemoved += 1
         }
+
+        defaults.set(Array(seen).sorted(), forKey: Self.seenAccountsDefaultsKey)
     }
 
     // MARK: - Balances
@@ -256,8 +281,20 @@ public actor WalletSyncEngine {
         let existing = try modelContext.fetch(descriptor)
         var byID = Dictionary(existing.map { ($0.bankTransactionID, $0) }, uniquingKeysWith: { first, _ in first })
 
-        for txn in incoming where txn.status != .rejected {
+        for txn in incoming {
             let key = Self.transactionKey(txn.id)
+
+            // A charge Wallet rejected was a pending authorization that never
+            // became a real charge. Remove it rather than leaving it pending
+            // forever.
+            if txn.status == .rejected {
+                if let model = byID.removeValue(forKey: key) {
+                    modelContext.delete(model)
+                    outcome.transactionsRemoved += 1
+                }
+                continue
+            }
+
             let description = Self.description(for: txn)
             let amount = Self.signedMinorUnits(txn.transactionAmount, indicator: txn.creditDebitIndicator)
             let posted = txn.postedDate ?? txn.transactionDate
