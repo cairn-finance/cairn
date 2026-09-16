@@ -499,6 +499,144 @@ struct AutoCategorizationTests {
         #expect(refreshed.userCategory?.uuid == remaining.first?.uuid)
     }
 
+    @Test("A merchant the model placed teaches memory, so a repeat sync skips the model")
+    func modelDecisionBecomesMemory() async throws {
+        let (container, context) = try makeContext()
+        let groceries = Category(name: "Groceries", symbolName: "cart.fill", colorHex: "#30B0C7", sortOrder: 0)
+        context.insert(groceries)
+        let account = Account(bankAccountID: "A1", name: "Checking", currency: .usd)
+        context.insert(account)
+
+        // A previous run already used the on-device model for this merchant.
+        let placed = LedgerTransaction(
+            bankTransactionID: "T1",
+            payeeDescription: "WHOLE FOODS MARKET #123",
+            amountMinorUnits: -8_000
+        )
+        placed.account = account
+        placed.accountIDIndex = "A1"
+        placed.normalizedMerchant = MerchantNormalizer.normalize("Whole Foods")
+        placed.autoCategory = groceries
+        placed.autoCategorySource = "appleIntelligence"
+        placed.autoCategorizeAttemptedAt = .now
+        context.insert(placed)
+
+        // A new row from the same merchant.
+        let fresh = LedgerTransaction(
+            bankTransactionID: "T2",
+            payeeDescription: "WHOLE FOODS MARKET #999",
+            amountMinorUnits: -4_200
+        )
+        fresh.account = account
+        fresh.accountIDIndex = "A1"
+        fresh.normalizedMerchant = MerchantNormalizer.normalize("Whole Foods")
+        context.insert(fresh)
+
+        // This install already ran the current categorization generation, so the
+        // one-time re-evaluation does not clear the model's decision.
+        let settings = AppSettings()
+        settings.categorizationVersion = SyncEngine.currentCategorizationVersion
+        context.insert(settings)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "T2" })
+            ).first
+        )
+        #expect(refreshed.autoCategory?.name == "Groceries")
+        #expect(refreshed.autoCategorySource == "memory")
+
+        // The model's own row keeps its label; memory agreeing is not a downgrade.
+        let original = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "T1" })
+            ).first
+        )
+        #expect(original.autoCategorySource == "appleIntelligence")
+    }
+
+    @Test("A categorization version bump re-examines learned decisions once")
+    func versionBumpReexaminesLearnedDecisions() async throws {
+        let (container, context) = try makeContext()
+        let groceries = Category(name: "Groceries", symbolName: "cart.fill", colorHex: "#30B0C7", sortOrder: 0)
+        context.insert(groceries)
+        let account = Account(bankAccountID: "A1", name: "Checking", currency: .usd)
+        context.insert(account)
+
+        // A learned decision from an older build.
+        let learned = LedgerTransaction(
+            bankTransactionID: "T1",
+            payeeDescription: "BLUE BOTTLE COFFEE",
+            amountMinorUnits: -1_850
+        )
+        learned.account = account
+        learned.accountIDIndex = "A1"
+        learned.normalizedMerchant = MerchantNormalizer.normalize("BLUE BOTTLE COFFEE")
+        learned.autoCategory = groceries
+        learned.autoCategorySource = "memory"
+        context.insert(learned)
+
+        let settings = AppSettings()
+        settings.categorizationVersion = SyncEngine.currentCategorizationVersion - 1
+        context.insert(settings)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "T1" })
+            ).first
+        )
+        #expect(refreshed.autoCategory == nil)
+        #expect(try await engine.categorizationCounts().pendingModel == 1)
+    }
+
+    @Test("The on-device model pauses on heat, low power, and optionally battery")
+    func powerPolicy() {
+        func evaluate(
+            thermal: ProcessInfo.ThermalState = .nominal,
+            lowPower: Bool = false,
+            onPower: Bool = true,
+            requiresPower: Bool = false
+        ) -> CategorizationPower.Decision {
+            CategorizationPower.evaluate(
+                thermalState: thermal,
+                isLowPowerMode: lowPower,
+                isOnExternalPower: onPower,
+                requiresExternalPower: requiresPower
+            )
+        }
+
+        #expect(evaluate() == .proceed)
+        #expect(evaluate(thermal: .serious) == .pauseThermal)
+        #expect(evaluate(thermal: .critical) == .pauseThermal)
+        #expect(evaluate(lowPower: true) == .pauseLowPower)
+        #expect(evaluate(onPower: false, requiresPower: true) == .pauseBattery)
+        // A foreground pass is allowed on battery; only the bulk pass waits.
+        #expect(evaluate(onPower: false, requiresPower: false) == .proceed)
+    }
+
+    @Test("Merchant names are trimmed to protect the model's context window")
+    func merchantTrimming() {
+        #expect(
+            AppleIntelligenceCategorizer.trimmedMerchant("  WHOLE   FOODS \n MARKET ")
+                == "WHOLE FOODS MARKET"
+        )
+        let long = String(repeating: "A", count: 500)
+        #expect(AppleIntelligenceCategorizer.trimmedMerchant(long).count == 90)
+
+        // Adaptive batch size must stay inside safe bounds on every device, even
+        // when the context size is unknown.
+        let size = AppleIntelligenceCategorizer.recommendedMerchantBatchSize
+        #expect(size >= 4 && size <= 12)
+    }
+
     @Test("A transfer to a financial institution becomes money movement")
     func financialCounterpartyTransfer() async throws {
         let (container, context) = try makeContext()

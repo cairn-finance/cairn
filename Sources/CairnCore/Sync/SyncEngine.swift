@@ -842,6 +842,12 @@ public actor SyncEngine {
         public var categorized: Int = 0
         /// Transactions the on-device model was asked about.
         public var attempted: Int = 0
+        /// Distinct merchants the on-device model was asked about. This is the
+        /// number that matters for cost: merchants are deduplicated before the
+        /// model is called.
+        public var merchantsAsked: Int = 0
+        /// On-device model calls made in this pass.
+        public var modelCalls: Int = 0
         /// Uncategorized transactions still awaiting the on-device model.
         public var remaining: Int = 0
         public var bySource: [String: Int] = [:]
@@ -861,26 +867,28 @@ public actor SyncEngine {
     /// may replace an earlier on-device guess; a fuzzy match may not.
     @discardableResult
     public func recategorize(now: Date = .now) throws -> RecategorizeOutcome {
-        let rules = try loadRuleSnapshots()
-        let memory = try buildMerchantMemory()
         let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
         let fees = try category(named: "Fees")
         let income = try category(named: "Income")
         let counterparties = try knownTransferCounterparties()
         var outcome = RecategorizeOutcome()
         var didChange = clearInvalidModelCategories(in: transactions, now: now)
-        if requeueStalledModelAttempts(in: transactions, now: now) { didChange = true }
 
-        // One-time re-evaluation of model guesses made before the classifier
-        // learned the direction of the amount, so credits that were mislabeled
-        // as spending are asked again.
+        // One-time re-evaluation of earlier automatic guesses. This runs before
+        // memory is built, so a stale guess that is cleared here cannot be
+        // re-learned from its own row in the same pass.
         let settings = try loadOrCreateSettings()
         if settings.categorizationVersion < Self.currentCategorizationVersion {
-            if reevaluateStaleModelCategories(in: transactions, now: now) { didChange = true }
+            if reevaluateStaleCategories(in: transactions, now: now) { didChange = true }
             settings.categorizationVersion = Self.currentCategorizationVersion
             settings.modifiedAt = now
             didChange = true
         }
+
+        // Built from the post-migration rows, so a merchant whose automatic guess
+        // was just cleared is not remembered as that guess.
+        let rules = try loadRuleSnapshots()
+        let memory = try buildMerchantMemory()
 
         for transaction in transactions {
             guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
@@ -902,6 +910,17 @@ public actor SyncEngine {
             }
 
             if let suggestion, let category = try? category(withUUID: suggestion.categoryID) {
+                let sameCategory = transaction.autoCategory?.uuid == category.uuid
+                // Already settled on this exact answer; don't rewrite the row on
+                // every pass. This keeps learned memory from churning updates.
+                if sameCategory, transaction.autoCategorySource == suggestion.source.rawValue {
+                    continue
+                }
+                // Keep the model's own label when memory or a fuzzy match merely
+                // agrees with it; that is not a downgrade.
+                if isModelSourced, sameCategory {
+                    continue
+                }
                 transaction.autoCategory = category
                 transaction.autoCategorySource = suggestion.source.rawValue
                 transaction.autoConfidence = suggestion.confidence
@@ -1020,24 +1039,6 @@ public actor SyncEngine {
         return didChange
     }
 
-    /// A model pass that produced no category is not a verdict. Clear the
-    /// "attempted" stamp on rows that still need a category, so a later pass
-    /// retries them instead of stranding them forever. This is what lifts the
-    /// rows an earlier build left permanently uncategorized.
-    private func requeueStalledModelAttempts(
-        in transactions: [LedgerTransaction],
-        now: Date
-    ) -> Bool {
-        var didChange = false
-        for transaction in transactions where Self.needsCategory(transaction) {
-            guard transaction.autoCategorizeAttemptedAt != nil else { continue }
-            transaction.autoCategorizeAttemptedAt = nil
-            transaction.modifiedAt = now
-            didChange = true
-        }
-        return didChange
-    }
-
     /// Marks a row as money movement. A card or loan payment also points at its
     /// own category, so the row reads "Credit Card Payments" or "Loan Payments"
     /// instead of a generic "Transfer". Returns true when anything changed.
@@ -1079,36 +1080,54 @@ public actor SyncEngine {
         return changed
     }
 
-    /// Bumped when categorization logic changes enough to re-examine existing
-    /// model guesses once. Version 1 targeted credits mislabeled as spending;
-    /// version 2 redoes every model spending guess with the current hints and
-    /// direction-aware prompt.
-    private static let currentCategorizationVersion = 2
+    /// Bumped when categorization logic changes enough to re-examine earlier
+    /// automatic guesses once. Version 1 targeted credits mislabeled as spending;
+    /// version 2 redid every model spending guess; version 3 redoes every
+    /// automatic guess — model *and* learned memory — so the merchant-level
+    /// batching, memory, and direction-aware prompt reach rows that were already
+    /// decided by an earlier build.
+    static let currentCategorizationVersion = 3
 
     private func isModelSourced(_ transaction: LedgerTransaction) -> Bool {
         let source = transaction.autoCategorySource
         return source == SuggestionSource.appleIntelligence.rawValue || source == "model"
     }
 
-    /// Clears a model spending guess so the current hints and the
-    /// direction-aware prompt can redo it. Income, fees, and money movement are
-    /// deterministic outcomes and are left alone. Runs once, keyed on
-    /// `AppSettings.categorizationVersion`.
-    private func reevaluateStaleModelCategories(
+    /// A row whose category came only from automation (an on-device model guess
+    /// or memory learned from one), never from the person or a deterministic hint.
+    private func isAutomaticSourced(_ transaction: LedgerTransaction) -> Bool {
+        guard transaction.userCategory == nil else { return false }
+        let source = transaction.autoCategorySource
+        return source == SuggestionSource.appleIntelligence.rawValue
+            || source == "model"
+            || source == SuggestionSource.memory.rawValue
+    }
+
+    /// Clears automatic guesses so the current hints, merchant memory, and
+    /// direction-aware prompt can redo them. User choices and deterministic
+    /// outcomes (fees, income, money movement) are left alone. The "attempted"
+    /// stamp is cleared too, so rows the model has never placed are retried once,
+    /// instead of being retried on every single run — the old behavior, which let
+    /// a merchant the model couldn't place cost a call forever.
+    private func reevaluateStaleCategories(
         in transactions: [LedgerTransaction],
         now: Date
     ) -> Bool {
         var didChange = false
         for transaction in transactions where transaction.userCategory == nil {
-            guard isModelSourced(transaction), let name = transaction.autoCategory?.name else { continue }
-            if name == "Income" || name == "Fees" { continue }
-            if LedgerTransaction.moneyMovementCategoryNames.contains(name) { continue }
-            transaction.autoCategory = nil
-            transaction.autoCategorySource = nil
-            transaction.autoConfidence = 0
-            transaction.autoCategorizeAttemptedAt = nil
-            transaction.modifiedAt = now
-            didChange = true
+            if isAutomaticSourced(transaction) {
+                transaction.autoCategory = nil
+                transaction.autoCategorySource = nil
+                transaction.autoConfidence = 0
+                transaction.autoCategorizeAttemptedAt = nil
+                transaction.modifiedAt = now
+                didChange = true
+            } else if Self.needsCategory(transaction), transaction.autoCategorizeAttemptedAt != nil {
+                // A row an earlier pass tried but never categorized.
+                transaction.autoCategorizeAttemptedAt = nil
+                transaction.modifiedAt = now
+                didChange = true
+            }
         }
         return didChange
     }
@@ -1219,15 +1238,23 @@ public actor SyncEngine {
         try categorizationCounts().total
     }
 
-    /// Runs the on-device Apple Intelligence model over a bounded batch of
-    /// uncategorized transactions. Purely local: it uses `SystemLanguageModel`
-    /// and never the Private Cloud Compute model.
+    /// Runs the on-device Apple Intelligence model over a bounded set of
+    /// uncategorized *merchants*, not individual transactions. Purely local: it
+    /// uses `SystemLanguageModel` and never the Private Cloud Compute model.
     ///
-    /// Every transaction it looks at is stamped so later automatic runs don't
-    /// retry it, whether or not a category was found.
+    /// Distinct merchants are asked about once and the answer is applied to every
+    /// matching row. This is where the bulk of the savings on a first sync comes
+    /// from: thousands of transactions usually carry only a few hundred distinct
+    /// merchants, and repeated merchants (salary, rent, subscriptions) appear
+    /// dozens of times.
+    ///
+    /// Each merchant is stamped once the model has actually answered, whether or
+    /// not it found a category, so a settled merchant is not re-asked on every
+    /// run. A transient failure — the system throttling the model is the common
+    /// one — leaves everything unmarked so a later pass retries it.
     @discardableResult
     public func appleIntelligenceCategorizeBatch(
-        limit: Int = 12,
+        limit: Int = 0,
         now: Date = .now
     ) async throws -> RecategorizeOutcome {
         var outcome = RecategorizeOutcome()
@@ -1261,9 +1288,12 @@ public actor SyncEngine {
 
         let counterparties = try knownTransferCounterparties()
 
-        for transaction in candidates.prefix(limit) {
-            let merchant = Self.merchantName(transaction)
-
+        // Group candidates by merchant and direction. A merchant that appears as
+        // both a charge and a credit (a purchase and its refund) is split so the
+        // direction in the prompt stays unambiguous.
+        var groups: [String: [LedgerTransaction]] = [:]
+        var order: [String] = []
+        for transaction in candidates {
             // Never ask the model about money movement. Mark it a transfer (or a
             // card/loan payment) and move on; this is the guard that stops
             // overdraft transfers and peer-to-peer payments from being guessed
@@ -1281,42 +1311,105 @@ public actor SyncEngine {
                 continue
             }
 
-            // A debit can't be income, so don't offer that category on the way out.
-            let isCredit = transaction.amountMinorUnits > 0
+            let merchant = Self.merchantName(transaction)
+            let direction = transaction.amountMinorUnits > 0 ? "in" : "out"
+            let key = "\(MerchantMemory.key(for: merchant))|\(direction)"
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(transaction)
+        }
+
+        let batchSize = limit > 0 ? limit : AppleIntelligenceCategorizer.recommendedMerchantBatchSize
+        let selected = order.prefix(max(1, batchSize)).compactMap { groups[$0] }
+        guard !selected.isEmpty else {
+            outcome.remaining = max(0, candidates.count - outcome.attempted)
+            try modelContext.save()
+            return outcome
+        }
+
+        // One query per merchant group, remembering which categories are legal
+        // for its direction (a debit can never be Income).
+        var queries: [MerchantQuery] = []
+        var allowedByIndex: [Int: [Category]] = [:]
+        for (index, group) in selected.enumerated() {
+            guard let representative = group.max(by: {
+                $0.payeeDescription.count < $1.payeeDescription.count
+            }) else { continue }
+            let isCredit = representative.amountMinorUnits > 0
             let allowed = isCredit ? categories : categories.filter { $0.name != "Income" }
             guard !allowed.isEmpty else { continue }
-            let names = allowed.map(\.name)
+            allowedByIndex[index] = allowed
+            let merchant = Self.merchantName(representative)
+            queries.append(MerchantQuery(
+                id: index,
+                merchant: merchant.isEmpty ? representative.payeeDescription : merchant,
+                isCredit: isCredit
+            ))
+        }
 
-            // Marking is deferred until the model actually answers. A transient
-            // failure — the system throttling the on-device model is the common
-            // one — must leave the transaction eligible for a later pass.
-            guard AppleIntelligenceCategorizer.isAvailable else {
-                outcome.throttled = true
-                break
-            }
+        // A single model call for the whole batch of merchants.
+        var resolved: [Int: String] = [:]
+        if !queries.isEmpty {
+            outcome.modelCalls += 1
             do {
-                let name = try await AppleIntelligenceCategorizer.classify(
-                    merchant: merchant,
-                    description: transaction.payeeDescription,
-                    isCredit: isCredit,
-                    categories: names
+                resolved = try await AppleIntelligenceCategorizer.classifyBatch(
+                    queries: queries,
+                    categories: categories.map(\.name)
                 )
-                transaction.autoCategorizeAttemptedAt = now
-                outcome.attempted += 1
-                if let name, let category = allowed.first(where: { $0.name == name }) {
-                    transaction.autoCategory = category
-                    transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
-                    transaction.autoConfidence = 0.8
-                    transaction.modifiedAt = now
-                    outcome.categorized += 1
-                    outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += 1
-                }
             } catch {
-                // Stop this pass instead of hammering a throttled model. Nothing
-                // was marked, so these rows are picked up again on a later pass.
                 await cairnLog(.warning, "On-device model unavailable; pausing categorization for now.")
                 outcome.throttled = true
-                break
+                outcome.remaining = max(0, candidates.count - outcome.attempted)
+                try modelContext.save()
+                return outcome
+            }
+        }
+
+        // Apply the batch, re-asking any merchant it did not place cleanly with
+        // the fully-constrained single-category schema.
+        for (index, group) in selected.enumerated() {
+            guard let allowed = allowedByIndex[index] else {
+                for transaction in group { transaction.autoCategorizeAttemptedAt = now }
+                outcome.attempted += group.count
+                continue
+            }
+
+            var chosen = resolved[index].flatMap { name in allowed.first { $0.name == name } }
+
+            if chosen == nil, let representative = group.max(by: {
+                $0.payeeDescription.count < $1.payeeDescription.count
+            }) {
+                outcome.modelCalls += 1
+                do {
+                    let name = try await AppleIntelligenceCategorizer.classify(
+                        merchant: Self.merchantName(representative),
+                        description: representative.payeeDescription,
+                        isCredit: representative.amountMinorUnits > 0,
+                        categories: allowed.map(\.name)
+                    )
+                    chosen = name.flatMap { candidate in allowed.first { $0.name == candidate } }
+                } catch {
+                    await cairnLog(.warning, "On-device model unavailable; pausing categorization for now.")
+                    outcome.throttled = true
+                    outcome.remaining = max(0, candidates.count - outcome.attempted)
+                    try modelContext.save()
+                    return outcome
+                }
+            }
+
+            for transaction in group {
+                transaction.autoCategorizeAttemptedAt = now
+                if let chosen {
+                    transaction.autoCategory = chosen
+                    transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
+                    transaction.autoConfidence = 0.8
+                }
+                transaction.modifiedAt = now
+            }
+            outcome.attempted += group.count
+            outcome.merchantsAsked += 1
+            if chosen != nil {
+                outcome.categorized += group.count
+                outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += group.count
             }
         }
 
@@ -1333,16 +1426,35 @@ public actor SyncEngine {
             && !transaction.isPending
     }
 
-    /// Builds merchant memory from transactions the person categorized.
+    /// Builds merchant memory.
+    ///
+    /// The person's own corrections always win for a merchant. For merchants they
+    /// have never corrected, an earlier automatic decision is remembered too, so a
+    /// repeat sync never re-asks the model about a merchant it already placed —
+    /// which is what keeps incremental syncs nearly free. A categorization version
+    /// bump clears those automatic rows first, so a remembered guess can always be
+    /// revised by a later, better build.
     private func buildMerchantMemory() throws -> MerchantMemory {
         let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
-        let samples = transactions.compactMap { transaction -> MemorySample? in
-            guard let category = transaction.userCategory else { return nil }
+        var userKeys = Set<String>()
+        var userSamples: [MemorySample] = []
+        var automaticSamples: [MemorySample] = []
+
+        for transaction in transactions {
             let merchant = Self.merchantName(transaction)
-            guard !merchant.isEmpty else { return nil }
-            return MemorySample(merchant: merchant, categoryID: category.uuid)
+            guard !merchant.isEmpty else { continue }
+            if let category = transaction.userCategory {
+                userSamples.append(MemorySample(merchant: merchant, categoryID: category.uuid))
+                userKeys.insert(MerchantMemory.key(for: merchant))
+            } else if isAutomaticSourced(transaction),
+                      let category = transaction.autoCategory,
+                      !transaction.countsAsTransfer {
+                automaticSamples.append(MemorySample(merchant: merchant, categoryID: category.uuid))
+            }
         }
-        return MerchantMemory(samples: samples)
+
+        let automaticOnly = automaticSamples.filter { !userKeys.contains($0.merchantKey) }
+        return MerchantMemory(samples: userSamples + automaticOnly)
     }
 
     // MARK: - Categories
