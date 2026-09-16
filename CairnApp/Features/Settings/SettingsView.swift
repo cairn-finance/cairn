@@ -237,14 +237,34 @@ struct SettingsView: View {
                 get: { model.useAppleIntelligence },
                 set: { model.useAppleIntelligence = $0 }
             )) {
-                IconRow("Use Apple Intelligence", subtitle: AppleIntelligenceCategorizer.statusDescription, systemImage: "sparkles", tint: Color(red: 0.62, green: 0.36, blue: 0.87))
+                IconRow(
+                    "Use Apple Intelligence",
+                    subtitle: AppleIntelligenceCategorizer.deviceProfile.summary,
+                    systemImage: "sparkles",
+                    tint: Color(red: 0.62, green: 0.36, blue: 0.87)
+                )
             }
             .disabled(!AppleIntelligenceCategorizer.isAvailable)
+
+            Toggle(isOn: Binding(
+                get: { model.categorizeOnlyWhileCharging },
+                set: { model.categorizeOnlyWhileCharging = $0 }
+            )) {
+                IconRow(
+                    "Only categorize while charging",
+                    subtitle: "The bulk pass waits for a charger. Recent activity is still categorized right away.",
+                    systemImage: "battery.100.bolt",
+                    tint: CairnTheme.positive
+                )
+            }
+            .disabled(!model.useAppleIntelligence || !AppleIntelligenceCategorizer.isAvailable)
         } header: {
             Text("Categorization")
         } footer: {
             Text("Rules and your past corrections always run on-device, automatically after every sync and import. "
-                + "Apple Intelligence is used only for what they can’t place, and only its on-device model — never the cloud.")
+                + "Apple Intelligence is used only for what they can’t place — one merchant at a time rather than one "
+                + "transaction at a time — and only its on-device model, never the cloud. The model pauses when your "
+                + "device is hot or in Low Power Mode.")
         }
     }
 

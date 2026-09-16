@@ -699,9 +699,24 @@ struct InsightsView: View {
         } else if !model.useAppleIntelligence {
             needsCategoryLabel(count: counts.total, reason: "Apple Intelligence is turned off in Settings.")
         } else if counts.pendingModel > 0 {
-            statusLabel("\(counts.pendingModel) still queued; they continue automatically next time.", systemImage: "clock", tint: .secondary)
+            statusLabel(pendingModelMessage(counts.pendingModel), systemImage: "clock", tint: .secondary)
         } else {
             needsCategoryLabel(count: counts.unresolved, reason: "The on-device model couldn’t place them.")
+        }
+    }
+
+    /// Explains *why* work is still queued, so a pass paused for power doesn't
+    /// look stuck.
+    private func pendingModelMessage(_ count: Int) -> String {
+        switch model.modelPauseReason {
+        case .pauseBattery:
+            "\(count) still queued; they finish while your device is charging."
+        case .pauseLowPower:
+            "\(count) still queued; they continue when Low Power Mode is off."
+        case .pauseThermal:
+            "\(count) still queued; they continue once your device cools down."
+        default:
+            "\(count) still queued; they continue automatically next time."
         }
     }
 

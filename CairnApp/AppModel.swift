@@ -14,6 +14,7 @@ final class AppModel {
         static let onboardingComplete = "cairn.onboardingComplete"
         static let appLockEnabled = "cairn.appLockEnabled"
         static let useAppleIntelligence = "cairn.useAppleIntelligenceCategorization"
+        static let categorizeOnlyWhileCharging = "cairn.categorizeOnlyWhileCharging"
     }
 
     enum SyncState: Equatable {
@@ -73,6 +74,33 @@ final class AppModel {
         }
     }
 
+    /// Whether the bulk (background) model pass waits for external power. The
+    /// short foreground pass always runs, so the most recent activity is
+    /// categorized even on battery.
+    var categorizeOnlyWhileCharging: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                categorizeOnlyWhileCharging,
+                forKey: Self.Keys.categorizeOnlyWhileCharging
+            )
+        }
+    }
+
+    /// Why the model pass last stopped early, so the UI can explain that it will
+    /// continue rather than looking stuck.
+    private(set) var modelPauseReason: CategorizationPower.Decision?
+
+    /// How much of the backlog a run will work through. A foreground pass is
+    /// deliberately small so the app stays responsive and cool; the bulk of a
+    /// large backlog runs in the background, ideally while charging.
+    enum CategorizationScope: Sendable, Equatable {
+        case foreground
+        case background
+    }
+
+    private static let foregroundModelCallCap = 6
+    private static let backgroundModelCallCap = 80
+
     @ObservationIgnored private var isAutoCategorizing = false
 
     init(inMemory: Bool = false) {
@@ -88,6 +116,8 @@ final class AppModel {
             authenticator: LocalAuthenticator()
         )
         useAppleIntelligence = (defaults.object(forKey: Self.Keys.useAppleIntelligence) as? Bool) ?? true
+        categorizeOnlyWhileCharging =
+            (defaults.object(forKey: Self.Keys.categorizeOnlyWhileCharging) as? Bool) ?? true
 
         #if DEBUG
         let sampleMode = ProcessInfo.processInfo.arguments.contains(SampleData.launchArgument)
@@ -119,6 +149,11 @@ final class AppModel {
         #if os(iOS)
         walletEngine = WalletSyncEngine(modelContainer: result.container)
         #endif
+
+        PowerSource.prepare()
+        BackgroundCategorization.run = { [weak self] in
+            await self?.autoCategorize(scope: .background)
+        }
 
         Task { await bootstrap() }
     }
@@ -523,8 +558,8 @@ final class AppModel {
     /// cleared (or a per-session cap is reached).
     ///
     /// Safe to call often; overlapping calls are coalesced, and the model only
-    /// ever looks at transactions it hasn't tried before.
-    func autoCategorize() async {
+    /// ever looks at merchants it hasn't placed before.
+    func autoCategorize(scope: CategorizationScope = .foreground) async {
         guard !isAutoCategorizing else { return }
         isAutoCategorizing = true
         categorizationState = .running
@@ -536,25 +571,39 @@ final class AppModel {
         let ruleOutcome = await recategorize()
         let ruleCategorized = ruleOutcome?.categorized ?? 0
         var aiCategorized = 0
+        var modelCalls = 0
+        var merchantsAsked = 0
+        modelPauseReason = nil
 
-        if useAppleIntelligence, AppleIntelligenceCategorizer.isAvailable {
+        if useAppleIntelligence, AppleIntelligenceCategorizer.isAvailable, modelWorkAllowed(for: scope) {
             await refreshCategorizationCounts()
             let total = categorizationCounts.pendingModel
             if total > 0 {
                 modelProgress = ModelProgress(processed: 0, total: total)
-                var processed = 0
-                // Generous cap so a large backlog clears in one session, while
-                // still yielding to keep the device responsive.
-                let sessionCap = 200
-                while processed < sessionCap, !Task.isCancelled {
-                    guard let outcome = await runAppleIntelligenceBatch(limit: 10) else { break }
+                // One model call covers a whole batch of distinct merchants,
+                // sized to this device's context window.
+                let batchSize = AppleIntelligenceCategorizer.recommendedMerchantBatchSize
+                let callCap = scope == .foreground ? Self.foregroundModelCallCap : Self.backgroundModelCallCap
+                var calls = 0
+                while calls < callCap, !Task.isCancelled {
+                    // Re-check each time so a device that gets hot, or is
+                    // unplugged, stops promptly instead of pushing through.
+                    guard modelWorkAllowed(for: scope) else {
+                        modelPauseReason = powerDecision(for: scope)
+                        break
+                    }
+                    guard let outcome = await runAppleIntelligenceBatch(limit: batchSize) else { break }
                     aiCategorized += outcome.categorized
-                    processed += outcome.attempted
+                    modelCalls += outcome.modelCalls
+                    merchantsAsked += outcome.merchantsAsked
+                    calls += 1
+                    let processed = max(0, total - outcome.remaining)
                     modelProgress = ModelProgress(processed: min(processed, total), total: total)
                     // Stop as soon as the model stops making progress or reports a
                     // throttle; either way it is not worth continuing right now.
-                    if outcome.attempted == 0 || outcome.throttled { break }
-                    try? await Task.sleep(for: .milliseconds(150))
+                    if outcome.attempted == 0 || outcome.throttled || outcome.remaining == 0 { break }
+                    // Yield between batches so the app stays responsive.
+                    try? await Task.sleep(for: .milliseconds(120))
                 }
             }
         }
@@ -562,12 +611,29 @@ final class AppModel {
         await refreshCategorizationCounts()
         await cairnLog(
             .info,
-            "Auto-categorize: rules=\(ruleCategorized) ai=\(aiCategorized) "
-                + "pending=\(categorizationCounts.pendingModel) unresolved=\(categorizationCounts.unresolved)"
+            "Auto-categorize(\(scope == .background ? "background" : "foreground")): "
+                + "rules=\(ruleCategorized) ai=\(aiCategorized) calls=\(modelCalls) "
+                + "merchants=\(merchantsAsked) pending=\(categorizationCounts.pendingModel) "
+                + "unresolved=\(categorizationCounts.unresolved)"
         )
         categorizationState = .finished(
             categorized: ruleCategorized + aiCategorized,
             counts: categorizationCounts
+        )
+    }
+
+    /// Whether the on-device model may run right now. Rules and memory always
+    /// run; only the expensive model pass is gated.
+    private func modelWorkAllowed(for scope: CategorizationScope) -> Bool {
+        powerDecision(for: scope) == .proceed
+    }
+
+    private func powerDecision(for scope: CategorizationScope) -> CategorizationPower.Decision {
+        CategorizationPower.evaluate(
+            thermalState: ProcessInfo.processInfo.thermalState,
+            isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            isOnExternalPower: PowerSource.isOnExternalPower,
+            requiresExternalPower: scope == .background && categorizeOnlyWhileCharging
         )
     }
 

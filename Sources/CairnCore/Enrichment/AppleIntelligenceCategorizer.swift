@@ -87,6 +87,12 @@ public struct MerchantQuery: Sendable, Equatable, Hashable {
 /// uses the Private Cloud Compute model (`PrivateCloudComputeLanguageModel`)
 /// available from iOS 27, so transaction text never leaves the device. Every
 /// call is gated on `SystemLanguageModel.default.isAvailable`.
+///
+/// Cairn could also use the `contentTagging` use case, but that model emits
+/// free-form semantic tags ("grocery shopping"), not one of the person's actual
+/// category names. Matching those back to real categories would need a keyword
+/// table, which Cairn avoids. The general model with a runtime-constrained
+/// schema is the only approach that guarantees every answer is a real category.
 public enum AppleIntelligenceCategorizer {
     /// Always true: Cairn only ever uses the on-device model.
     public static let usesLocalModelOnly = true
