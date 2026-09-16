@@ -14,9 +14,18 @@ CairnCore (Swift package)
    ├─ Security/      CredentialStore, KeychainCredentialStore
    ├─ SimpleFIN/     client, DTOs, errors, sanitizer
    ├─ Sync/          SyncEngine (@ModelActor), matching, balance history
-   ├─ Enrichment/    rules engine
+   ├─ Enrichment/    rules engine, merchant memory, transfer pairing
+   ├─ Insights/      month-over-month math, subscription detection
    └─ Export/        CSV + JSON
 ```
+
+Recurring detection (`RecurringDetector`) is pure and on-device: it groups
+transactions by merchant and account, then keeps only runs of at least three
+charges whose gaps fit a cadence (weekly through yearly) and whose amounts are
+either fixed or vary like a bill. Transfers, ignored, and pending rows are left
+out, and hidden accounts are skipped, so the list reflects only real
+commitments. The app recomputes it after sync, import, categorization, and any
+flag change.
 
 ## Data flow
 

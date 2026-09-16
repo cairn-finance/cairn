@@ -20,6 +20,8 @@ SimpleFIN server (Bridge or your bank)  ──►  your device  ──►  your 
 - Shows accounts, balances, transactions, and net worth per currency.
 - Categorizes locally with your own rules; notes, tags, and manual categories are
   never overwritten by automation.
+- Finds subscriptions and other regular payments entirely on-device, with the
+  expected next charge.
 - Syncs across devices through your private iCloud database with **end-to-end
   encrypted financial fields** — Apple stores the record, not the amount.
 - Optional Face ID / Touch ID app lock.

@@ -35,14 +35,18 @@ struct InsightsView: View {
                     categoryCard(data).cairnAppear(delay: 0.1)
                     trendCard(data).cairnAppear(delay: 0.15)
                     merchantsCard(data).cairnAppear(delay: 0.2)
-                    categorizeCard.cairnAppear(delay: 0.25)
+                    recurringCard.cairnAppear(delay: 0.24)
+                    categorizeCard.cairnAppear(delay: 0.28)
                 }
             }
             .cairnScreen()
         }
         .cairnCanvas()
         .navigationTitle("Insights")
-        .task { await model.refreshCategorizationCounts() }
+        .task {
+            await model.refreshCategorizationCounts()
+            model.refreshRecurring()
+        }
         .onChange(of: month) { _, _ in
             paceSelection = nil
             trendSelection = nil
@@ -616,6 +620,18 @@ struct InsightsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Recurring
+
+    private var recurringCard: some View {
+        let currencySeries = model.recurringSeries.filter { $0.currency.code == primaryCurrency.code }
+        return NavigationLink {
+            RecurringView()
+        } label: {
+            RecurringSummaryCard(series: currencySeries, currency: primaryCurrency)
+        }
+        .buttonStyle(.pressableCard)
     }
 
     // MARK: - Categorization

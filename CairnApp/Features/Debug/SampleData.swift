@@ -144,38 +144,27 @@ enum SampleData {
 
         // swiftlint:disable:next large_tuple
         let samples: [(String, Int64, String, String, Int)] = [
-            ("Payroll Deposit", 512_500, "Income", "ACT-CHK", -1),
             ("Whole Foods Market", -8_432, "Groceries", "ACT-CC", -2),
             ("Blue Bottle Coffee", -675, "Dining", "ACT-CC", -2),
             ("Shell Gas Station", -5_412, "Transport", "ACT-CC", -3),
-            ("Rent Payment", -195_000, "Housing", "ACT-CHK", -5),
-            ("Pacific Gas & Electric", -12_300, "Utilities", "ACT-CHK", -6),
             ("Amazon.com", -4_299, "Shopping", "ACT-CC", -7),
-            ("Netflix", -1_549, "Entertainment", "ACT-CC", -8),
             ("Kaiser Pharmacy", -3_275, "Health", "ACT-CC", -9),
             ("Transfer to Savings", -50_000, "Transfers", "ACT-CHK", -10),
             ("Safeway", -7_812, "Groceries", "ACT-CC", -12),
             ("United Airlines", -42_600, "Travel", "ACT-CC", -14),
             ("Chipotle", -1_480, "Dining", "ACT-CC", -15),
-            ("Payroll Deposit", 512_500, "Income", "ACT-CHK", -16),
             ("Uber", -2_350, "Transport", "ACT-CC", -17),
             ("Apple Store", -129_900, "Shopping", "ACT-CC", -20),
-            ("Spotify", -1_199, "Entertainment", "ACT-CC", -22),
             ("Interest Payment", 1_240, "Income", "ACT-SAV", -25),
             ("Costco", -23_450, "Groceries", "ACT-CC", -28),
             ("State Farm", -14_200, "Housing", "ACT-CHK", -30),
             ("Delta Airlines", -55_300, "Travel", "ACT-CC", -34),
             ("Local Diner", -2_890, "Dining", "ACT-CC", -36),
-            ("Payroll Deposit", 512_500, "Income", "ACT-CHK", -37),
             ("Home Depot", -9_876, "Shopping", "ACT-CC", -40),
-            ("Verizon Wireless", -8_500, "Utilities", "ACT-CHK", -44),
             ("Trader Joe's", -6_543, "Groceries", "ACT-CC", -48),
-            ("Gym Membership", -4_900, "Health", "ACT-CC", -52),
             ("Transfer to Savings", -50_000, "Transfers", "ACT-CHK", -55),
             ("Steam", -5_999, "Entertainment", "ACT-CC", -60),
             ("Amazon.com", -3_120, "Shopping", "ACT-CC", -66),
-            ("Payroll Deposit", 512_500, "Income", "ACT-CHK", -67),
-            ("Electric Bill", -9_800, "Utilities", "ACT-CHK", -72),
         ]
 
         let accounts = ["ACT-CHK": checking, "ACT-SAV": savings, "ACT-CC": card]
@@ -202,6 +191,46 @@ enum SampleData {
                 transaction.userCategory = category(sample.2)
             }
             context.insert(transaction)
+        }
+
+        // Recurring fixtures: the same charge on the same day for several
+        // months, so the subscriptions screen has real patterns to detect in
+        // sample mode. The utility bill drifts month to month; the rest are
+        // fixed.
+        // swiftlint:disable:next large_tuple
+        let recurring: [(String, Int64, String, String, Int)] = [
+            ("Netflix", -1_549, "Entertainment", "ACT-CC", 8),
+            ("Spotify", -1_199, "Entertainment", "ACT-CC", 16),
+            ("Gym Membership", -4_900, "Health", "ACT-CC", 3),
+            ("Rent Payment", -195_000, "Housing", "ACT-CHK", 1),
+            ("Verizon Wireless", -8_500, "Utilities", "ACT-CHK", 12),
+            ("Pacific Gas & Electric", -11_400, "Utilities", "ACT-CHK", 6),
+            ("Payroll Deposit", 512_500, "Income", "ACT-CHK", 15),
+        ]
+        let monthAnchor = calendar.dateInterval(of: .month, for: now)?.start ?? now
+        for offset in 1...6 {
+            for (index, item) in recurring.enumerated() {
+                guard let account = accounts[item.3] else { continue }
+                let amount = item.0 == "Pacific Gas & Electric"
+                    ? item.1 - Int64((offset % 3) * 900)
+                    : item.1
+                let month = calendar.date(byAdding: .month, value: -offset, to: monthAnchor) ?? monthAnchor
+                let posted = calendar.date(byAdding: .day, value: item.4 - 1, to: month) ?? month
+                let transaction = LedgerTransaction(
+                    bankTransactionID: "REC-\(index)-\(offset)",
+                    payeeDescription: item.0,
+                    amountMinorUnits: amount
+                )
+                transaction.account = account
+                transaction.accountIDIndex = account.bankAccountID
+                transaction.currencyExponent = 2
+                transaction.postedDate = posted
+                transaction.createdAt = posted
+                transaction.modifiedAt = posted
+                transaction.normalizedMerchant = MerchantNormalizer.normalize(item.0)
+                transaction.userCategory = category(item.2)
+                context.insert(transaction)
+            }
         }
 
         // One merchant with no prior history or rule, so the on-device model has

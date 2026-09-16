@@ -58,6 +58,11 @@ final class AppModel {
     private(set) var categorizationState: CategorizationState = .idle
     private(set) var categorizationCounts = SyncEngine.CategorizationCounts()
 
+    /// Subscriptions and other regular payments detected from history. Kept
+    /// here so Home and Insights can summarize them without their own full
+    /// transaction queries. Recomputed when sync or a flag change can alter it.
+    private(set) var recurringSeries: [RecurringSeries] = []
+
     /// Progress of the on-device model pass, shown while it runs.
     struct ModelProgress: Equatable {
         var processed: Int
@@ -182,6 +187,7 @@ final class AppModel {
         await seeding
         // Kick off categorization without blocking launch; a large backlog can
         // take minutes on-device.
+        refreshRecurring()
         Task { await autoCategorize() }
     }
 
@@ -613,6 +619,7 @@ final class AppModel {
         }
 
         await refreshCategorizationCounts()
+        refreshRecurring()
         await cairnLog(
             .info,
             "Auto-categorize(\(scope == .background ? "background" : "foreground")): "
@@ -657,6 +664,14 @@ final class AppModel {
         categorizationCounts = (try? await engine.categorizationCounts()) ?? SyncEngine.CategorizationCounts()
     }
 
+    /// Recomputes detected subscriptions and regular payments entirely
+    /// on-device. Cheap enough to run after a sync or a flag change; it only
+    /// groups transactions already in the local store.
+    func refreshRecurring() {
+        let transactions = (try? container.mainContext.fetch(FetchDescriptor<LedgerTransaction>())) ?? []
+        recurringSeries = RecurringDetector.detect(transactions: transactions)
+    }
+
     /// Called right after the person changes a transaction's category, so the
     /// same merchant's other automatic rows pick the correction up immediately.
     func propagateUserCategory(of transactionID: PersistentIdentifier) {
@@ -670,6 +685,7 @@ final class AppModel {
                 )
             }
             await refreshCategorizationCounts()
+            refreshRecurring()
         }
     }
 

@@ -35,6 +35,16 @@ struct HomeView: View {
                     syncStatus
                         .cairnAppear(delay: 0.05)
 
+                    if !homeRecurring.isEmpty {
+                        NavigationLink {
+                            RecurringView()
+                        } label: {
+                            RecurringSummaryCard(series: homeRecurring, currency: homeCurrency)
+                        }
+                        .buttonStyle(.pressableCard)
+                        .cairnAppear(delay: 0.08)
+                    }
+
                     institutionsSection
                         .cairnAppear(delay: 0.1)
                 }
@@ -120,6 +130,19 @@ struct HomeView: View {
 
     private var lastSync: Date? {
         institutions.compactMap(\.lastSyncDate).max() ?? accounts.compactMap(\.lastSyncedAt).max()
+    }
+
+    /// The currency the net-worth hero leads with, so the recurring summary
+    /// matches it rather than mixing currencies.
+    private var homeCurrency: Currency {
+        NetWorthMath.primaryCurrency(
+            totals: NetWorthMath.totals(accounts: accounts),
+            home: NetWorthMath.homeCurrency(settings: settings)
+        )
+    }
+
+    private var homeRecurring: [RecurringSeries] {
+        model.recurringSeries.filter { $0.currency.code == homeCurrency.code }
     }
 
     private var institutionsSection: some View {
