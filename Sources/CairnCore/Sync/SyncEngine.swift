@@ -1432,7 +1432,19 @@ public actor SyncEngine {
         // Group candidates by merchant and direction. A merchant that appears as
         // both a charge and a credit (a purchase and its refund) is split so the
         // direction in the prompt stays unambiguous.
-        var groups: [String: [LedgerTransaction]] = [:]
+        //
+        // Only values are kept here, never the rows themselves: this actor
+        // suspends at the model calls below, and a sync, disconnect, or delete
+        // running in that window can remove the rows. Writing to a deleted
+        // SwiftData row traps.
+        struct MerchantGroup {
+            var ids: [PersistentIdentifier] = []
+            var merchant = ""
+            var description = ""
+            var isCredit = false
+        }
+
+        var groups: [String: MerchantGroup] = [:]
         var order: [String] = []
         for transaction in candidates {
             // Never ask the model about money movement. Mark it a transfer (or a
@@ -1456,7 +1468,16 @@ public actor SyncEngine {
             let direction = transaction.amountMinorUnits > 0 ? "in" : "out"
             let key = "\(MerchantMemory.key(for: merchant))|\(direction)"
             if groups[key] == nil { order.append(key) }
-            groups[key, default: []].append(transaction)
+            var group = groups[key] ?? MerchantGroup()
+            let isFirst = group.ids.isEmpty
+            group.ids.append(transaction.persistentModelID)
+            // The longest description stands in for the merchant, as before.
+            if isFirst || transaction.payeeDescription.count > group.description.count {
+                group.merchant = merchant
+                group.description = transaction.payeeDescription
+                group.isCredit = transaction.amountMinorUnits > 0
+            }
+            groups[key] = group
         }
 
         let batchSize = limit > 0 ? limit : AppleIntelligenceCategorizer.recommendedMerchantBatchSize
@@ -1468,22 +1489,19 @@ public actor SyncEngine {
         }
 
         // One query per merchant group, remembering which categories are legal
-        // for its direction (a debit can never be Income).
+        // for its direction (a debit can never be Income). Names, not models, so
+        // nothing is held across the model call below.
         var queries: [MerchantQuery] = []
-        var allowedByIndex: [Int: [Category]] = [:]
+        var allowedByIndex: [Int: [String]] = [:]
         for (index, group) in selected.enumerated() {
-            guard let representative = group.max(by: {
-                $0.payeeDescription.count < $1.payeeDescription.count
-            }) else { continue }
-            let isCredit = representative.amountMinorUnits > 0
-            let allowed = isCredit ? categories : categories.filter { $0.name != "Income" }
+            let allowed = (group.isCredit ? categories : categories.filter { $0.name != "Income" })
+                .map(\.name)
             guard !allowed.isEmpty else { continue }
             allowedByIndex[index] = allowed
-            let merchant = Self.merchantName(representative)
             queries.append(MerchantQuery(
                 id: index,
-                merchant: merchant.isEmpty ? representative.payeeDescription : merchant,
-                isCredit: isCredit
+                merchant: group.merchant.isEmpty ? group.description : group.merchant,
+                isCredit: group.isCredit
             ))
         }
 
@@ -1506,28 +1524,32 @@ public actor SyncEngine {
         }
 
         // Apply the batch, re-asking any merchant it did not place cleanly with
-        // the fully-constrained single-category schema.
+        // the fully-constrained single-category schema. Rows are re-resolved from
+        // their identifiers after every suspension, so a row deleted mid-pass by
+        // a sync, disconnect, or delete is skipped rather than written to.
         for (index, group) in selected.enumerated() {
+            var rows = liveTransactions(group.ids)
+            guard !rows.isEmpty else { continue }
+
             guard let allowed = allowedByIndex[index] else {
-                for transaction in group { transaction.autoCategorizeAttemptedAt = now }
-                outcome.attempted += group.count
+                for transaction in rows { transaction.autoCategorizeAttemptedAt = now }
+                outcome.attempted += rows.count
                 continue
             }
 
-            var chosen = resolved[index].flatMap { name in allowed.first { $0.name == name } }
+            var chosen = resolved[index].flatMap { name in allowed.first { $0 == name } }
 
-            if chosen == nil, let representative = group.max(by: {
-                $0.payeeDescription.count < $1.payeeDescription.count
-            }) {
+            if chosen == nil {
                 outcome.modelCalls += 1
                 do {
                     let name = try await AppleIntelligenceCategorizer.classify(
-                        merchant: Self.merchantName(representative),
-                        description: representative.payeeDescription,
-                        isCredit: representative.amountMinorUnits > 0,
-                        categories: allowed.map(\.name)
+                        merchant: group.merchant,
+                        description: group.description,
+                        isCredit: group.isCredit,
+                        categories: allowed
                     )
-                    chosen = name.flatMap { candidate in allowed.first { $0.name == candidate } }
+                    chosen = name.flatMap { candidate in allowed.first { $0 == candidate } }
+                    rows = liveTransactions(group.ids)
                 } catch {
                     await cairnLog(.warning, "On-device model unavailable; pausing categorization for now.")
                     outcome.throttled = true
@@ -1537,27 +1559,39 @@ public actor SyncEngine {
                 }
             }
 
-            for transaction in group {
+            guard !rows.isEmpty else { continue }
+            // Resolve the category by name at write time: the Category rows were
+            // fetched before the awaits above too.
+            let target: Category? = chosen.flatMap { name in
+                do {
+                    return try category(named: name)
+                } catch {
+                    return nil
+                }
+            }
+            for transaction in rows {
                 transaction.autoCategorizeAttemptedAt = now
-                if let chosen {
-                    transaction.autoCategory = chosen
+                if let target {
+                    transaction.autoCategory = target
                     transaction.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
                     transaction.autoConfidence = 0.8
                 }
                 transaction.modifiedAt = now
             }
-            outcome.attempted += group.count
+            outcome.attempted += rows.count
             outcome.merchantsAsked += 1
-            if chosen != nil {
-                outcome.categorized += group.count
-                outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += group.count
+            if target != nil {
+                outcome.categorized += rows.count
+                outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += rows.count
             }
         }
 
         // A money-movement row recognized while building the batch should pull
         // its counterpart along right away, so the next pass doesn't have to wait
-        // to fix a credit the model placed as income.
-        _ = pairTransfers(in: all, counterparties: counterparties, now: now)
+        // to fix a credit the model placed as income. `all` was fetched before
+        // the model calls, so fetch again rather than touch rows that may be gone.
+        let live = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        _ = pairTransfers(in: live, counterparties: counterparties, now: now)
 
         outcome.remaining = max(0, candidates.count - outcome.attempted)
         try modelContext.save()
@@ -1570,6 +1604,19 @@ public actor SyncEngine {
             && transaction.autoCategory == nil
             && !transaction.isIgnored
             && !transaction.isPending
+    }
+
+    /// Resolves snapshot identifiers back to live rows, dropping any that were
+    /// deleted while this actor was suspended at an `await`. The actor can
+    /// re-enter during a model call — a sync, a Wallet disconnect, or Delete All
+    /// Data — and writing to a deleted SwiftData row is a fatal error.
+    private func liveTransactions(_ ids: [PersistentIdentifier]) -> [LedgerTransaction] {
+        ids.compactMap { id -> LedgerTransaction? in
+            guard let transaction: LedgerTransaction = modelContext.registeredModel(for: id),
+                  !transaction.isDeleted
+            else { return nil }
+            return transaction
+        }
     }
 
     /// Builds merchant memory.
