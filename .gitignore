@@ -38,6 +38,11 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 
+# Local App Store screenshot captures. Kept out of the repo so a broad
+# `git add -A` can never sweep in tens of megabytes of PNGs; use `git add -f`
+# if you deliberately want them tracked.
+Screenshots/
+
 # macOS
 .DS_Store
 
