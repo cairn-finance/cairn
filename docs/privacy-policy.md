@@ -17,6 +17,11 @@ your data.
   transactions from the SimpleFIN server you choose (for example, the SimpleFIN
   Bridge or your bank's own server). That request goes directly from your device
   to that server, authorized by credentials you provide.
+- **Custom-currency descriptors.** If a bank reports a custom currency such as
+  miles or points, the SimpleFIN response names an HTTPS URL describing it, and
+  Cairn fetches that URL once and caches it. That request goes to the host in the
+  response, which therefore sees your device's IP address. It carries no
+  financial data.
 - **iCloud, only if you enable iCloud Sync.** Your data is stored in your own
   private CloudKit database. Financial fields (amounts, balances, descriptions,
   notes, and names) use CloudKit encrypted fields, which are end-to-end
@@ -44,8 +49,9 @@ non-synchronizably with device-only protection and never leaves the device.
 
 Note that turning iCloud Sync off stops *this* device from using the synced
 credential, but does not remove an existing copy from iCloud Keychain, because
-that copy is what your other devices sync with. Remove the connection, or the
-item in iCloud Keychain settings, to delete it everywhere.
+that copy is what your other devices sync with. Removing the connection deletes
+the credential where you remove it, along with the synced copy; a device-only
+copy on another device stays until you remove it there too.
 
 ## Your control
 

@@ -68,6 +68,11 @@ public struct KeychainCredentialStore: CredentialStore {
             guard status == errSecSuccess else {
                 throw CredentialStoreError.unexpectedStatus(status)
             }
+            // Moving back to iCloud must not leave the device-only copy behind,
+            // or reads would keep preferring it forever.
+            if synchronizable {
+                try? delete(id: id, synchronizable: false)
+            }
             return
         }
 

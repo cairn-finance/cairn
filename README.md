@@ -39,7 +39,9 @@ SimpleFIN server (Bridge or your bank)  ──►  your device  ──►  your 
 
 - **No server, no analytics, no third-party SDKs.** The only network traffic is to
   the SimpleFIN server you configure, plus your own iCloud database if you turn
-  sync on. Nothing is sent to us.
+  sync on. Nothing is sent to us. If a bank reports a custom currency (miles,
+  points), Cairn fetches that descriptor once from the HTTPS URL the SimpleFIN
+  response names, and caches it.
 - Apple Wallet data is read through FinanceKit on-device and mirrored into the
   same store as everything else, so it follows the same storage choice.
 - Categorization runs on-device. When Apple Intelligence is used, transaction text

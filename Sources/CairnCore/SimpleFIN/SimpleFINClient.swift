@@ -8,6 +8,16 @@ public actor SimpleFINClient {
     private let session: URLSession
     private let decoder = JSONDecoder()
 
+    /// Custom-currency descriptors (miles, points) are tiny and effectively
+    /// static, so each URL is fetched once per client rather than on every sync.
+    /// A lookup reveals this device's IP to the host named in the server's
+    /// response, so the fewer the better.
+    private var customCurrencyCache: [String: Currency] = [:]
+
+    /// How many descriptor lookups one response may trigger, so a bad or hostile
+    /// response can't turn a sync into a long serial crawl.
+    private static let customCurrencyLookupLimit = 8
+
     public init(session: URLSession = .shared) {
         self.session = session
     }
@@ -205,16 +215,28 @@ public actor SimpleFINClient {
             .compactMap { $0 }
         )
         let urls = values.filter { value in
-            guard let scheme = URL(string: value)?.scheme?.lowercased() else { return false }
-            return scheme == "https" || scheme == "http"
+            // HTTPS only: a descriptor URL comes from the server's response, and a
+            // plaintext fetch would be both pointless and unsafe.
+            URL(string: value)?.scheme?.lowercased() == "https"
         }
         guard !urls.isEmpty else { return [:] }
 
         var resolved: [String: Currency] = [:]
-        for value in urls {
+        var lookups = 0
+        for value in urls.sorted() {
+            if let cached = customCurrencyCache[value] {
+                resolved[value] = cached
+                continue
+            }
+            guard lookups < Self.customCurrencyLookupLimit else {
+                await cairnLog(.warning, "Skipping further custom-currency lookups for this sync.")
+                break
+            }
+            lookups += 1
             guard let url = URL(string: value) else { continue }
             if let currency = try? await fetchCustomCurrency(at: url) {
                 resolved[value] = currency
+                customCurrencyCache[value] = currency
             }
         }
         return resolved
@@ -227,6 +249,8 @@ public actor SimpleFINClient {
         }
         var request = URLRequest(url: url)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        // A descriptor is a few bytes; don't let one slow host hold up a sync.
+        request.timeoutInterval = 10
 
         let (data, response) = try await perform(request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {

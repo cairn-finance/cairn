@@ -816,7 +816,7 @@ final class AppModel {
         migrateCredentials(synchronizable: cloud)
         banner = cloud
             ? "iCloud Sync will be enabled the next time you open Cairn."
-            : "This Device Only takes effect the next time you open Cairn. The stored credential has already stopped syncing."
+            : "This Device Only takes effect the next time you open Cairn. Cairn now reads the credential from this device; the copy in iCloud Keychain is left for your other devices."
     }
 
     /// Stores the credential with the requested iCloud Keychain setting. Falls
@@ -843,12 +843,12 @@ final class AppModel {
         guard let institutions = try? container.mainContext.fetch(FetchDescriptor<Institution>()) else {
             return
         }
+        // Re-store every credential rather than skipping ones whose sync setting
+        // already matches: a rewrite also refreshes the item's accessibility
+        // class, which is how credentials created before device-only storage
+        // existed get upgraded to it.
         for institution in institutions {
             guard let secret = try? credentials.secret(for: institution.credentialID) else { continue }
-            if let current = try? credentials.isSynchronizable(for: institution.credentialID),
-               current == synchronizable {
-                continue
-            }
             do {
                 try credentials.store(secret, id: institution.credentialID, synchronizable: synchronizable)
             } catch {
