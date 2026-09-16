@@ -49,6 +49,27 @@ struct TransactionHintsTests {
         }
     }
 
+    @Test("Paying a bill is spending, not a transfer")
+    func billPaymentsAreSpending() {
+        // "autopay", "bill pay" and "epayment" describe how a bill was paid,
+        // not money moving between the person's own accounts. Treating them as
+        // transfers hid utility and insurance bills from spending.
+        for description in [
+            "AUTOPAY CITY UTILITIES",
+            "BILL PAY ACME INSURANCE",
+            "EPAYMENT CITY WATER",
+            "AUTOMATIC PAYMENT - VERIZON WIRELESS",
+            "BILLPAY - STATE FARM",
+        ] {
+            #expect(!TransactionHints.isInternalTransfer(description: description), "\(description)")
+            #expect(TransactionHints.moneyMovement(description: description) == nil, "\(description)")
+        }
+
+        // A card payment is still money movement, because a card is named.
+        #expect(TransactionHints.moneyMovement(description: "CREDIT CARD AUTOPAY PAYMENT") == .creditCardPayment)
+        #expect(TransactionHints.moneyMovement(description: "CHASE CREDIT CRD AUTOPAY") == .creditCardPayment)
+    }
+
     @Test("A fee is always a debit")
     func feesMustBeDebits() {
         #expect(TransactionHints.isExplicitFee(description: "MONTHLY SERVICE FEE", amountMinorUnits: -1_500))

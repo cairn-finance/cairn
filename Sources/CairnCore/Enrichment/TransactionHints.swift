@@ -36,8 +36,6 @@ public enum TransactionHints {
         "sweep to", "sweep from", "rebalance",
         "credit card payment", "card payment", "payment to card", "payment - thank you",
         "payment thank you", "payment thankyou", "cardmember payment",
-        "autopay", "auto payment", "automatic payment", "e-payment", "epayment",
-        "bill pay", "billpay",
         "zelle", "venmo", "cash app", "cashapp", "apple cash",
         "withdrawal to", "deposit from",
         // Brokerage activity moves cash into or out of an investment, it isn't
@@ -48,11 +46,14 @@ public enum TransactionHints {
     ]
 
     /// Phrases that name a payment *to* a credit card, so it can be labeled
-    /// "Credit Card Payments" instead of the generic "Transfer".
+    /// "Credit Card Payments" instead of the generic "Transfer". Auto-payment
+    /// wording only counts when a card is named: "AUTOPAY" alone is how people
+    /// pay utility bills, which is spending, not money movement.
     private static let creditCardPaymentSubstrings: [String] = [
         "credit card payment", "card payment", "payment to card", "payment to credit card",
         "cardmember payment", "payment thank you", "payment thankyou",
-        "payment - thank you", "card autopay",
+        "payment - thank you", "card autopay", "credit card autopay",
+        "autopay to card", "credit crd",
     ]
 
     /// Phrases that name a payment toward a loan or mortgage.
