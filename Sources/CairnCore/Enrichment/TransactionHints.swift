@@ -56,6 +56,25 @@ public enum TransactionHints {
         "autopay to card", "credit crd",
     ]
 
+    /// Words that describe *how* a payment was made. On their own they mean
+    /// spending — "AUTOPAY CITY UTILITIES" is a bill — so they only imply money
+    /// movement when a card is named too.
+    private static let paymentWording: [String] = [
+        "autopay", "auto pay", "auto payment", "automatic payment",
+        "e-payment", "epayment", "e payment", "online payment",
+        "bill pay", "billpay",
+    ]
+
+    /// Words that name a card rather than the merchant being paid. Paired with
+    /// `paymentWording`, they mean the money is moving to the card, so counting
+    /// it as spending would double-count the purchases.
+    private static let cardWording: [String] = [
+        "credit card", "credit crd", "card",
+        "visa", "mastercard", "amex", "american express",
+        "discover", "barclaycard", "barclays", "synchrony",
+        "capital one", "citi", "chase", "wells fargo", "bank of america", "us bank",
+    ]
+
     /// Phrases that name a payment toward a loan or mortgage.
     private static let loanPaymentSubstrings: [String] = [
         "loan payment", "loan pmt", "loan due", "loan installment",
@@ -127,7 +146,12 @@ public enum TransactionHints {
         guard !isExplicitFee(description: description) else { return false }
         let haystack = normalized(description: description, merchant: merchant)
         guard !haystack.isEmpty else { return false }
-        return creditCardPaymentSubstrings.contains { haystack.contains($0) }
+        if creditCardPaymentSubstrings.contains(where: { containsWord($0, in: haystack) }) { return true }
+        // Auto-payment wording with a card named is a card payment; without one
+        // it is how people pay bills, which is spending.
+        let pays = paymentWording.contains { containsWord($0, in: haystack) }
+        guard pays else { return false }
+        return cardWording.contains { containsWord($0, in: haystack) }
     }
 
     /// A payment toward a loan or mortgage.

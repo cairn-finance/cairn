@@ -68,6 +68,9 @@ struct TransactionHintsTests {
         // A card payment is still money movement, because a card is named.
         #expect(TransactionHints.moneyMovement(description: "CREDIT CARD AUTOPAY PAYMENT") == .creditCardPayment)
         #expect(TransactionHints.moneyMovement(description: "CHASE CREDIT CRD AUTOPAY") == .creditCardPayment)
+        #expect(TransactionHints.moneyMovement(description: "DISCOVER E-PAYMENT") == .creditCardPayment)
+        #expect(TransactionHints.moneyMovement(description: "BARCLAYCARD AUTOPAY") == .creditCardPayment)
+        #expect(TransactionHints.moneyMovement(description: "VISA AUTOMATIC PAYMENT") == .creditCardPayment)
     }
 
     @Test("A fee is always a debit")

@@ -1012,11 +1012,14 @@ public actor SyncEngine {
                    merchant: transaction.normalizedMerchant,
                    counterparties: counterparties
                ) {
-                let kind: TransactionHints.MoneyMovementKind =
-                    TransactionHints.isLoanPayment(
-                        description: transaction.payeeDescription,
-                        merchant: transaction.normalizedMerchant
-                    ) ? .loanPayment : .transfer
+                // Use the specific kind when one applies, so a card payment isn't
+                // labeled a plain transfer here while the model path labels it a
+                // card payment.
+                let kind = TransactionHints.moneyMovement(
+                    description: transaction.payeeDescription,
+                    merchant: transaction.normalizedMerchant,
+                    counterparties: counterparties
+                ) ?? .transfer
                 if applyMoneyMovement(kind, to: transaction, now: now) { didChange = true }
                 continue
             }
