@@ -113,9 +113,17 @@ entry="$(mktemp)"
   echo
 } > "$entry"
 
-cat "$entry" CHANGELOG.md > "$entry.merged"
+# Insert the new section *after* the file's preamble. Prepending put releases
+# above the `# Changelog` heading once the file grew a title and intro.
+header="$(mktemp)"
+rest="$(mktemp)"
+awk -v header="$header" -v rest="$rest" '
+  !pastPreamble && /^## \[/ { pastPreamble = 1 }
+  { print > (pastPreamble ? rest : header) }
+' CHANGELOG.md
+cat "$header" "$entry" "$rest" > "$entry.merged"
 mv "$entry.merged" CHANGELOG.md
-rm -f "$entry"
+rm -f "$entry" "$header" "$rest"
 
 # --- Commit and tag -------------------------------------------------------
 

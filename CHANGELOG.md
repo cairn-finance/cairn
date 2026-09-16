@@ -1,3 +1,9 @@
+# Changelog
+
+All notable changes to Cairn are documented here. This project follows
+[Semantic Versioning](https://semver.org) and
+[Keep a Changelog](https://keepachangelog.com).
+
 ## [0.3.0] - 2026-09-16
 
 - Add rules and tags management to the app (4c67f6c)
@@ -69,11 +75,3 @@
 - Add exact minor-unit money, CloudKit-compatible SwiftData schema with encrypted fields, container factory, and cloud availability gate. (8a67d58)
 - Document architecture, threat model, privacy policy, troubleshooting, and contributing; refresh README for v0.1. (a6572d7)
 - Add XcodeGen project, Swift package, CloudKit entitlements, signing xcconfig defaults, SwiftLint config, CI, and NOTICE. (eb00e58)
-- Initial commit (6f653f0)
-
-# Changelog
-
-All notable changes to Cairn are documented here. This project follows
-[Semantic Versioning](https://semver.org) and
-[Keep a Changelog](https://keepachangelog.com).
-

@@ -185,6 +185,46 @@ struct SimpleFINProtocolTests {
         #expect(holding.marketValueMinorUnits == 120_000)
         #expect(holding.costBasisMinorUnits == nil)
     }
+
+    @Test("A custom currency uses its fetched descriptor")
+    func customCurrencyDescriptor() throws {
+        let json = """
+        {
+          "accounts": [
+            { "id": "A1", "name": "Rewards", "currency": "https://example.com/cui/award", "balance": "1200.00" }
+          ]
+        }
+        """
+        let dto = try JSONDecoder().decode(SimpleFINAccountSetDTO.self, from: Data(json.utf8))
+        let descriptor = Currency(
+            code: "https://example.com/cui/award",
+            exponent: 2,
+            isCustom: true,
+            customName: "Award Miles",
+            customAbbreviation: "mi"
+        )
+        let account = try #require(
+            dto.toDomain(customCurrencies: ["https://example.com/cui/award": descriptor]).accounts.first
+        )
+        #expect(account.currency.isCustom)
+        #expect(account.currency.customName == "Award Miles")
+        #expect(account.currency.customAbbreviation == "mi")
+    }
+
+    @Test("A custom currency without a descriptor still maps safely")
+    func customCurrencyFallback() throws {
+        let json = """
+        {
+          "accounts": [
+            { "id": "A1", "name": "Rewards", "currency": "https://example.com/cui/award", "balance": "1200.00" }
+          ]
+        }
+        """
+        let dto = try JSONDecoder().decode(SimpleFINAccountSetDTO.self, from: Data(json.utf8))
+        let account = try #require(dto.toDomain().accounts.first)
+        #expect(account.currency.isCustom)
+        #expect(account.currency.customName == nil)
+    }
 }
 
 @Suite("Error sanitizer")

@@ -176,7 +176,10 @@ public actor SimpleFINClient {
 
         do {
             let dto = try decoder.decode(SimpleFINAccountSetDTO.self, from: data)
-            let accountSet = dto.toDomain()
+            // A custom currency (miles, points) arrives as a URL to a descriptor.
+            // Resolve those before mapping so the account shows its real name.
+            let customCurrencies = await resolveCustomCurrencies(in: dto)
+            let accountSet = dto.toDomain(customCurrencies: customCurrencies)
             let errors = accountSet.errors.isEmpty ? "none" : accountSet.errors.map(\.message).joined(separator: " | ")
             await cairnLog(
                 .info,
@@ -188,6 +191,33 @@ public actor SimpleFINClient {
             await cairnLog(.error, "Decoding failed: \(ErrorSanitizer.sanitize(error.localizedDescription))")
             throw SimpleFINError.decoding(error.localizedDescription)
         }
+    }
+
+    /// Fetches descriptors for any custom-currency URLs in a response, so an
+    /// account denominated in points or miles shows its real name instead of a
+    /// bare "Custom". A failure is ignored: the plain fallback is better than
+    /// failing a whole sync over a label.
+    private func resolveCustomCurrencies(in dto: SimpleFINAccountSetDTO) async -> [String: Currency] {
+        let values = Set(
+            (dto.accounts ?? []).flatMap { account in
+                [account.currency] + (account.holdings ?? []).map(\.currency)
+            }
+            .compactMap { $0 }
+        )
+        let urls = values.filter { value in
+            guard let scheme = URL(string: value)?.scheme?.lowercased() else { return false }
+            return scheme == "https" || scheme == "http"
+        }
+        guard !urls.isEmpty else { return [:] }
+
+        var resolved: [String: Currency] = [:]
+        for value in urls {
+            guard let url = URL(string: value) else { continue }
+            if let currency = try? await fetchCustomCurrency(at: url) {
+                resolved[value] = currency
+            }
+        }
+        return resolved
     }
 
     /// Fetches metadata for a custom currency (miles, points, etc.).

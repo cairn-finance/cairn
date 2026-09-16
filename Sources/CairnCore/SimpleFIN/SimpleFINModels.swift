@@ -266,7 +266,21 @@ public struct SimpleFINServerError: Sendable, Hashable, Identifiable {
 // MARK: - DTO → domain conversion
 
 extension SimpleFINAccountSetDTO {
-    func toDomain() -> SimpleFINAccountSet {
+    /// Resolves a raw SimpleFIN currency value, preferring a fetched custom
+    /// descriptor (miles, points) over the bare URL fallback.
+    private static func currency(
+        for raw: String?,
+        customCurrencies: [String: Currency]
+    ) -> Currency {
+        let value = raw ?? "USD"
+        if let resolved = customCurrencies[value] { return resolved }
+        return Currency.simpleFIN(value)
+    }
+
+    /// - Parameter customCurrencies: Descriptors already fetched for any
+    ///   custom-currency URLs in this response, keyed by the raw value the
+    ///   server sent. Without them an account shows a bare "Custom".
+    func toDomain(customCurrencies: [String: Currency] = [:]) -> SimpleFINAccountSet {
         let connections = (self.connections ?? []).map { dto in
             SimpleFINConnection(
                 id: dto.connID ?? "",
@@ -280,7 +294,7 @@ extension SimpleFINAccountSetDTO {
 
         let accounts = (self.accounts ?? []).compactMap { dto -> SimpleFINAccount? in
             guard let id = dto.id, !id.isEmpty else { return nil }
-            let currency = Currency.simpleFIN(dto.currency ?? "USD")
+            let currency = Self.currency(for: dto.currency, customCurrencies: customCurrencies)
             let exponent = currency.exponent
             let balance = MinorUnits.parse(dto.balance ?? "0", exponent: exponent) ?? 0
             let available = dto.availableBalance.flatMap { MinorUnits.parse($0, exponent: exponent) }
@@ -298,7 +312,10 @@ extension SimpleFINAccountSetDTO {
             }
             let holdings = (dto.holdings ?? []).compactMap { holding -> SimpleFINHolding? in
                 guard let holdingID = holding.id, !holdingID.isEmpty else { return nil }
-                let holdingCurrency = Currency.simpleFIN(holding.currency ?? dto.currency ?? "USD")
+                let holdingCurrency = Self.currency(
+                    for: holding.currency ?? dto.currency,
+                    customCurrencies: customCurrencies
+                )
                 let holdingExponent = holdingCurrency.exponent
                 let marketValue = MinorUnits.parse(holding.marketValue ?? "0", exponent: holdingExponent) ?? 0
                 let costBasis = holding.costBasis.flatMap { MinorUnits.parse($0, exponent: holdingExponent) }
