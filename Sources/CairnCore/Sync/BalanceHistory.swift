@@ -26,7 +26,7 @@ public enum BalanceHistory {
         let laterSum = transactions
             .filter { $0.date > cutoff }
             .reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
-        return currentBalanceMinorUnits - laterSum
+        return MinorUnits.subtractClamped(currentBalanceMinorUnits, laterSum)
     }
 
     /// A daily series from `start` through `end` inclusive, ordered ascending.
@@ -52,7 +52,7 @@ public enum BalanceHistory {
             // Add back everything posted after this day (i.e. moving backward in
             // time, undo each transaction).
             while index < sorted.count, sorted[index].date > endOfDay(day, calendar: calendar) {
-                running -= sorted[index].amountMinorUnits
+                running = MinorUnits.subtractClamped(running, sorted[index].amountMinorUnits)
                 index += 1
             }
             result.append((day, running))

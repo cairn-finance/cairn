@@ -46,9 +46,9 @@ enum NetWorthMath {
         var liabilities: Int64 = 0
         for account in included(accounts) where account.currency.code == currency.code {
             if account.accountType.isLiability || account.balanceMinorUnits < 0 {
-                liabilities += abs(account.balanceMinorUnits)
+                liabilities = MinorUnits.addClamped(liabilities, MinorUnits.absClamped(account.balanceMinorUnits))
             } else {
-                assets += account.balanceMinorUnits
+                assets = MinorUnits.addClamped(assets, account.balanceMinorUnits)
             }
         }
         return (assets, liabilities)
@@ -102,8 +102,10 @@ enum NetWorthMath {
         guard let first = series.first?.balanceMinorUnits, let last = series.last?.balanceMinorUnits else {
             return (0, nil)
         }
-        let delta = last - first
-        let ratio: Double? = first != 0 ? Double(delta) / Double(abs(first)) : nil
+        let delta = MinorUnits.subtractClamped(last, first)
+        let ratio: Double? = first != 0
+            ? Double(delta) / Double(MinorUnits.absClamped(first))
+            : nil
         return (delta, ratio)
     }
 

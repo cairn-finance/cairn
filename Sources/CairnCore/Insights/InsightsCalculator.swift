@@ -45,7 +45,7 @@ public struct MonthlyTotals: Sendable, Hashable, Identifiable {
     public let spendingMinorUnits: Int64
 
     public var id: Date { monthStart }
-    public var netMinorUnits: Int64 { incomeMinorUnits - spendingMinorUnits }
+    public var netMinorUnits: Int64 { MinorUnits.subtractClamped(incomeMinorUnits, spendingMinorUnits) }
 
     public init(monthStart: Date, incomeMinorUnits: Int64, spendingMinorUnits: Int64) {
         self.monthStart = monthStart
@@ -199,8 +199,8 @@ public struct InsightsSnapshot: Sendable {
 
     public var netChangeRatio: Double? {
         guard previous.netMinorUnits != 0 else { return nil }
-        return Double(current.netMinorUnits - previous.netMinorUnits)
-            / Double(abs(previous.netMinorUnits))
+        return Double(MinorUnits.subtractClamped(current.netMinorUnits, previous.netMinorUnits))
+            / Double(MinorUnits.absClamped(previous.netMinorUnits))
     }
 
     /// Average daily spend, based on elapsed days for the current month and on
@@ -327,13 +327,16 @@ public enum InsightsCalculator {
             && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
             let day = calendar.component(.day, from: transaction.date)
             guard day >= 1, day <= lastDay else { continue }
-            daily[day] += abs(transaction.amountMinorUnits)
+            daily[day] = MinorUnits.addClamped(
+                daily[day],
+                MinorUnits.absClamped(transaction.amountMinorUnits)
+            )
         }
 
         var running: Int64 = 0
         var points: [PacePoint] = []
         for day in 1...lastDay {
-            running += daily[day]
+            running = MinorUnits.addClamped(running, daily[day])
             points.append(PacePoint(day: day, amountMinorUnits: running))
         }
         return points
@@ -359,7 +362,10 @@ public enum InsightsCalculator {
             // months that predate its history.
             let hasCoverage = relevant.contains { $0.date >= start && $0.date < end }
             guard hasCoverage else { continue }
-            total += totals(for: start, transactions: relevant, calendar: calendar).spendingMinorUnits
+            total = MinorUnits.addClamped(
+                total,
+                totals(for: start, transactions: relevant, calendar: calendar).spendingMinorUnits
+            )
             days += calendar.range(of: .day, in: .month, for: start)?.count ?? 30
         }
         return days > 0 ? total / Int64(days) : 0
@@ -378,9 +384,9 @@ public enum InsightsCalculator {
             where transaction.includedInInsights
             && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
             if transaction.amountMinorUnits >= 0 {
-                income += transaction.amountMinorUnits
+                income = MinorUnits.addClamped(income, transaction.amountMinorUnits)
             } else {
-                spending += abs(transaction.amountMinorUnits)
+                spending = MinorUnits.addClamped(spending, MinorUnits.absClamped(transaction.amountMinorUnits))
             }
         }
         return MonthlyTotals(monthStart: monthStart, incomeMinorUnits: income, spendingMinorUnits: spending)
@@ -421,12 +427,18 @@ public enum InsightsCalculator {
                 name = uncategorizedName
             }
             if isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
-                currentSpend[name, default: 0] += abs(transaction.amountMinorUnits)
+                currentSpend[name] = MinorUnits.addClamped(
+                    currentSpend[name] ?? 0,
+                    MinorUnits.absClamped(transaction.amountMinorUnits)
+                )
                 if let hex = transaction.categoryColorHex, !hex.isEmpty {
                     currentColor[name] = hex
                 }
             } else if isInMonth(transaction.date, monthStart: previousStart, calendar: calendar) {
-                previousSpend[name, default: 0] += abs(transaction.amountMinorUnits)
+                previousSpend[name] = MinorUnits.addClamped(
+                    previousSpend[name] ?? 0,
+                    MinorUnits.absClamped(transaction.amountMinorUnits)
+                )
             }
         }
 
@@ -460,7 +472,10 @@ public enum InsightsCalculator {
             && transaction.amountMinorUnits < 0
             && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
             let name = transaction.merchant.isEmpty ? "Unknown" : transaction.merchant
-            totals[name, default: 0] += abs(transaction.amountMinorUnits)
+            totals[name] = MinorUnits.addClamped(
+                totals[name] ?? 0,
+                MinorUnits.absClamped(transaction.amountMinorUnits)
+            )
         }
         return totals
             .map { MerchantTotal(name: $0.key, amountMinorUnits: $0.value) }
