@@ -16,23 +16,34 @@ SimpleFIN server (Bridge or your bank)  ──►  your device  ──►  your 
 
 ## What it does
 
-- Connects to SimpleFIN Bridge or a bank-hosted SimpleFIN server.
+- Connects to SimpleFIN Bridge or a bank-hosted SimpleFIN server, and reads
+  Apple Wallet financial data through FinanceKit on iPhone and iPad.
 - Shows accounts, balances, transactions, and net worth per currency.
-- Categorizes locally with rules you write yourself; notes, tags, and manual
-  categories are never overwritten by automation.
+- Categorizes on-device: rules you write yourself, merchant memory, and — where
+  available — Apple Intelligence. Notes, tags, and manual categories are never
+  overwritten by automation.
 - Manages those rules and free-form tags in Settings, and can start a rule from
   any transaction's detail screen.
 - Finds subscriptions and other regular payments entirely on-device, with the
   expected next charge.
+- Investments and holdings, with cost basis and gain per position.
+- Insights: spending pace, category breakdowns, and six-month trends.
+- Imports CSV exports from other apps, and adds manual accounts.
 - Syncs across devices through your private iCloud database with **end-to-end
-  encrypted financial fields** — Apple stores the record, not the amount.
+  encrypted financial fields** — Apple stores the record, not the amount. iCloud
+  sync is opt-in; new installs keep everything on this device.
 - Optional Face ID / Touch ID app lock.
 - Exports every transaction to CSV or JSON, and can delete everything.
 
 ## Privacy
 
 - **No server, no analytics, no third-party SDKs.** The only network traffic is to
-  the SimpleFIN server you configure.
+  the SimpleFIN server you configure, plus your own iCloud database if you turn
+  sync on. Nothing is sent to us.
+- Apple Wallet data is read through FinanceKit on-device and mirrored into the
+  same store as everything else, so it follows the same storage choice.
+- Categorization runs on-device. When Apple Intelligence is used, transaction text
+  is handled by the system model locally and never sent to a server.
 - The SimpleFIN Access URL is a bearer credential and lives in the **Keychain**,
   never in the database or logs.
 - `amountMinorUnits`, `balanceMinorUnits`, `description`, `note`, and names use
@@ -110,12 +121,12 @@ See [`docs/architecture.md`](docs/architecture.md) for the full picture.
 
 ## Project status
 
-**v0.1.0** — first release. Read-only SimpleFIN sync (Bridge and bank-hosted
-servers), local rule-based categorization, notes/tags/transfers, per-currency
-net worth with derived history, CSV + JSON export, Keychain-stored credentials
-synced through iCloud Keychain, end-to-end-encrypted financial fields, and an
-optional Face ID / Touch ID lock. Not included yet: budgets, reports, and
-exchange rates.
+**v0.3.0** — Read-only SimpleFIN sync (Bridge and bank-hosted servers), Apple
+Wallet through FinanceKit, on-device categorization with rules, merchant memory,
+and an optional Apple Intelligence pass, subscriptions and recurring payments,
+notes/tags/transfers, investments and holdings, per-currency net worth with
+derived history, Insights, CSV import, CSV + JSON export, and an optional
+Face ID / Touch ID lock. Not included yet: budgets, reports, and exchange rates.
 
 If the console looks noisy, see
 [`docs/troubleshooting.md`](docs/troubleshooting.md) — most of it is framework

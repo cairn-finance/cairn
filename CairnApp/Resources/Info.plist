@@ -27,25 +27,24 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.finance</string>
 	<key>NSFinancialDataUsageDescription</key>
-	<string>Cairn reads the Apple Wallet accounts you choose — Apple Card, Apple Cash, and Savings — so it can show their balances and transactions. It is read-only and stays on your device.</string>
+	<string>Cairn reads the Apple Wallet accounts you choose — Apple Card, Apple Cash, and Savings — so it can show their balances and transactions. It is read-only, and it stays on your device unless you turn on iCloud Sync.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Cairn uses Face ID to unlock the app when you turn on Require unlock to open.</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<!--
 	  CloudKit uses silent pushes to deliver remote changes promptly, which
-	  requires the remote-notification background mode. `fetch` and `processing`
-	  power the periodic SimpleFIN refresh.
+	  requires the remote-notification background mode. `processing` powers the
+	  periodic categorization pass. There is no BGAppRefreshTask, so `fetch` is
+	  not declared.
 	-->
 	<key>UIBackgroundModes</key>
 	<array>
-		<string>fetch</string>
 		<string>processing</string>
 		<string>remote-notification</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER).refresh</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).processing</string>
 	</array>
 	<key>UILaunchScreen</key>

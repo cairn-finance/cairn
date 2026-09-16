@@ -61,15 +61,36 @@ enum BackgroundCategorization {
         let requiresPower = lastRequiresPower.withLock { $0 }
         schedule(requiresPower: requiresPower)
 
-        // The next batch simply won't start when the system reclaims the task;
-        // whatever completed is already saved.
-        processing.expirationHandler = {}
-
         let box = TaskBox(processing)
-        Task { @MainActor in
-            await run?()
-            box.task.setTaskCompleted(success: true)
+        let completed = Mutex(false)
+
+        // The system can reclaim the task at any moment, and completing one
+        // twice traps, so every exit funnels through a single gate.
+        func complete(success: Bool) {
+            let alreadyDone = completed.withLock { done -> Bool in
+                if done { return true }
+                done = true
+                return false
+            }
+            guard !alreadyDone else { return }
+            box.task.setTaskCompleted(success: success)
         }
+
+        let work = Mutex<Task<Void, Never>?>(nil)
+
+        // Being reclaimed means "stop now". Cancel the pass and report it as
+        // unfinished, rather than leaving it running past the deadline and never
+        // completing the task.
+        processing.expirationHandler = {
+            work.withLock { $0 }?.cancel()
+            complete(success: false)
+        }
+
+        let running = Task { @MainActor in
+            await run?()
+            complete(success: true)
+        }
+        work.withLock { $0 = running }
     }
     #else
     static func register() {}

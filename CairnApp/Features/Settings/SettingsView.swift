@@ -387,7 +387,7 @@ struct SettingsView: View {
         }
         let method = model.lock.biometryName.map { "\($0) or your device passcode" } ?? "your device passcode"
         return "Cairn asks for \(method) when it opens or returns to the foreground. "
-            + "The SimpleFIN credential stays in the Keychain so background sync can work, "
+            + "The SimpleFIN credential stays in the Keychain so a sync can run, "
             + "and can be revoked any time from your SimpleFIN Bridge."
     }
 

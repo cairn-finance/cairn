@@ -42,8 +42,9 @@ and your credential is stored non-synchronizably.
 ## What this does NOT protect against
 
 - **A stolen, unlocked device.** The optional app lock gates the UI, not the
-  Keychain item. `AfterFirstUnlock` accessibility is required so background sync
-  can run. If a device is taken while unlocked, revoke access at your SimpleFIN
+  Keychain item. Credentials use `AfterFirstUnlock` accessibility (device-only
+  variants where they don't sync) so a sync can run without the device being
+  unlocked. If a device is taken while unlocked, revoke access at your SimpleFIN
   Bridge.
 - **A compromised SimpleFIN account.** Whoever holds your SimpleFIN credentials
   can read your bank data; Cairn cannot change that.

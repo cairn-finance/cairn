@@ -82,7 +82,10 @@ forces local-only storage at runtime, and the test host always uses local storag
   those counters are shared across the user's devices for that bank, but never
   between banks. Automatic refresh is gated behind a minimum interval, manual
   refresh is the only override, and the UI shows the smallest remaining budget
-  across all banks.
+  across all banks. The counters ride the same CloudKit last-writer-wins
+  database as everything else, so two devices syncing at the same moment can
+  undercount by a request or two; the daily limit is a courtesy threshold, not
+  an enforced quota. Range retries can also consume up to three requests.
 - Pending transactions are matched to posted ones by amount, timing, and
   description similarity (never by id, which banks often change). Pending items
   that vanish are aged out after a couple of syncs.
