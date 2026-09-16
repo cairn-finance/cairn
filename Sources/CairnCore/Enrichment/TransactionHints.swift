@@ -116,7 +116,7 @@ public enum TransactionHints {
         guard !isExplicitFee(description: description) else { return false }
         let haystack = normalized(description: description, merchant: merchant)
         guard !haystack.isEmpty else { return false }
-        if financialCounterparties.contains(where: { haystack.contains($0) }) { return true }
+        if financialCounterparties.contains(where: { containsWord($0, in: haystack) }) { return true }
         return counterparties.contains { matchesCounterparty(haystack, name: $0) }
     }
 
@@ -196,6 +196,31 @@ public enum TransactionHints {
         let key = normalized(description: name, merchant: "")
         guard key.count >= 4 else { return false }
         return haystack.contains(key)
+    }
+
+    /// Whether `needle` appears in `haystack` on word boundaries.
+    ///
+    /// Plain substring matching is unsafe for institution names: the bank
+    /// "Chase" is a substring of "pur**chase**", so a card purchase such as
+    /// "PURCHASE AUTHORIZED ON…" would be misread as a transfer to Chase and
+    /// drop out of spending, Insights, and subscription detection. Boundaries
+    /// also stop "citi" from matching "citizen".
+    private static func containsWord(_ needle: String, in haystack: String) -> Bool {
+        guard !needle.isEmpty else { return false }
+        var searchStart = haystack.startIndex
+        while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
+            let before = range.lowerBound == haystack.startIndex
+                ? nil
+                : haystack[haystack.index(before: range.lowerBound)]
+            let after = range.upperBound == haystack.endIndex
+                ? nil
+                : haystack[range.upperBound]
+            let leftClean = before.map { !$0.isLetter && !$0.isNumber } ?? true
+            let rightClean = after.map { !$0.isLetter && !$0.isNumber } ?? true
+            if leftClean, rightClean { return true }
+            searchStart = range.upperBound
+        }
+        return false
     }
 
     private static func normalized(description: String, merchant: String) -> String {

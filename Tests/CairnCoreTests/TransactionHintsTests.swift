@@ -87,6 +87,42 @@ struct TransactionHintsTests {
         #expect(!TransactionHints.isTransferToInstitution(description: "MONTHLY SERVICE FEE"))
     }
 
+    @Test("A card purchase is never mistaken for a transfer to a bank")
+    func purchasesAreNotTransfersToChase() {
+        // "chase" is a substring of "purchase", and "citi" of "citizen".
+        // Institution names must only match on word boundaries.
+        for description in [
+            "PURCHASE AUTHORIZED ON 09/12 CARD 1234",
+            "POS PURCHASE 4471",
+            "PURCHASE",
+            "CITIZEN ONE PAYMENT",
+            "PURCHASING DEPARTMENT",
+        ] {
+            #expect(
+                !TransactionHints.isTransferToInstitution(description: description),
+                "\(description) must not be money movement"
+            )
+            #expect(
+                !TransactionHints.isMoneyMovement(description: description),
+                "\(description) must not be money movement"
+            )
+        }
+
+        // The real institutions still match, with or without punctuation.
+        for description in [
+            "CHASE CREDIT CRD AUTOPAY",
+            "JPMORGAN CHASE",
+            "ACH: CHASE",
+            "CHASE.COM",
+            "CITIBANK CARD PAYMENT",
+        ] {
+            #expect(
+                TransactionHints.isTransferToInstitution(description: description),
+                "\(description) should be money movement"
+            )
+        }
+    }
+
     @Test("The person's own accounts match as counterparties")
     func ownAccountsAreTransfers() {
         let accounts = ["SoFi", "American Express", "Everyday Checking"]
