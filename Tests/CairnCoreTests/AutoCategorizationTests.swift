@@ -787,4 +787,96 @@ struct AutoCategorizationTests {
         #expect(refreshed.autoCategorySource == SuggestionSource.heuristic.rawValue)
         #expect(!refreshed.isTransfer)
     }
+
+    @Test("A fuzzy merchant match cannot turn payroll into spending")
+    func fuzzyMatchDoesNotOverrideIncome() async throws {
+        let (container, context) = try makeContext()
+        let income = Category(name: "Income", symbolName: "arrow.down.circle.fill", colorHex: "#34C759", sortOrder: 0)
+        let entertainment = Category(name: "Entertainment", symbolName: "play.circle.fill", colorHex: "#BF5AF2", sortOrder: 1)
+        context.insert(income)
+        context.insert(entertainment)
+
+        let account = Account(bankAccountID: "A1", name: "Everyday Checking", currency: .usd)
+        context.insert(account)
+
+        // The person categorized an "ACME INC" merchant as Entertainment, which
+        // seeds memory. A payroll deposit from a similar merchant must not inherit
+        // that guess: its own wording says it is income.
+        let remembered = LedgerTransaction(
+            bankTransactionID: "MEM",
+            payeeDescription: "ACME INC",
+            amountMinorUnits: -500
+        )
+        remembered.account = account
+        remembered.accountIDIndex = "A1"
+        remembered.normalizedMerchant = MerchantNormalizer.normalize("ACME INC")
+        remembered.userCategory = entertainment
+        context.insert(remembered)
+
+        let payroll = LedgerTransaction(
+            bankTransactionID: "PAY",
+            payeeDescription: "ACME INC PAYROLL PPD ID: 0000000000",
+            amountMinorUnits: 251_000
+        )
+        payroll.account = account
+        payroll.accountIDIndex = "A1"
+        payroll.normalizedMerchant = MerchantNormalizer.normalize(payroll.payeeDescription)
+        context.insert(payroll)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "PAY" })
+            ).first
+        )
+        #expect(refreshed.autoCategory?.name == "Income")
+        #expect(refreshed.autoCategorySource == SuggestionSource.heuristic.rawValue)
+    }
+
+    @Test("A fuzzy merchant match still fills in when nothing else recognizes the row")
+    func fuzzyMatchStillFillsIn() async throws {
+        let (container, context) = try makeContext()
+        let entertainment = Category(name: "Entertainment", symbolName: "play.circle.fill", colorHex: "#BF5AF2", sortOrder: 0)
+        context.insert(entertainment)
+
+        let account = Account(bankAccountID: "A1", name: "Everyday Checking", currency: .usd)
+        context.insert(account)
+
+        let remembered = LedgerTransaction(
+            bankTransactionID: "MEM",
+            payeeDescription: "ACME INC",
+            amountMinorUnits: -500
+        )
+        remembered.account = account
+        remembered.accountIDIndex = "A1"
+        remembered.normalizedMerchant = MerchantNormalizer.normalize("ACME INC")
+        remembered.userCategory = entertainment
+        context.insert(remembered)
+
+        // No hint matches, so the remembered merchant should place this variant.
+        let variant = LedgerTransaction(
+            bankTransactionID: "VAR",
+            payeeDescription: "ACME INC SUBSCRIPTION",
+            amountMinorUnits: -900
+        )
+        variant.account = account
+        variant.accountIDIndex = "A1"
+        variant.normalizedMerchant = MerchantNormalizer.normalize(variant.payeeDescription)
+        context.insert(variant)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "VAR" })
+            ).first
+        )
+        #expect(refreshed.autoCategory?.name == "Entertainment")
+        #expect(refreshed.autoCategorySource == SuggestionSource.similarMerchant.rawValue)
+    }
 }

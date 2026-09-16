@@ -906,35 +906,20 @@ public actor SyncEngine {
                 memory: memory
             )
 
-            let isModelSourced = transaction.autoCategorySource == SuggestionSource.appleIntelligence.rawValue
-                || transaction.autoCategorySource == "model"
-            if isModelSourced, suggestion?.source == .similarMerchant {
-                // Keep the model's guess rather than downgrade it to a fuzzy match.
-                continue
-            }
+            let isFuzzy = suggestion?.source == .similarMerchant
 
-            if let suggestion, let category = try? category(withUUID: suggestion.categoryID) {
-                let sameCategory = transaction.autoCategory?.uuid == category.uuid
-                // Already settled on this exact answer; don't rewrite the row on
-                // every pass. This keeps learned memory from churning updates.
-                if sameCategory, transaction.autoCategorySource == suggestion.source.rawValue {
-                    continue
+            // A rule or an exact merchant-history match outranks everything
+            // automatic: the person wrote the rule or corrected this merchant.
+            if !isFuzzy, let suggestion, let category = try? category(withUUID: suggestion.categoryID) {
+                if applySuggestion(
+                    suggestion,
+                    category: category,
+                    to: transaction,
+                    now: now,
+                    outcome: &outcome
+                ) {
+                    didChange = true
                 }
-                // Keep the model's own label when memory or a fuzzy match merely
-                // agrees with it; that is not a downgrade.
-                if isModelSourced, sameCategory {
-                    continue
-                }
-                transaction.autoCategory = category
-                transaction.autoCategorySource = suggestion.source.rawValue
-                transaction.autoConfidence = suggestion.confidence
-                if !transaction.isTransferUserSet {
-                    transaction.isTransfer = category.name == "Transfers"
-                }
-                transaction.modifiedAt = now
-                outcome.categorized += 1
-                outcome.bySource[suggestion.source.rawValue, default: 0] += 1
-                didChange = true
                 continue
             }
 
@@ -1001,6 +986,24 @@ public actor SyncEngine {
                         merchant: transaction.normalizedMerchant
                     ) ? .loanPayment : .transfer
                 if applyMoneyMovement(kind, to: transaction, now: now) { didChange = true }
+                continue
+            }
+
+            // Only now may a fuzzy match fill in, and only when the row has no
+            // stronger label of its own — never over the model's guess, a hint,
+            // a rule, or remembered history.
+            if isFuzzy, let suggestion, let category = try? category(withUUID: suggestion.categoryID),
+               transaction.autoCategory == nil
+                   || transaction.autoCategorySource == SuggestionSource.similarMerchant.rawValue {
+                if applySuggestion(
+                    suggestion,
+                    category: category,
+                    to: transaction,
+                    now: now,
+                    outcome: &outcome
+                ) {
+                    didChange = true
+                }
                 continue
             }
 
@@ -1089,6 +1092,41 @@ public actor SyncEngine {
         }
         if changed { transaction.modifiedAt = now }
         return changed
+    }
+
+    /// Applies a rule, memory, or fuzzy suggestion unless it would rewrite a row
+    /// to the answer it already holds, or downgrade the model's own label to the
+    /// same category. Returns true when anything changed.
+    private func applySuggestion(
+        _ suggestion: CategorySuggestion,
+        category: Category,
+        to transaction: LedgerTransaction,
+        now: Date,
+        outcome: inout RecategorizeOutcome
+    ) -> Bool {
+        let isModelSourced = transaction.autoCategorySource == SuggestionSource.appleIntelligence.rawValue
+            || transaction.autoCategorySource == "model"
+        let sameCategory = transaction.autoCategory?.uuid == category.uuid
+        // Already settled on this exact answer; don't rewrite the row on every
+        // pass. This keeps learned memory from churning updates.
+        if sameCategory, transaction.autoCategorySource == suggestion.source.rawValue {
+            return false
+        }
+        // Keep the model's own label when memory or a fuzzy match merely agrees
+        // with it; that is not a downgrade.
+        if isModelSourced, sameCategory {
+            return false
+        }
+        transaction.autoCategory = category
+        transaction.autoCategorySource = suggestion.source.rawValue
+        transaction.autoConfidence = suggestion.confidence
+        if !transaction.isTransferUserSet {
+            transaction.isTransfer = category.name == "Transfers"
+        }
+        transaction.modifiedAt = now
+        outcome.categorized += 1
+        outcome.bySource[suggestion.source.rawValue, default: 0] += 1
+        return true
     }
 
     /// Matches each recognized transfer leg with its counterpart in another
