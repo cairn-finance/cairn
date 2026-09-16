@@ -8,6 +8,24 @@ import Foundation
 /// accounts; an actual charge is named ("overdraft fee", "service charge"). A
 /// language model should never have to infer that, and neither should rules.
 public enum TransactionHints {
+    /// What a money-movement row actually is. Money movement is never spending,
+    /// but card and loan payments deserve a label of their own rather than the
+    /// generic "Transfer".
+    public enum MoneyMovementKind: Sendable, Equatable {
+        case transfer
+        case creditCardPayment
+        case loanPayment
+
+        /// The default category this kind maps to, or nil for a plain transfer.
+        public var categoryName: String? {
+            switch self {
+            case .transfer: nil
+            case .creditCardPayment: "Credit Card Payments"
+            case .loanPayment: "Loan Payments"
+            }
+        }
+    }
+
     /// Signals that a row is money moving between the person's own accounts, a
     /// credit-card payment, or a peer-to-peer payment — not spending.
     private static let transferSubstrings: [String] = [
@@ -17,10 +35,25 @@ public enum TransactionHints {
         "internal transfer", "account transfer", "online banking transfer",
         "sweep to", "sweep from", "rebalance",
         "credit card payment", "card payment", "payment to card", "payment - thank you",
+        "payment thank you", "payment thankyou", "cardmember payment",
         "autopay", "auto payment", "automatic payment", "e-payment", "epayment",
         "bill pay", "billpay",
         "zelle", "venmo", "cash app", "cashapp", "apple cash",
         "withdrawal to", "deposit from",
+    ]
+
+    /// Phrases that name a payment *to* a credit card, so it can be labeled
+    /// "Credit Card Payments" instead of the generic "Transfer".
+    private static let creditCardPaymentSubstrings: [String] = [
+        "credit card payment", "card payment", "payment to card", "payment to credit card",
+        "cardmember payment", "payment thank you", "payment thankyou",
+        "payment - thank you", "card autopay",
+    ]
+
+    /// Phrases that name a payment toward a loan or mortgage.
+    private static let loanPaymentSubstrings: [String] = [
+        "loan payment", "loan pmt", "loan due", "loan installment",
+        "auto loan", "car loan", "student loan", "mortgage payment", "mortgage",
     ]
 
     /// Words that name an actual charge. Deliberately requires an explicit
@@ -82,6 +115,23 @@ public enum TransactionHints {
         return counterparties.contains { matchesCounterparty(haystack, name: $0) }
     }
 
+    /// A payment to a credit card, so it can carry the "Credit Card Payments"
+    /// label rather than the generic transfer label.
+    public static func isCreditCardPayment(description: String, merchant: String = "") -> Bool {
+        guard !isExplicitFee(description: description) else { return false }
+        let haystack = normalized(description: description, merchant: merchant)
+        guard !haystack.isEmpty else { return false }
+        return creditCardPaymentSubstrings.contains { haystack.contains($0) }
+    }
+
+    /// A payment toward a loan or mortgage.
+    public static func isLoanPayment(description: String, merchant: String = "") -> Bool {
+        guard !isExplicitFee(description: description) else { return false }
+        let haystack = normalized(description: description, merchant: merchant)
+        guard !haystack.isEmpty else { return false }
+        return loanPaymentSubstrings.contains { haystack.contains($0) }
+    }
+
     /// Either kind of money movement, in one call.
     public static func isMoneyMovement(
         description: String,
@@ -90,6 +140,22 @@ public enum TransactionHints {
     ) -> Bool {
         isInternalTransfer(description: description, merchant: merchant)
             || isTransferToInstitution(description: description, merchant: merchant, counterparties: counterparties)
+    }
+
+    /// Classifies money movement as a card payment, a loan payment, or a plain
+    /// transfer. The specific kinds are checked first so a card or loan payment
+    /// is never collapsed into the generic "Transfer".
+    public static func moneyMovement(
+        description: String,
+        merchant: String = "",
+        counterparties: [String] = []
+    ) -> MoneyMovementKind? {
+        if isLoanPayment(description: description, merchant: merchant) { return .loanPayment }
+        if isCreditCardPayment(description: description, merchant: merchant) { return .creditCardPayment }
+        if isMoneyMovement(description: description, merchant: merchant, counterparties: counterparties) {
+            return .transfer
+        }
+        return nil
     }
 
     public static func isExplicitFee(description: String) -> Bool {

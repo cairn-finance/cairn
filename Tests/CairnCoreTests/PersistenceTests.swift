@@ -98,7 +98,7 @@ struct PersistenceTests {
         try await engine.seedDefaultCategoriesIfNeeded()
         let secondCount = try result.container.mainContext.fetchCount(FetchDescriptor<CairnCore.Category>())
 
-        #expect(firstCount == 13)
+        #expect(firstCount == 15)
         #expect(secondCount == firstCount)
     }
 

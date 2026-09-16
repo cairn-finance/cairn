@@ -302,6 +302,130 @@ struct AutoCategorizationTests {
         #expect(try await engine.categorizationCounts().pendingModel == 1)
     }
 
+    @Test("A credit mislabeled as spending by an older model pass is re-evaluated")
+    func staleCreditReevaluated() async throws {
+        let (container, context) = try makeContext()
+        let shopping = Category(name: "Shopping", symbolName: "bag.fill", colorHex: "#FF375F", sortOrder: 0)
+        context.insert(shopping)
+        let account = Account(bankAccountID: "A1", name: "Savings", currency: .usd)
+        context.insert(account)
+
+        // A model guess from before the classifier knew the amount direction.
+        let stale = LedgerTransaction(
+            bankTransactionID: "T1",
+            payeeDescription: "ACH: ACME INDUSTRIES PAYROLL",
+            amountMinorUnits: 200_000
+        )
+        stale.account = account
+        stale.accountIDIndex = "A1"
+        stale.normalizedMerchant = MerchantNormalizer.normalize("ACH: ACME INDUSTRIES PAYROLL")
+        stale.autoCategory = shopping
+        stale.autoCategorySource = "appleIntelligence"
+        stale.autoCategorizeAttemptedAt = .now
+        context.insert(stale)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "T1" })
+            ).first
+        )
+        #expect(refreshed.autoCategory == nil)
+        #expect(refreshed.autoCategorizeAttemptedAt == nil)
+        #expect(try await engine.categorizationCounts().pendingModel == 1)
+    }
+
+    @Test("Card and loan payments carry their own category, not a generic transfer")
+    func paymentCategories() async throws {
+        let (container, context) = try makeContext()
+        context.insert(Category(
+            name: "Credit Card Payments", symbolName: "creditcard.fill", colorHex: "#0A84FF", sortOrder: 0
+        ))
+        context.insert(Category(
+            name: "Loan Payments", symbolName: "building.columns.fill", colorHex: "#5AC8FA", sortOrder: 1
+        ))
+        let account = Account(bankAccountID: "A1", name: "Everyday Checking", currency: .usd)
+        context.insert(account)
+
+        func make(_ id: String, _ description: String) -> LedgerTransaction {
+            let transaction = LedgerTransaction(
+                bankTransactionID: id,
+                payeeDescription: description,
+                amountMinorUnits: -10_000
+            )
+            transaction.account = account
+            transaction.accountIDIndex = "A1"
+            transaction.normalizedMerchant = MerchantNormalizer.normalize(description)
+            context.insert(transaction)
+            return transaction
+        }
+
+        _ = make("T1", "Payment Thank You-Mobile")
+        _ = make("T2", "LOAN PAYMENT")
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        func refetch(_ id: String) throws -> LedgerTransaction {
+            try #require(
+                try context.fetch(
+                    FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == id })
+                ).first
+            )
+        }
+
+        let card = try refetch("T1")
+        #expect(card.isTransfer)
+        #expect(card.countsAsTransfer)
+        #expect(card.autoCategory?.name == "Credit Card Payments")
+
+        let loan = try refetch("T2")
+        #expect(loan.isTransfer)
+        #expect(loan.autoCategory?.name == "Loan Payments")
+
+        // Both are money movement, so neither is a spending row awaiting review.
+        #expect(try await engine.uncategorizedCount() == 0)
+    }
+
+    @Test("New built-in categories are added once for existing installs")
+    func paymentCategorySeeding() async throws {
+        let (container, context) = try makeContext()
+        let engine = SyncEngine(modelContainer: container)
+
+        // An install that seeded the first generation before these existed.
+        let settings = AppSettings()
+        settings.hasSeededDefaultCategories = true
+        settings.categorySeedVersion = 0
+        context.insert(settings)
+        try context.save()
+
+        try await engine.seedDefaultCategoriesIfNeeded()
+        var names = try context.fetch(FetchDescriptor<CairnCore.Category>()).map(\.name)
+        #expect(names.contains("Credit Card Payments"))
+        #expect(names.contains("Loan Payments"))
+        // Only the additions are seeded; the first generation stays untouched.
+        #expect(!names.contains("Groceries"))
+
+        // Running again does not duplicate anything.
+        try await engine.seedDefaultCategoriesIfNeeded()
+        names = try context.fetch(FetchDescriptor<CairnCore.Category>()).map(\.name)
+        #expect(names.filter { $0 == "Loan Payments" }.count == 1)
+
+        // A category the person deletes is not resurrected.
+        let loan = try #require(
+            try context.fetch(FetchDescriptor<CairnCore.Category>()).first { $0.name == "Loan Payments" }
+        )
+        context.delete(loan)
+        try context.save()
+        try await engine.seedDefaultCategoriesIfNeeded()
+        names = try context.fetch(FetchDescriptor<CairnCore.Category>()).map(\.name)
+        #expect(!names.contains("Loan Payments"))
+    }
+
     @Test("Duplicate categories are collapsed and references repointed")
     func duplicateCategoriesCollapse() async throws {
         let (container, context) = try makeContext()

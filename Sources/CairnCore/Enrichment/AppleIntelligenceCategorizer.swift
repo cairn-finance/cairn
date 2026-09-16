@@ -72,6 +72,7 @@ public enum AppleIntelligenceCategorizer {
     public static func classify(
         merchant: String,
         description: String,
+        isCredit: Bool,
         categories: [String]
     ) async throws -> String? {
         guard !categories.isEmpty else { return nil }
@@ -93,6 +94,10 @@ public enum AppleIntelligenceCategorizer {
                 category that fits the merchant.
 
                 Rules:
+                - "Money in" means the amount is positive and the person received
+                  it. Choose Income for money in, unless it is a refund of a
+                  purchase or a transfer between the person's own accounts.
+                - "Money out" means the amount is negative.
                 - Categorize by what was bought, not by words like "overdraft",
                   "pending", or "authorization" that only describe the process.
                 - Never choose a fee category unless the description explicitly
@@ -105,6 +110,7 @@ public enum AppleIntelligenceCategorizer {
 
             let prompt = """
             Categories: \(categories.joined(separator: ", "))
+            Direction: \(isCredit ? "money in" : "money out")
             Transaction merchant: \(merchant.isEmpty ? "unknown" : merchant)
             Transaction description: \(description)
             Which single category fits best?

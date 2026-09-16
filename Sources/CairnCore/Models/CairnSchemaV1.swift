@@ -317,12 +317,17 @@ public enum CairnSchemaV1: VersionedSchema {
         }
 
         /// True when this row should be treated as money movement for reporting:
-        /// either the Transfer flag is set, or the effective category is the
-        /// system "Transfers" category.
+        /// either the Transfer flag is set, or the effective category is one of
+        /// the built-in money-movement categories.
+        public static let moneyMovementCategoryNames: Set<String> = [
+            "Transfers", "Credit Card Payments", "Loan Payments",
+        ]
+
         public var countsAsTransfer: Bool {
-            isTransfer
-                || userCategory?.name == "Transfers"
-                || autoCategory?.name == "Transfers"
+            if isTransfer { return true }
+            if let name = userCategory?.name, Self.moneyMovementCategoryNames.contains(name) { return true }
+            if let name = autoCategory?.name, Self.moneyMovementCategoryNames.contains(name) { return true }
+            return false
         }
 
         public var isCategorizedByUser: Bool {
@@ -477,6 +482,14 @@ public enum CairnSchemaV1: VersionedSchema {
         public var dailyRequestDate: Date?
         public var minimumRefreshIntervalHours: Int = 6
         public var hasSeededDefaultCategories: Bool = false
+        /// Which generation of the default category set has been seeded. Bumping
+        /// this adds new built-in categories to existing installs exactly once,
+        /// without resurrecting categories the person deleted.
+        public var categorySeedVersion: Int = 0
+        /// Which generation of the categorization logic has run. Bumping this
+        /// re-evaluates model guesses that predate a prompt or rule change,
+        /// exactly once.
+        public var categorizationVersion: Int = 0
         public var createdByDeviceID: String = ""
         public var modifiedAt: Date = Date.now
 

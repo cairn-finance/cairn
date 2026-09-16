@@ -871,6 +871,17 @@ public actor SyncEngine {
         var didChange = clearInvalidModelCategories(in: transactions, now: now)
         if requeueStalledModelAttempts(in: transactions, now: now) { didChange = true }
 
+        // One-time re-evaluation of model guesses made before the classifier
+        // learned the direction of the amount, so credits that were mislabeled
+        // as spending are asked again.
+        let settings = try loadOrCreateSettings()
+        if settings.categorizationVersion < Self.currentCategorizationVersion {
+            if reevaluateStaleModelCategories(in: transactions, now: now) { didChange = true }
+            settings.categorizationVersion = Self.currentCategorizationVersion
+            settings.modifiedAt = now
+            didChange = true
+        }
+
         for transaction in transactions {
             guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
 
@@ -928,15 +939,12 @@ public actor SyncEngine {
                    description: transaction.payeeDescription,
                    merchant: transaction.normalizedMerchant
                ) {
-                if !transaction.isTransfer || transaction.autoCategory != nil {
-                    transaction.isTransfer = true
-                    transaction.autoCategory = nil
-                    transaction.autoCategorySource = nil
-                    transaction.autoConfidence = 0
-                    transaction.autoCategorizeAttemptedAt = nil
-                    transaction.modifiedAt = now
-                    didChange = true
-                }
+                let kind: TransactionHints.MoneyMovementKind =
+                    TransactionHints.isCreditCardPayment(
+                        description: transaction.payeeDescription,
+                        merchant: transaction.normalizedMerchant
+                    ) ? .creditCardPayment : .transfer
+                if applyMoneyMovement(kind, to: transaction, now: now) { didChange = true }
                 continue
             }
 
@@ -964,15 +972,12 @@ public actor SyncEngine {
                    merchant: transaction.normalizedMerchant,
                    counterparties: counterparties
                ) {
-                if !transaction.isTransfer || transaction.autoCategory != nil {
-                    transaction.isTransfer = true
-                    transaction.autoCategory = nil
-                    transaction.autoCategorySource = nil
-                    transaction.autoConfidence = 0
-                    transaction.autoCategorizeAttemptedAt = nil
-                    transaction.modifiedAt = now
-                    didChange = true
-                }
+                let kind: TransactionHints.MoneyMovementKind =
+                    TransactionHints.isLoanPayment(
+                        description: transaction.payeeDescription,
+                        merchant: transaction.normalizedMerchant
+                    ) ? .loanPayment : .transfer
+                if applyMoneyMovement(kind, to: transaction, now: now) { didChange = true }
                 continue
             }
 
@@ -1033,10 +1038,83 @@ public actor SyncEngine {
         return didChange
     }
 
-    private func isInvalidModelCategory(_ transaction: LedgerTransaction) -> Bool {
+    /// Marks a row as money movement. A card or loan payment also points at its
+    /// own category, so the row reads "Credit Card Payments" or "Loan Payments"
+    /// instead of a generic "Transfer". Returns true when anything changed.
+    @discardableResult
+    private func applyMoneyMovement(
+        _ kind: TransactionHints.MoneyMovementKind,
+        to transaction: LedgerTransaction,
+        now: Date
+    ) -> Bool {
+        var target: Category?
+        if let name = kind.categoryName {
+            target = try? category(named: name)
+        }
+        var changed = false
+
+        if !transaction.isTransfer {
+            transaction.isTransfer = true
+            changed = true
+        }
+        if transaction.autoCategory?.uuid != target?.uuid {
+            transaction.autoCategory = target
+            changed = true
+        }
+        let source = target == nil ? nil : SuggestionSource.heuristic.rawValue
+        if transaction.autoCategorySource != source {
+            transaction.autoCategorySource = source
+            changed = true
+        }
+        let confidence = target == nil ? 0 : 1.0
+        if transaction.autoConfidence != confidence {
+            transaction.autoConfidence = confidence
+            changed = true
+        }
+        if transaction.autoCategorizeAttemptedAt != nil {
+            transaction.autoCategorizeAttemptedAt = nil
+            changed = true
+        }
+        if changed { transaction.modifiedAt = now }
+        return changed
+    }
+
+    /// Bumped when categorization logic changes enough to re-examine existing
+    /// model guesses once. Version 1 taught the classifier the amount direction.
+    private static let currentCategorizationVersion = 1
+
+    private func isModelSourced(_ transaction: LedgerTransaction) -> Bool {
         let source = transaction.autoCategorySource
-        guard source == SuggestionSource.appleIntelligence.rawValue || source == "model",
-              let name = transaction.autoCategory?.name else {
+        return source == SuggestionSource.appleIntelligence.rawValue || source == "model"
+    }
+
+    /// Clears a model guess where the amount contradicts it: a credit carrying a
+    /// spending category. Income, fees, and money movement are legitimate on a
+    /// credit and are left alone. Runs once, keyed on
+    /// `AppSettings.categorizationVersion`, so a model that still chooses a
+    /// spending category for a refund is not re-asked forever.
+    private func reevaluateStaleModelCategories(
+        in transactions: [LedgerTransaction],
+        now: Date
+    ) -> Bool {
+        var didChange = false
+        for transaction in transactions where transaction.userCategory == nil {
+            guard isModelSourced(transaction), transaction.amountMinorUnits > 0 else { continue }
+            guard let name = transaction.autoCategory?.name else { continue }
+            if name == "Income" || name == "Fees" { continue }
+            if LedgerTransaction.moneyMovementCategoryNames.contains(name) { continue }
+            transaction.autoCategory = nil
+            transaction.autoCategorySource = nil
+            transaction.autoConfidence = 0
+            transaction.autoCategorizeAttemptedAt = nil
+            transaction.modifiedAt = now
+            didChange = true
+        }
+        return didChange
+    }
+
+    private func isInvalidModelCategory(_ transaction: LedgerTransaction) -> Bool {
+        guard isModelSourced(transaction), let name = transaction.autoCategory?.name else {
             return false
         }
         if name == "Fees" || name == "Transfers" || name == "Uncategorized" {
@@ -1156,13 +1234,17 @@ public actor SyncEngine {
 
         // System routing categories are never model targets: money movement is
         // handled by hints, "Fees" is reserved for explicit charges the hints
-        // recognize, and "Uncategorized" is the absence of a choice.
+        // recognize, and "Uncategorized" is the absence of a choice. Card and
+        // loan payments are decided deterministically too, so the model never
+        // guesses them onto a spending row.
         let categories = try modelContext.fetch(FetchDescriptor<Category>())
             .filter {
                 !$0.isArchived
                     && $0.name != "Transfers"
                     && $0.name != "Fees"
                     && $0.name != "Uncategorized"
+                    && $0.name != "Credit Card Payments"
+                    && $0.name != "Loan Payments"
             }
         guard !categories.isEmpty else { return outcome }
 
@@ -1182,18 +1264,17 @@ public actor SyncEngine {
         for transaction in candidates.prefix(limit) {
             let merchant = Self.merchantName(transaction)
 
-            // Never ask the model about money movement. Mark it a transfer and
-            // move on; this is the guard that stops overdraft transfers and
-            // peer-to-peer payments from being guessed into a spending category.
-            if TransactionHints.isMoneyMovement(
-                description: transaction.payeeDescription,
-                merchant: transaction.normalizedMerchant,
-                counterparties: counterparties
-            ), !transaction.isTransferUserSet {
-                transaction.isTransfer = true
-                transaction.autoCategory = nil
-                transaction.autoCategorySource = nil
-                transaction.autoConfidence = 0
+            // Never ask the model about money movement. Mark it a transfer (or a
+            // card/loan payment) and move on; this is the guard that stops
+            // overdraft transfers and peer-to-peer payments from being guessed
+            // into a spending category.
+            if !transaction.isTransferUserSet,
+               let kind = TransactionHints.moneyMovement(
+                   description: transaction.payeeDescription,
+                   merchant: transaction.normalizedMerchant,
+                   counterparties: counterparties
+               ) {
+                applyMoneyMovement(kind, to: transaction, now: now)
                 transaction.autoCategorizeAttemptedAt = now
                 transaction.modifiedAt = now
                 outcome.attempted += 1
@@ -1217,6 +1298,7 @@ public actor SyncEngine {
                 let name = try await AppleIntelligenceCategorizer.classify(
                     merchant: merchant,
                     description: transaction.payeeDescription,
+                    isCredit: isCredit,
                     categories: names
                 )
                 transaction.autoCategorizeAttemptedAt = now
@@ -1266,12 +1348,11 @@ public actor SyncEngine {
     // MARK: - Categories
 
     /// Seeds a small, sensible default set once, so categorization works before
-    /// the user creates anything. Idempotent by name: a partial set is completed
-    /// without inserting a second copy of anything already present.
+    /// the user creates anything. New built-in categories are added to existing
+    /// installs through `categorySeedVersion`, exactly once, without resurrecting
+    /// categories the person deleted.
     public func seedDefaultCategoriesIfNeeded(now: Date = .now) throws {
         let settings = try loadOrCreateSettings()
-        guard !settings.hasSeededDefaultCategories else { return }
-
         let existing = try modelContext.fetch(FetchDescriptor<Category>())
         let existingNames = Set(
             existing.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -1293,20 +1374,50 @@ public actor SyncEngine {
             ("Uncategorized", "questionmark.circle", "#8E8E93"),
         ]
 
-        for (index, item) in defaults.enumerated() where !existingNames.contains(item.0.lowercased()) {
-            let category = Category(
-                name: item.0,
-                symbolName: item.1,
-                colorHex: item.2,
-                sortOrder: index,
-                isSystem: item.0 == "Uncategorized" || item.0 == "Transfers"
-            )
-            modelContext.insert(category)
+        // Categories added after the first generation, given to existing installs
+        // once. Money movement keeps its own labels instead of a generic Transfer.
+        let paymentDefaults: [(String, String, String)] = [
+            ("Credit Card Payments", "creditcard.fill", "#0A84FF"),
+            ("Loan Payments", "building.columns.fill", "#5AC8FA"),
+        ]
+        let currentSeedVersion = 2
+
+        var didChange = false
+
+        if !settings.hasSeededDefaultCategories {
+            for (index, item) in defaults.enumerated() where !existingNames.contains(item.0.lowercased()) {
+                let category = Category(
+                    name: item.0,
+                    symbolName: item.1,
+                    colorHex: item.2,
+                    sortOrder: index,
+                    isSystem: item.0 == "Uncategorized" || item.0 == "Transfers"
+                )
+                modelContext.insert(category)
+            }
+            settings.hasSeededDefaultCategories = true
+            didChange = true
         }
 
-        settings.hasSeededDefaultCategories = true
-        settings.modifiedAt = now
-        try modelContext.save()
+        if settings.categorySeedVersion < currentSeedVersion {
+            for (offset, item) in paymentDefaults.enumerated()
+            where !existingNames.contains(item.0.lowercased()) {
+                let category = Category(
+                    name: item.0,
+                    symbolName: item.1,
+                    colorHex: item.2,
+                    sortOrder: defaults.count + offset
+                )
+                modelContext.insert(category)
+            }
+            settings.categorySeedVersion = currentSeedVersion
+            didChange = true
+        }
+
+        if didChange {
+            settings.modifiedAt = now
+            try modelContext.save()
+        }
     }
 
     /// Collapses duplicate categories that can appear when two devices each seed
