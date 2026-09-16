@@ -337,7 +337,18 @@ struct SettingsView: View {
             Text("Storage")
         } footer: {
             Text("\(storageMode.summary) Changing this takes effect after you quit and reopen Cairn. "
-                + "Turning sync off only stops future uploads; to remove data already in iCloud, use Delete All Data.")
+                + deleteDataNote)
+        }
+    }
+
+    /// The storage footer used to tell everyone to "use Delete All Data" to
+    /// clear iCloud, which is wrong in This Device Only mode: nothing was
+    /// uploaded, so there is nothing in iCloud to remove.
+    private var deleteDataNote: String {
+        if model.storeMode == .cloud {
+            "Delete All Data removes your transactions from this device and from your private iCloud database."
+        } else {
+            "This device isn’t using iCloud, so Delete All Data removes everything here; nothing was uploaded to delete."
         }
     }
 

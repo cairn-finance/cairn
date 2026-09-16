@@ -1968,6 +1968,7 @@ public actor SyncEngine {
     public func deleteAllData() throws {
         try modelContext.delete(model: LedgerTransaction.self)
         try modelContext.delete(model: BalanceSnapshot.self)
+        try modelContext.delete(model: Holding.self)
         try modelContext.delete(model: CategorizationRule.self)
         try modelContext.delete(model: Tag.self)
         try modelContext.delete(model: Category.self)

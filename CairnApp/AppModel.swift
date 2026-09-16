@@ -762,11 +762,32 @@ final class AppModel {
     }
 
     func deleteAllData() async {
-        try? await engine.deleteAllData()
-        try? credentials.deleteAll()
+        do {
+            try await engine.deleteAllData()
+        } catch {
+            // Never claim success when the store refused. A partial delete with a
+            // reassuring message is worse than an honest failure.
+            await cairnLog(.error, "Delete All Data failed: \(error.localizedDescription)")
+            banner = "Cairn couldn’t delete everything: \(error.localizedDescription)"
+            return
+        }
+
+        do {
+            try credentials.deleteAll()
+        } catch {
+            await cairnLog(.warning, "Couldn’t clear stored credentials: \(error.localizedDescription)")
+            banner = "Data deleted, but a stored bank credential couldn’t be removed."
+        }
+
         UserDefaults.standard.removeObject(forKey: Self.Keys.onboardingComplete)
         // Deliberately keep the storage preference: a "This Device Only" user
-        // who deletes their data must not be silently switched to iCloud.
+        // who deletes their data must not be silently switched to iCloud. The
+        // app lock is part of "everything", so it is turned off and forgotten.
+        UserDefaults.standard.removeObject(forKey: Self.Keys.appLockEnabled)
+        lock.setEnabled(false)
+
+        await DiagnosticsLog.shared.clear()
+        recurringSeries = []
         onboardingComplete = false
         remainingBudget = SyncEngine.dailyRequestLimit
         syncState = .idle
