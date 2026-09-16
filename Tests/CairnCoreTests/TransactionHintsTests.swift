@@ -61,7 +61,7 @@ struct TransactionHintsTests {
     func payrollIsIncome() {
         #expect(TransactionHints.isIncome(
             description: "ACME INC PAYROLL PPD ID: 0000000000",
-            amountMinorUnits: 263_539
+            amountMinorUnits: 200_000
         ))
         #expect(TransactionHints.isIncome(description: "ACH: BENEFIT PAYMENT", amountMinorUnits: 13_400))
         #expect(TransactionHints.isIncome(description: "Interest Payment", amountMinorUnits: 1_240))
@@ -73,7 +73,7 @@ struct TransactionHintsTests {
     func achNonIncome() {
         for description in ["ACH: ACME SUPPLY", "ACH: CITY UTILITIES", "ACH: LOCAL MERCHANT"] {
             #expect(!TransactionHints.isExplicitFee(description: description, amountMinorUnits: -100_00))
-            #expect(!TransactionHints.isIncome(description: description, amountMinorUnits: 263_539))
+            #expect(!TransactionHints.isIncome(description: description, amountMinorUnits: 200_000))
         }
     }
 

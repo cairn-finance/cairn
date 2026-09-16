@@ -213,7 +213,7 @@ struct AutoCategorizationTests {
         let payroll = LedgerTransaction(
             bankTransactionID: "T1",
             payeeDescription: "ACME INC PAYROLL PPD ID: 0000000000",
-            amountMinorUnits: 263_539
+            amountMinorUnits: 200_000
         )
         payroll.account = account
         payroll.accountIDIndex = "A1"
@@ -267,6 +267,39 @@ struct AutoCategorizationTests {
         )
         #expect(refreshed.autoCategory == nil)
         #expect(refreshed.autoCategorizeAttemptedAt == nil)
+    }
+
+    @Test("A stranded model attempt is retried, not left uncategorized forever")
+    func stalledModelAttemptIsRequeued() async throws {
+        let (container, context) = try makeContext()
+        let account = Account(bankAccountID: "A1", name: "Checking", currency: .usd)
+        context.insert(account)
+
+        // A row an earlier pass looked at but never produced a category for.
+        let stranded = LedgerTransaction(
+            bankTransactionID: "T1",
+            payeeDescription: "AT&T",
+            amountMinorUnits: -6_533
+        )
+        stranded.account = account
+        stranded.accountIDIndex = "A1"
+        stranded.normalizedMerchant = MerchantNormalizer.normalize("AT&T")
+        stranded.autoCategorizeAttemptedAt = .now
+        context.insert(stranded)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        #expect(try await engine.uncategorizedCount() == 1)
+
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "T1" })
+            ).first
+        )
+        #expect(refreshed.autoCategorizeAttemptedAt == nil)
+        #expect(try await engine.categorizationCounts().pendingModel == 1)
     }
 
     @Test("Duplicate categories are collapsed and references repointed")
@@ -330,7 +363,7 @@ struct AutoCategorizationTests {
         // A dividend from a brokerage is income, not a transfer, even though the
         // counterparty is a brokerage.
         _ = make("T3", "VANGUARD DIVIDEND", 4_200)
-        _ = make("T4", "ACME INC PAYROLL PPD ID: 0000000000", 263_539)
+        _ = make("T4", "ACME INC PAYROLL PPD ID: 0000000000", 200_000)
         try context.save()
 
         let engine = SyncEngine(modelContainer: container)

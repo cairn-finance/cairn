@@ -869,6 +869,7 @@ public actor SyncEngine {
         let counterparties = try knownTransferCounterparties()
         var outcome = RecategorizeOutcome()
         var didChange = clearInvalidModelCategories(in: transactions, now: now)
+        if requeueStalledModelAttempts(in: transactions, now: now) { didChange = true }
 
         for transaction in transactions {
             guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
@@ -1007,6 +1008,24 @@ public actor SyncEngine {
             transaction.autoCategorySource = nil
             transaction.autoConfidence = 0
             // Let the hints and the model look at it again.
+            transaction.autoCategorizeAttemptedAt = nil
+            transaction.modifiedAt = now
+            didChange = true
+        }
+        return didChange
+    }
+
+    /// A model pass that produced no category is not a verdict. Clear the
+    /// "attempted" stamp on rows that still need a category, so a later pass
+    /// retries them instead of stranding them forever. This is what lifts the
+    /// rows an earlier build left permanently uncategorized.
+    private func requeueStalledModelAttempts(
+        in transactions: [LedgerTransaction],
+        now: Date
+    ) -> Bool {
+        var didChange = false
+        for transaction in transactions where Self.needsCategory(transaction) {
+            guard transaction.autoCategorizeAttemptedAt != nil else { continue }
             transaction.autoCategorizeAttemptedAt = nil
             transaction.modifiedAt = now
             didChange = true

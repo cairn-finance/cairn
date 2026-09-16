@@ -78,11 +78,19 @@ public enum AppleIntelligenceCategorizer {
 
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, *), SystemLanguageModel.default.isAvailable {
+            // Constrain generation to the person's actual category names at
+            // runtime. The model otherwise tends to answer with a more specific
+            // name of its own invention ("Subscriptions", "Insurance"), which
+            // matches nothing and leaves the transaction uncategorized. A schema
+            // makes those names unrepresentable, so every answer is a real
+            // category — without hardcoding any merchant-to-category table.
+            guard let schema = categorySchema(for: categories) else { return nil }
+
             let session = LanguageModelSession {
                 """
                 You categorize personal-finance transactions. Choose exactly one
                 category from the list the user provides. Prefer the most specific
-                category that fits the merchant. Respond with the category name only.
+                category that fits the merchant.
 
                 Rules:
                 - Categorize by what was bought, not by words like "overdraft",
@@ -91,7 +99,7 @@ public enum AppleIntelligenceCategorizer {
                   names a charge (for example "fee" or "service charge").
                 - Money moving between the person's own accounts, credit-card
                   payments, and payments to other people are not spending.
-                - If nothing fits well, choose the closest general category.
+                - Always choose the closest category from the list.
                 """
             }
 
@@ -102,8 +110,9 @@ public enum AppleIntelligenceCategorizer {
             Which single category fits best?
             """
 
-            let response = try await session.respond(to: prompt, generating: InferredCategory.self)
-            return CategoryNameMatcher.match(response.content.category, to: categories)
+            let response = try await session.respond(to: prompt, schema: schema)
+            let answer = try response.content.value(String.self)
+            return CategoryNameMatcher.match(answer, to: categories)
         }
         #endif
 
@@ -111,11 +120,18 @@ public enum AppleIntelligenceCategorizer {
     }
 
     #if canImport(FoundationModels)
+    /// A schema whose only possible value is one of `categories`, so the model
+    /// can never answer with a name the person doesn't have.
     @available(iOS 26.0, macOS 26.0, *)
-    @Generable
-    struct InferredCategory {
-        @Guide(description: "The single best-matching category name from the provided list.")
-        var category: String
+    private static func categorySchema(for categories: [String]) -> GenerationSchema? {
+        try? GenerationSchema(
+            root: DynamicGenerationSchema(
+                name: "CategoryChoice",
+                description: "The single best-matching category name from the provided list.",
+                anyOf: categories
+            ),
+            dependencies: []
+        )
     }
 
     @available(iOS 26.0, macOS 26.0, *)
