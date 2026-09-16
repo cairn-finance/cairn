@@ -575,10 +575,14 @@ final class AppModel {
         var merchantsAsked = 0
         modelPauseReason = nil
 
-        if useAppleIntelligence, AppleIntelligenceCategorizer.isAvailable, modelWorkAllowed(for: scope) {
+        if useAppleIntelligence, AppleIntelligenceCategorizer.isAvailable {
+            if !modelWorkAllowed(for: scope) {
+                // Recorded so the UI can say why nothing moved this time.
+                modelPauseReason = powerDecision(for: scope)
+            }
             await refreshCategorizationCounts()
             let total = categorizationCounts.pendingModel
-            if total > 0 {
+            if total > 0, modelWorkAllowed(for: scope) {
                 modelProgress = ModelProgress(processed: 0, total: total)
                 // One model call covers a whole batch of distinct merchants,
                 // sized to this device's context window.
