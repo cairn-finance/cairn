@@ -70,8 +70,8 @@ struct OnboardingView: View {
             )
             promise(
                 icon: "eye.slash.fill",
-                title: "End-to-end encrypted sync",
-                detail: "Amounts and descriptions are encrypted before iCloud sees them. Or keep everything on this device."
+                title: "iCloud sync is opt-in",
+                detail: "Off by default: nothing leaves this device unless you turn on iCloud, and amounts and descriptions are encrypted before it sees them."
             )
             promise(
                 icon: "server.rack",
@@ -138,6 +138,9 @@ struct OnboardingView: View {
             }
             .buttonStyle(OnboardingSecondaryStyle())
 
+            storageChoice
+                .padding(.top, 8)
+
             Text("You can add SimpleFIN, Apple Wallet, or manual accounts any time from Home.")
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.5))
@@ -145,6 +148,54 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 4)
         }
+    }
+
+    private enum StorageChoice: String, CaseIterable, Identifiable {
+        case local
+        case cloud
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .local: "This Device Only"
+            case .cloud: "iCloud Sync"
+            }
+        }
+    }
+
+    /// The storage decision the app used to make silently. Local is the default,
+    /// so nothing is uploaded to iCloud before the person picks it.
+    private var storageChoice: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Where should your data live?")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+            SegmentedPicker(
+                options: StorageChoice.allCases,
+                selection: storageBinding,
+                title: { $0.title },
+                onInk: true
+            )
+            Text(storageDetail)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var storageBinding: Binding<StorageChoice> {
+        Binding(
+            get: { model.useCloudKit ? .cloud : .local },
+            set: { model.chooseStoreMode(cloud: $0 == .cloud) }
+        )
+    }
+
+    private var storageDetail: String {
+        model.useCloudKit
+            ? "Syncs through your private iCloud database, with amounts and descriptions encrypted first. Takes effect when you reopen Cairn."
+            : "Nothing leaves this device. You can turn on iCloud Sync later in Settings."
     }
 
     private var background: some View {

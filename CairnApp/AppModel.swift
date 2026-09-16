@@ -120,9 +120,11 @@ final class AppModel {
 
     init(inMemory: Bool = false) {
         let defaults = UserDefaults.standard
-        // New installs default to iCloud Sync so the onboarding default works
-        // without a relaunch; cloud falls back to local when unavailable.
-        let cloud = (defaults.object(forKey: Self.Keys.useCloudKit) as? Bool) ?? true
+        // Local-first: iCloud sync is opted into, never assumed. The privacy
+        // policy and README both promise that data reaches iCloud only if the
+        // person chooses it, and the first connection's backfill would otherwise
+        // upload before anyone was asked.
+        let cloud = (defaults.object(forKey: Self.Keys.useCloudKit) as? Bool) ?? false
         useCloudKit = cloud
         requestedCloud = cloud
         onboardingComplete = defaults.bool(forKey: Self.Keys.onboardingComplete)
@@ -791,6 +793,17 @@ final class AppModel {
         onboardingComplete = false
         remainingBudget = SyncEngine.dailyRequestLimit
         syncState = .idle
+    }
+
+    /// Records the storage choice made during onboarding. The container is
+    /// opened at launch, so the store itself changes on the next start — but
+    /// nothing has been uploaded before this point, because the default is
+    /// local.
+    func chooseStoreMode(cloud: Bool) {
+        guard cloud != useCloudKit else { return }
+        UserDefaults.standard.set(cloud, forKey: Self.Keys.useCloudKit)
+        useCloudKit = cloud
+        migrateCredentials(synchronizable: cloud)
     }
 
     /// Switches the storage mode. The SwiftData container is chosen at launch,
