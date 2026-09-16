@@ -15,15 +15,18 @@ struct LockGate<Content: View>: View {
 
     var body: some View {
         ZStack {
-            // Removing the content while locked also tears down anything it
-            // presented. A sheet is drawn above its presenting view, so an
-            // overlay would leave an open transaction detail or rule editor
-            // visible on top of the lock screen.
+            // The content stays mounted so the tab selection, navigation stacks,
+            // scroll position, and any half-typed text survive a lock. Sheets are
+            // drawn in their own window above this one, so each opts into
+            // `.cairnLockCover()` to hide behind the lock too.
+            content
+                .disabled(model.lock.isLocked)
+                .allowsHitTesting(!model.lock.isLocked)
+
             if model.lock.isLocked {
                 LockScreenView()
                     .transition(.opacity)
-            } else {
-                content
+                    .zIndex(1)
             }
 
             // The app switcher snapshots a scene as it goes inactive, and macOS
@@ -42,13 +45,6 @@ struct LockGate<Content: View>: View {
             case .background:
                 // Leaving the foreground re-engages the lock.
                 model.lock.lock()
-            #if os(macOS)
-            case .inactive:
-                // A Mac app usually goes inactive rather than to the background
-                // when the person switches away, so .background alone would
-                // leave the lock disengaged.
-                model.lock.lock()
-            #endif
             case .active:
                 // Prompt only once the scene is actually frontmost. Asking
                 // during launch makes LAContext fail with `.notInteractive`,
@@ -64,6 +60,35 @@ struct LockGate<Content: View>: View {
             guard locked, scenePhase == .active else { return }
             Task { await model.lock.unlock() }
         }
+    }
+}
+
+/// Covers a presented sheet while the app is locked.
+///
+/// A sheet is drawn in its own window above the view that presented it, so the
+/// lock overlay in `LockGate` can never reach one. Sheet content opts in with
+/// this modifier, which keeps the sheet mounted — and any half-typed text — while
+/// hiding it behind the lock screen.
+private struct LockCoverModifier: ViewModifier {
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if model.lock.isLocked {
+                    LockScreenView()
+                        .transition(.opacity)
+                        .zIndex(1)
+                }
+            }
+            .animation(CairnTheme.Motion.standard, value: model.lock.isLocked)
+    }
+}
+
+extension View {
+    /// Hides this sheet's content behind the lock screen while Cairn is locked.
+    func cairnLockCover() -> some View {
+        modifier(LockCoverModifier())
     }
 }
 

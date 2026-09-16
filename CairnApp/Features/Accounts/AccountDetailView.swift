@@ -106,6 +106,7 @@ struct AccountDetailView: View {
         }
         .sheet(item: $importPayload) { payload in
             ImportTransactionsSheet(account: account, text: payload.text)
+                .cairnLockCover()
         }
     }
 
@@ -355,6 +356,7 @@ struct TransactionDetailView: View {
                 prefillPattern: rulePattern,
                 prefillCategory: transaction.effectiveCategory
             )
+            .cairnLockCover()
         }
         .sensoryFeedback(.selection, trigger: transaction.effectiveCategory?.uuid)
     }
@@ -593,6 +595,7 @@ struct TransactionDetailView: View {
         }
         .sheet(isPresented: $showingNewTag) {
             TagEditorView { tag in assignTag(tag) }
+                .cairnLockCover()
         }
     }
 

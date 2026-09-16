@@ -77,12 +77,15 @@ struct RulesView: View {
             #endif
         }
         .sheet(item: $editorTarget) { target in
-            switch target {
-            case .create:
-                RuleEditorView()
-            case let .edit(rule):
-                RuleEditorView(rule: rule)
+            Group {
+                switch target {
+                case .create:
+                    RuleEditorView()
+                case let .edit(rule):
+                    RuleEditorView(rule: rule)
+                }
             }
+            .cairnLockCover()
         }
     }
 

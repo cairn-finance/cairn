@@ -57,9 +57,11 @@ struct HomeView: View {
         .refreshable { await model.syncAll(force: true) }
         .sheet(isPresented: $showingConnect) {
             AddConnectionSheet { showingConnect = false }
+                .cairnLockCover()
         }
         .sheet(isPresented: $showingManualAccount) {
             ManualAccountSheet()
+                .cairnLockCover()
         }
         .alert(
             "Remove connection?",

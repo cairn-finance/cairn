@@ -100,12 +100,15 @@ struct TagsView: View {
             }
         }
         .sheet(item: $editorTarget) { target in
-            switch target {
-            case .create:
-                TagEditorView()
-            case let .edit(tag):
-                TagEditorView(tag: tag)
+            Group {
+                switch target {
+                case .create:
+                    TagEditorView()
+                case let .edit(tag):
+                    TagEditorView(tag: tag)
+                }
             }
+            .cairnLockCover()
         }
     }
 

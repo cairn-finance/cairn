@@ -59,6 +59,7 @@ struct SettingsView: View {
         .onAppear { storageMode = model.storeMode }
         .sheet(isPresented: $showingConnect) {
             AddConnectionSheet { showingConnect = false }
+                .cairnLockCover()
         }
         .fileExporter(
             isPresented: $showingExporter,

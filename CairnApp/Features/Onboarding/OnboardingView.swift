@@ -31,6 +31,7 @@ struct OnboardingView: View {
                 connection = nil
                 model.completeOnboarding()
             }
+            .cairnLockCover()
         }
     }
 
