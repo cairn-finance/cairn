@@ -192,8 +192,8 @@ public enum RecurringDetector {
             !$0.isTransfer && !$0.isIgnored && !$0.isPending && $0.amountMinorUnits != 0
         }
         let groups = Dictionary(grouping: eligible, by: groupKey)
-        let series = groups.values.compactMap { series(for: $0, now: now, calendar: calendar) }
-        return series.sorted(by: isOrderedBefore)
+        let detected = groups.values.compactMap { series(for: $0, now: now, calendar: calendar) }
+        return detected.sorted(by: isOrderedBefore)
     }
 
     private static func groupKey(for input: RecurringInput) -> String {
