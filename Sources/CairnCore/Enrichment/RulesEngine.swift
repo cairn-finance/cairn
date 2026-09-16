@@ -56,7 +56,9 @@ public enum RulesEngine {
         return nil
     }
 
-    static func matches(_ rule: RuleSnapshot, amountMinorUnits: Int64, description: String) -> Bool {
+    /// Whether one rule's condition matches a transaction. Exposed so the rule
+    /// editor can preview a draft without duplicating the matching logic.
+    public static func matches(_ rule: RuleSnapshot, amountMinorUnits: Int64, description: String) -> Bool {
         if let min = rule.minAmountMinorUnits, amountMinorUnits < min { return false }
         if let max = rule.maxAmountMinorUnits, amountMinorUnits > max { return false }
 
@@ -90,5 +92,13 @@ public enum RulesEngine {
                 ? description.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
                 : false
         }
+    }
+}
+
+public extension RuleSnapshot {
+    /// Whether this rule's condition matches a transaction, ignoring the
+    /// category it assigns. Used by the rule editor to preview its effect.
+    func matches(amountMinorUnits: Int64, description: String) -> Bool {
+        RulesEngine.matches(self, amountMinorUnits: amountMinorUnits, description: description)
     }
 }

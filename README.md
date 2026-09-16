@@ -18,8 +18,10 @@ SimpleFIN server (Bridge or your bank)  ──►  your device  ──►  your 
 
 - Connects to SimpleFIN Bridge or a bank-hosted SimpleFIN server.
 - Shows accounts, balances, transactions, and net worth per currency.
-- Categorizes locally with your own rules; notes, tags, and manual categories are
-  never overwritten by automation.
+- Categorizes locally with rules you write yourself; notes, tags, and manual
+  categories are never overwritten by automation.
+- Manages those rules and free-form tags in Settings, and can start a rule from
+  any transaction's detail screen.
 - Finds subscriptions and other regular payments entirely on-device, with the
   expected next charge.
 - Syncs across devices through your private iCloud database with **end-to-end

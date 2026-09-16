@@ -659,6 +659,22 @@ final class AppModel {
         }
     }
 
+    /// Re-runs the deterministic pass after the person adds, edits, removes,
+    /// disables, or reorders a rule, so existing transactions pick the change
+    /// up immediately instead of waiting for the next sync.
+    @discardableResult
+    func applyRules() async -> SyncEngine.RecategorizeOutcome? {
+        do {
+            let outcome = try await engine.applyRules()
+            await refreshCategorizationCounts()
+            refreshRecurring()
+            return outcome
+        } catch {
+            await cairnLog(.warning, "Couldn't apply rules: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// Updates the counts shown in Insights.
     func refreshCategorizationCounts() async {
         categorizationCounts = (try? await engine.categorizationCounts()) ?? SyncEngine.CategorizationCounts()

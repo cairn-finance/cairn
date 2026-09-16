@@ -649,17 +649,25 @@ struct InsightsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if model.categorizationCounts.total > 0 {
+                    HStack(spacing: 14) {
                         NavigationLink {
-                            InsightFilteredListView(
-                                title: "Needs a Category",
-                                emptyMessage: "Everything is categorized.",
-                                currency: primaryCurrency,
-                                scope: .needingCategory
-                            )
+                            RulesView()
                         } label: {
-                            Text("Review")
+                            Text("Rules")
                                 .font(.subheadline.weight(.semibold))
+                        }
+                        if model.categorizationCounts.total > 0 {
+                            NavigationLink {
+                                InsightFilteredListView(
+                                    title: "Needs a Category",
+                                    emptyMessage: "Everything is categorized.",
+                                    currency: primaryCurrency,
+                                    scope: .needingCategory
+                                )
+                            } label: {
+                                Text("Review")
+                                    .font(.subheadline.weight(.semibold))
+                            }
                         }
                     }
                 }

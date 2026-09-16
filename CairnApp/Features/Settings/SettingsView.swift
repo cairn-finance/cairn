@@ -8,6 +8,8 @@ struct SettingsView: View {
     @Query(sort: \Institution.name) private var institutions: [Institution]
     @Query(filter: #Predicate<Account> { $0.sourceRaw == "financekit" })
     private var walletAccounts: [Account]
+    @Query(sort: \CategorizationRule.createdAt) private var rules: [CategorizationRule]
+    @Query(sort: \Tag.name) private var tags: [Tag]
 
     @State private var storageMode: StoreMode = .local
     @State private var exportDocument: ExportFile?
@@ -46,6 +48,7 @@ struct SettingsView: View {
             syncSection
             institutionsSection
             categorizationSection
+            organizationSection
             storageSection
             privacySection
             dataSection
@@ -266,6 +269,49 @@ struct SettingsView: View {
                 + "transaction at a time — and only its on-device model, never the cloud. The model pauses when your "
                 + "device is hot or in Low Power Mode.")
         }
+    }
+
+    // MARK: - Organization
+
+    private var organizationSection: some View {
+        Section {
+            NavigationLink {
+                RulesView()
+            } label: {
+                IconRow(
+                    "Rules",
+                    subtitle: rulesSubtitle,
+                    systemImage: "slider.horizontal.3",
+                    tint: Color(red: 0.62, green: 0.36, blue: 0.87)
+                )
+            }
+            NavigationLink {
+                TagsView()
+            } label: {
+                IconRow(
+                    "Tags",
+                    subtitle: tagsSubtitle,
+                    systemImage: "tag.fill",
+                    tint: Color(red: 0.20, green: 0.68, blue: 0.90)
+                )
+            }
+        } header: {
+            Text("Organization")
+        } footer: {
+            Text("Rules assign a category by matching the bank description or amount. A rule always "
+                + "beats an automatic guess but never overrides a category you set. Tags are free-form "
+                + "labels you can add to any transaction and search for.")
+        }
+    }
+
+    private var rulesSubtitle: String {
+        let count = rules.count
+        return count == 0 ? "None yet" : "\(count) rule\(count == 1 ? "" : "s")"
+    }
+
+    private var tagsSubtitle: String {
+        let count = tags.count
+        return count == 0 ? "None yet" : "\(count) tag\(count == 1 ? "" : "s")"
     }
 
     // MARK: - Storage

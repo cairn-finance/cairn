@@ -1031,6 +1031,28 @@ public actor SyncEngine {
         return outcome
     }
 
+    /// Re-evaluates the store after the person changed their rules. Rows that a
+    /// removed or edited rule had categorized are cleared first so the
+    /// deterministic pass can re-decide; user choices, on-device model labels,
+    /// and merchant memory are left alone. Returns the pass outcome.
+    @discardableResult
+    public func applyRules(now: Date = .now) throws -> RecategorizeOutcome {
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        var didClear = false
+        for transaction in transactions where transaction.userCategory == nil {
+            guard transaction.autoCategorySource == SuggestionSource.rule.rawValue else { continue }
+            transaction.autoCategory = nil
+            transaction.autoCategorySource = nil
+            transaction.autoConfidence = 0
+            transaction.modifiedAt = now
+            didClear = true
+        }
+        if didClear {
+            try modelContext.save()
+        }
+        return try recategorize(now: now)
+    }
+
     /// Clears on-device model guesses that the current rules would never produce:
     /// "Fees", "Transfers", and "Uncategorized" are decided deterministically, and
     /// a debit can't be "Income". This is how a stale "Fees" label left by an

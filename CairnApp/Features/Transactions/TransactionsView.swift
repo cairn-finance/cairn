@@ -8,6 +8,8 @@ struct TransactionsView: View {
     private var allTransactions: [LedgerTransaction]
     @Query(sort: [SortDescriptor(\CairnSchemaV1.Category.sortOrder)])
     private var categories: [CairnSchemaV1.Category]
+    @Query(sort: \Tag.name)
+    private var tags: [Tag]
     @Query(sort: [SortDescriptor(\Account.displayOrder)])
     private var accounts: [Account]
 
@@ -15,6 +17,7 @@ struct TransactionsView: View {
     @State private var quickFilter: QuickFilter = .all
     @State private var categoryFilter: CairnSchemaV1.Category?
     @State private var accountFilter: Account?
+    @State private var tagFilter: Tag?
 
     enum QuickFilter: String, CaseIterable, Identifiable {
         case all, spending, income, pending, uncategorized
@@ -92,6 +95,11 @@ struct TransactionsView: View {
                         self.accountFilter = nil
                     }
                 }
+                if let tagFilter {
+                    activeFilterChip(tagFilter.name, systemImage: "tag.fill", tint: CairnTheme.color(hex: tagFilter.colorHex)) {
+                        self.tagFilter = nil
+                    }
+                }
             }
             .padding(.horizontal, 2)
             .padding(.vertical, 2)
@@ -132,6 +140,15 @@ struct TransactionsView: View {
                 }
             }
             .pickerStyle(.menu)
+            if !tags.isEmpty {
+                Picker("Tag", selection: $tagFilter) {
+                    Text("All Tags").tag(Tag?.none)
+                    ForEach(tags) { tag in
+                        Text(tag.name).tag(Tag?.some(tag))
+                    }
+                }
+                .pickerStyle(.menu)
+            }
             if hasAnyFilter {
                 Divider()
                 Button("Clear Filters", systemImage: "xmark.circle") { clearFilters() }
@@ -147,7 +164,7 @@ struct TransactionsView: View {
     }
 
     private var hasAnyFilter: Bool {
-        quickFilter != .all || categoryFilter != nil || accountFilter != nil || !searchText.isEmpty
+        quickFilter != .all || categoryFilter != nil || accountFilter != nil || tagFilter != nil || !searchText.isEmpty
     }
 
     private func clearFilters() {
@@ -155,6 +172,7 @@ struct TransactionsView: View {
             quickFilter = .all
             categoryFilter = nil
             accountFilter = nil
+            tagFilter = nil
             searchText = ""
         }
     }
@@ -182,6 +200,11 @@ struct TransactionsView: View {
         }
         if let accountFilter {
             result = result.filter { $0.account?.persistentModelID == accountFilter.persistentModelID }
+        }
+        if let tagFilter {
+            result = result.filter { transaction in
+                (transaction.tags ?? []).contains { $0.persistentModelID == tagFilter.persistentModelID }
+            }
         }
         if !searchText.isEmpty {
             result = result.filter { transaction in

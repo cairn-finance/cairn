@@ -315,8 +315,12 @@ struct TransactionDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppModel.self) private var model
     @Query(sort: \CairnSchemaV1.Category.sortOrder) private var categories: [CairnSchemaV1.Category]
+    @Query(sort: \Tag.name) private var allTags: [Tag]
 
     let transaction: LedgerTransaction
+
+    @State private var showingNewTag = false
+    @State private var showingRuleEditor = false
 
     private let columns = [GridItem(.adaptive(minimum: 148), spacing: 8)]
 
@@ -327,6 +331,7 @@ struct TransactionDetailView: View {
                 categoryCard
                 optionsCard
                 noteCard
+                tagsCard
                 detailsCard
             }
             .cairnScreen()
@@ -336,6 +341,21 @@ struct TransactionDetailView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingRuleEditor = true
+                } label: {
+                    Label("Create Rule", systemImage: "slider.horizontal.3")
+                }
+            }
+        }
+        .sheet(isPresented: $showingRuleEditor) {
+            RuleEditorView(
+                prefillPattern: rulePattern,
+                prefillCategory: transaction.effectiveCategory
+            )
+        }
         .sensoryFeedback(.selection, trigger: transaction.effectiveCategory?.uuid)
     }
 
@@ -393,14 +413,20 @@ struct TransactionDetailView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 CardHeader("Category", subtitle: categorySubtitle) {
-                    if transaction.isCategorizedByUser {
-                        Button("Reset") {
-                            withAnimation(CairnTheme.Motion.quick) {
-                                transaction.userCategory = nil
-                                touch()
-                            }
+                    HStack(spacing: 12) {
+                        if transaction.effectiveCategory != nil {
+                            Button("Create Rule") { showingRuleEditor = true }
+                                .font(.subheadline.weight(.medium))
                         }
-                        .font(.subheadline.weight(.medium))
+                        if transaction.isCategorizedByUser {
+                            Button("Reset") {
+                                withAnimation(CairnTheme.Motion.quick) {
+                                    transaction.userCategory = nil
+                                    touch()
+                                }
+                            }
+                            .font(.subheadline.weight(.medium))
+                        }
                     }
                 }
 
@@ -523,6 +549,88 @@ struct TransactionDetailView: View {
                     .background(CairnTheme.surfaceInset, in: RoundedRectangle(cornerRadius: CairnTheme.controlRadius, style: .continuous))
             }
         }
+    }
+
+    private var tagsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                CardHeader(
+                    "Tags",
+                    subtitle: assignedTags.isEmpty ? "Label this transaction. Tags are searchable." : nil
+                )
+                if !assignedTags.isEmpty {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 120), spacing: 8)],
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        ForEach(assignedTags) { tag in
+                            Button { toggleTag(tag) } label: {
+                                TagChip(name: tag.name, colorHex: tag.colorHex, showsRemove: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                Menu {
+                    ForEach(allTags) { tag in
+                        Button {
+                            toggleTag(tag)
+                        } label: {
+                            Label(
+                                tag.name,
+                                systemImage: isAssigned(tag) ? "checkmark" : "tag"
+                            )
+                        }
+                    }
+                    if !allTags.isEmpty { Divider() }
+                    Button("New Tag…", systemImage: "plus") { showingNewTag = true }
+                } label: {
+                    Label("Add Tag", systemImage: "plus.circle")
+                        .font(.subheadline.weight(.medium))
+                }
+            }
+        }
+        .sheet(isPresented: $showingNewTag) {
+            TagEditorView { tag in assignTag(tag) }
+        }
+    }
+
+    private var assignedTags: [Tag] {
+        (transaction.tags ?? []).sorted {
+            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
+    private func isAssigned(_ tag: Tag) -> Bool {
+        (transaction.tags ?? []).contains { $0.persistentModelID == tag.persistentModelID }
+    }
+
+    private func toggleTag(_ tag: Tag) {
+        var current = transaction.tags ?? []
+        if let index = current.firstIndex(where: { $0.persistentModelID == tag.persistentModelID }) {
+            current.remove(at: index)
+        } else {
+            current.append(tag)
+        }
+        transaction.tags = current
+        touch()
+    }
+
+    private func assignTag(_ tag: Tag) {
+        guard !isAssigned(tag) else { return }
+        var current = transaction.tags ?? []
+        current.append(tag)
+        transaction.tags = current
+        touch()
+    }
+
+    /// The cleaned merchant name makes a better rule pattern than the raw
+    /// description, which usually carries a store number or city.
+    private var rulePattern: String {
+        transaction.normalizedMerchant.isEmpty
+            ? transaction.payeeDescription
+            : transaction.normalizedMerchant
     }
 
     private var detailsCard: some View {

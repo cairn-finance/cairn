@@ -93,6 +93,10 @@ struct TransactionRow: View {
                         }
                         Text(accountName)
                     }
+                    if let tags = transaction.tags, !tags.isEmpty {
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(tagSummary(tags))
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -132,6 +136,13 @@ struct TransactionRow: View {
             return category.name
         }
         return transaction.countsAsTransfer ? "Transfer" : "Uncategorized"
+    }
+
+    /// Up to two tag names, then a count, so one row never grows unbounded.
+    private func tagSummary(_ tags: [Tag]) -> String {
+        let shown = tags.prefix(2).map { "#\($0.name)" }
+        let extra = tags.count - shown.count
+        return shown.joined(separator: " ") + (extra > 0 ? " +\(extra)" : "")
     }
 }
 
