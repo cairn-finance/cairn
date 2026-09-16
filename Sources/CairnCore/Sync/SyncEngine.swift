@@ -1080,27 +1080,27 @@ public actor SyncEngine {
     }
 
     /// Bumped when categorization logic changes enough to re-examine existing
-    /// model guesses once. Version 1 taught the classifier the amount direction.
-    private static let currentCategorizationVersion = 1
+    /// model guesses once. Version 1 targeted credits mislabeled as spending;
+    /// version 2 redoes every model spending guess with the current hints and
+    /// direction-aware prompt.
+    private static let currentCategorizationVersion = 2
 
     private func isModelSourced(_ transaction: LedgerTransaction) -> Bool {
         let source = transaction.autoCategorySource
         return source == SuggestionSource.appleIntelligence.rawValue || source == "model"
     }
 
-    /// Clears a model guess where the amount contradicts it: a credit carrying a
-    /// spending category. Income, fees, and money movement are legitimate on a
-    /// credit and are left alone. Runs once, keyed on
-    /// `AppSettings.categorizationVersion`, so a model that still chooses a
-    /// spending category for a refund is not re-asked forever.
+    /// Clears a model spending guess so the current hints and the
+    /// direction-aware prompt can redo it. Income, fees, and money movement are
+    /// deterministic outcomes and are left alone. Runs once, keyed on
+    /// `AppSettings.categorizationVersion`.
     private func reevaluateStaleModelCategories(
         in transactions: [LedgerTransaction],
         now: Date
     ) -> Bool {
         var didChange = false
         for transaction in transactions where transaction.userCategory == nil {
-            guard isModelSourced(transaction), transaction.amountMinorUnits > 0 else { continue }
-            guard let name = transaction.autoCategory?.name else { continue }
+            guard isModelSourced(transaction), let name = transaction.autoCategory?.name else { continue }
             if name == "Income" || name == "Fees" { continue }
             if LedgerTransaction.moneyMovementCategoryNames.contains(name) { continue }
             transaction.autoCategory = nil

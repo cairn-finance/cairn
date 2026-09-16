@@ -40,6 +40,11 @@ public enum TransactionHints {
         "bill pay", "billpay",
         "zelle", "venmo", "cash app", "cashapp", "apple cash",
         "withdrawal to", "deposit from",
+        // Brokerage activity moves cash into or out of an investment, it isn't
+        // spending. A dividend payout stays Income; a reinvestment or a buy does
+        // not.
+        "reinvestment", "you bought", "you sold", "you purchased",
+        "buy order", "sell order", "stock purchase", "share purchase",
     ]
 
     /// Phrases that name a payment *to* a credit card, so it can be labeled

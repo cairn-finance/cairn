@@ -338,6 +338,43 @@ struct AutoCategorizationTests {
         #expect(try await engine.categorizationCounts().pendingModel == 1)
     }
 
+    @Test("An old model label on a debit is overwritten by the current rules")
+    func staleDebitLabelOverwritten() async throws {
+        let (container, context) = try makeContext()
+        let shopping = Category(name: "Shopping", symbolName: "bag.fill", colorHex: "#FF375F", sortOrder: 0)
+        context.insert(shopping)
+        let account = Account(bankAccountID: "A1", name: "Sample Brokerage", currency: .usd)
+        context.insert(account)
+
+        // A brokerage reinvestment the old model had called Shopping.
+        let stale = LedgerTransaction(
+            bankTransactionID: "T1",
+            payeeDescription: "REINVESTMENT SAMPLE INDEX FUND (Cash)",
+            amountMinorUnits: -338
+        )
+        stale.account = account
+        stale.accountIDIndex = "A1"
+        stale.normalizedMerchant = MerchantNormalizer.normalize("REINVESTMENT SAMPLE INDEX FUND")
+        stale.autoCategory = shopping
+        stale.autoCategorySource = "appleIntelligence"
+        stale.autoCategorizeAttemptedAt = .now
+        context.insert(stale)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "T1" })
+            ).first
+        )
+        #expect(refreshed.isTransfer)
+        #expect(refreshed.autoCategory == nil)
+        #expect(refreshed.countsAsTransfer)
+        #expect(try await engine.uncategorizedCount() == 0)
+    }
+
     @Test("Card and loan payments carry their own category, not a generic transfer")
     func paymentCategories() async throws {
         let (container, context) = try makeContext()
