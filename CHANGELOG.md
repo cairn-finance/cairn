@@ -1,3 +1,18 @@
+## [0.3.0] - 2026-09-16
+
+- Add rules and tags management to the app (4c67f6c)
+- Avoid a local name shadowing the series helper (4ffee2b)
+- Detect subscriptions and other regular payments on-device (78bedea)
+- Let deterministic hints outrank a fuzzy merchant match (8842360)
+- Match both legs of a transfer across accounts (dd3f757)
+- Record why a model pass was paused even before it starts (5fafedd)
+- Gate the model pass on power and run the bulk in the background (ac4d404)
+- Batch categorization per merchant and stop retrying settled rows (185efdb)
+- Overwrite stale model labels and treat brokerage activity as transfers (961c750)
+- Add card/loan payment categories and fix credit classification (17d43b4)
+- Fix on-device categorization stranding uncategorized rows (aa70fab)
+- Bump GitHub Actions to their Node 24 majors (7d6da9d)
+
 ## [0.2.0] - 2026-09-15
 
 - Require device unlock to open Cairn (17fd5b7)
