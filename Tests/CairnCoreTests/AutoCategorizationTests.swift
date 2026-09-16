@@ -684,4 +684,107 @@ struct AutoCategorizationTests {
         #expect(!dividend.isTransfer)
         #expect(try refetch("T4").autoCategory?.name == "Income")
     }
+
+    @Test("The incoming credit of a transfer stops reading as income")
+    func transferCreditIsMatchedAcrossAccounts() async throws {
+        let (container, context) = try makeContext()
+        let income = Category(name: "Income", symbolName: "arrow.down.circle.fill", colorHex: "#34C759", sortOrder: 0)
+        context.insert(income)
+
+        let checking = Account(bankAccountID: "A1", name: "Everyday Checking", currency: .usd)
+        let savings = Account(bankAccountID: "A2", name: "Savings", currency: .usd)
+        context.insert(checking)
+        context.insert(savings)
+
+        // The outgoing leg names itself, so it is recognized on its own.
+        let out = LedgerTransaction(
+            bankTransactionID: "OUT",
+            payeeDescription: "Overdraft: To Savings - 3568",
+            amountMinorUnits: -10_000
+        )
+        out.account = checking
+        out.accountIDIndex = "A1"
+        out.normalizedMerchant = MerchantNormalizer.normalize(out.payeeDescription)
+        context.insert(out)
+
+        // The incoming credit is a plain "Deposit" the model guessed as income.
+        let incoming = LedgerTransaction(
+            bankTransactionID: "IN",
+            payeeDescription: "Deposit",
+            amountMinorUnits: 10_000
+        )
+        incoming.account = savings
+        incoming.accountIDIndex = "A2"
+        incoming.normalizedMerchant = MerchantNormalizer.normalize(incoming.payeeDescription)
+        context.insert(incoming)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        // First pass settles the version migration and recognizes the debit.
+        _ = try await engine.recategorize()
+
+        // A later model pass guesses the credit as income; that weak guess must
+        // not survive the transfer match.
+        incoming.autoCategory = income
+        incoming.autoCategorySource = SuggestionSource.appleIntelligence.rawValue
+        incoming.autoConfidence = 0.8
+        incoming.isTransfer = false
+        try context.save()
+
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "IN" })
+            ).first
+        )
+        #expect(refreshed.isTransfer)
+        #expect(refreshed.autoCategory == nil)
+    }
+
+    @Test("A deterministic income label is not overwritten by a matching transfer")
+    func transferMatchKeepsExplicitIncome() async throws {
+        let (container, context) = try makeContext()
+        context.insert(Category(name: "Income", symbolName: "arrow.down.circle.fill", colorHex: "#34C759", sortOrder: 0))
+
+        let checking = Account(bankAccountID: "A1", name: "Everyday Checking", currency: .usd)
+        let savings = Account(bankAccountID: "A2", name: "Savings", currency: .usd)
+        context.insert(checking)
+        context.insert(savings)
+
+        // Payroll is named explicitly, so the hint — not the model — places it,
+        // and a coincidental same-amount transfer must leave it as income.
+        let payroll = LedgerTransaction(
+            bankTransactionID: "PAY",
+            payeeDescription: "ACME INC PAYROLL PPD ID: 0000000000",
+            amountMinorUnits: 10_000
+        )
+        payroll.account = savings
+        payroll.accountIDIndex = "A2"
+        payroll.normalizedMerchant = MerchantNormalizer.normalize(payroll.payeeDescription)
+        context.insert(payroll)
+
+        let out = LedgerTransaction(
+            bankTransactionID: "OUT",
+            payeeDescription: "Overdraft: To Savings - 3568",
+            amountMinorUnits: -10_000
+        )
+        out.account = checking
+        out.accountIDIndex = "A1"
+        out.normalizedMerchant = MerchantNormalizer.normalize(out.payeeDescription)
+        context.insert(out)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.recategorize()
+
+        let refreshed = try #require(
+            try context.fetch(
+                FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "PAY" })
+            ).first
+        )
+        #expect(refreshed.autoCategory?.name == "Income")
+        #expect(refreshed.autoCategorySource == SuggestionSource.heuristic.rawValue)
+        #expect(!refreshed.isTransfer)
+    }
 }

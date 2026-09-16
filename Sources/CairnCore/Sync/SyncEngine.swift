@@ -892,6 +892,10 @@ public actor SyncEngine {
 
         for transaction in transactions {
             guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
+            // Money movement is a deterministic outcome. Once a row is recognized
+            // as a transfer, merchant memory and fuzzy matches must not pull it
+            // back into a spending or income category on a later pass.
+            if transaction.countsAsTransfer, !transaction.isTransferUserSet { continue }
 
             let merchant = Self.merchantName(transaction)
             let suggestion = CategorySuggester.suggest(
@@ -1011,6 +1015,13 @@ public actor SyncEngine {
             }
         }
 
+        // Last, match each recognized transfer leg with its counterpart in
+        // another account, so a credit that landed as income reads as the same
+        // money movement instead of inflating income.
+        if pairTransfers(in: transactions, counterparties: counterparties, now: now) {
+            didChange = true
+        }
+
         if didChange {
             try modelContext.save()
         }
@@ -1078,6 +1089,76 @@ public actor SyncEngine {
         }
         if changed { transaction.modifiedAt = now }
         return changed
+    }
+
+    /// Matches each recognized transfer leg with its counterpart in another
+    /// account and marks that counterpart as a transfer too.
+    ///
+    /// This is what fixes a transfer whose incoming credit was guessed as Income:
+    /// the outgoing leg is anchored by its wording or by a card/loan payment, and
+    /// the matching credit is pulled back into money movement. Only a counterpart
+    /// the person hasn't touched and that has no category, or only a weak Income
+    /// guess, is eligible — a row the person categorized, or one a deterministic
+    /// hint placed, is never revised.
+    @discardableResult
+    private func pairTransfers(
+        in transactions: [LedgerTransaction],
+        counterparties: [String],
+        now: Date
+    ) -> Bool {
+        guard transactions.count > 1 else { return false }
+
+        let legs = transactions.map { transaction -> TransferPairing.Leg<PersistentIdentifier> in
+            let isAnchor = transaction.amountMinorUnits != 0
+                && (transaction.isTransferUserSet
+                    || TransactionHints.moneyMovement(
+                        description: transaction.payeeDescription,
+                        merchant: transaction.normalizedMerchant,
+                        counterparties: counterparties
+                    ) != nil)
+            let isEligible = transaction.userCategory == nil
+                && !transaction.isIgnored
+                && !transaction.isPending
+                && !transaction.isTransferUserSet
+                && !transaction.countsAsTransfer
+                && transaction.amountMinorUnits > 0
+                && (transaction.autoCategory == nil || isWeakIncomeGuess(transaction))
+            return TransferPairing.Leg(
+                id: transaction.persistentModelID,
+                accountID: transaction.accountIDIndex,
+                amountMinorUnits: transaction.amountMinorUnits,
+                date: transaction.effectiveDate,
+                isAnchor: isAnchor,
+                isEligibleCounterpart: isEligible
+            )
+        }
+
+        let counterpartIDs = TransferPairing.counterpartsToMark(in: legs)
+        guard !counterpartIDs.isEmpty else { return false }
+
+        let byID = Dictionary(
+            transactions.map { ($0.persistentModelID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var didChange = false
+        for id in counterpartIDs {
+            guard let transaction = byID[id] else { continue }
+            if applyMoneyMovement(.transfer, to: transaction, now: now) {
+                didChange = true
+            }
+        }
+        return didChange
+    }
+
+    /// An Income label that only automation guessed (the on-device model or
+    /// memory learned from it), rather than a deterministic hint or the person's
+    /// own choice. Only these may a transfer match revise.
+    private func isWeakIncomeGuess(_ transaction: LedgerTransaction) -> Bool {
+        guard transaction.autoCategory?.name == "Income" else { return false }
+        let source = transaction.autoCategorySource
+        return source == SuggestionSource.appleIntelligence.rawValue
+            || source == "model"
+            || source == SuggestionSource.memory.rawValue
     }
 
     /// Bumped when categorization logic changes enough to re-examine earlier
@@ -1412,6 +1493,11 @@ public actor SyncEngine {
                 outcome.bySource[SuggestionSource.appleIntelligence.rawValue, default: 0] += group.count
             }
         }
+
+        // A money-movement row recognized while building the batch should pull
+        // its counterpart along right away, so the next pass doesn't have to wait
+        // to fix a credit the model placed as income.
+        _ = pairTransfers(in: all, counterparties: counterparties, now: now)
 
         outcome.remaining = max(0, candidates.count - outcome.attempted)
         try modelContext.save()
