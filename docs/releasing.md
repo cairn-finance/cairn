@@ -22,6 +22,62 @@ of the same tag on the same build number.
 command line, so the tag always wins. **Never** edit versions in the generated
 `.xcodeproj` — XcodeGen rewrites it.
 
+## CloudKit schema promotions
+
+CloudKit fixes a field's encryption setting when the schema is deployed to
+Production. It can never be flipped afterwards, in either direction, and a
+field's type cannot be changed either. So "add it plaintext now, encrypt it
+later" is impossible without a parallel `…Encrypted` field and a data migration:
+the encryption attribute is part of the field's type.
+
+Every change to `Sources/CairnCore/Models` therefore has to reach Production
+**before** the release that carries it. `Scripts/schema-hash.sh --check` — run by
+CI on every push and pull request, and again by the release workflow — fails
+until the current schema is recorded in `Config/schema-promotions.txt`. That is
+deliberate: a failing check is the reminder that a deployment is outstanding.
+
+The order matters, because the last step cannot be undone:
+
+1. Create the CloudKit container if it is new, and set it in
+   `ICLOUD_CONTAINER_ID` (see [Where the container comes
+   from](#where-the-container-comes-from)).
+2. Run a **Debug** build signed into iCloud once, on a device, so the
+   Development environment creates the record types and fields.
+3. In **CloudKit Console → your container → Schema**, stay on **Development** and
+   confirm the fields that should be encrypted report as encrypted:
+   `payeeDescription`, `amountMinorUnits`, `note`, `normalizedMerchant`, the rule
+   amount bounds, `orgID`/`orgURL`/`sfinURL`, `lastSyncError`, the account and
+   holding names, `currencyCode`, and the custom-currency names. If any is
+   plaintext, fix the model and reset the Development schema — Development can be
+   reset as often as you like.
+4. Only then choose **Deploy Schema Changes**, which promotes Development to
+   Production.
+5. Record it: `Scripts/schema-hash.sh --record "what changed"`, then commit. This
+   is what turns CI green.
+
+A new container needs steps 2–5 even when no model changed, because the hash
+cannot see the container name (container names and bundle ids stay out of this
+repo).
+
+Skipping this does not fail loudly on the release itself: TestFlight keeps
+working against the old schema until a record carrying a new field is written,
+and then CloudKit rejects the export and iCloud Sync silently stops making
+progress.
+
+## Where the container comes from
+
+One build setting, `ICLOUD_CONTAINER_ID`, defines the CloudKit container. It is
+written into the entitlement (`com.apple.developer.icloud-container-identifiers`)
+and into `CairnCloudKitContainerID` in `Info.plist`, which
+`ModelContainerFactory` reads at runtime. The container the app requests and the
+container it is entitled to therefore cannot disagree.
+
+It defaults to `iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)` in `Config/Signing.xcconfig`,
+so a fresh clone uses its own container. Override it in
+`Config/Signing.local.xcconfig` — or in CI, from the `ICLOUD_CONTAINER_ID`
+secret — when the container is not derived from the bundle id, which is the case
+for any container created before the bundle id settled.
+
 ## Cut a release
 
 ```sh
@@ -38,7 +94,8 @@ The tag must be contained in `main`; the workflow refuses anything else.
 ## What CI does
 
 1. **Prepare** — refuses a tag that is not on `main`, runs `swift test` and
-   `swiftlint`, and computes the version/build pair.
+   `swiftlint`, refuses a schema that was never deployed to Production, and
+   computes the version/build pair.
 2. **Archive** (matrix: iOS and macOS) — writes the signing config and App Store
    Connect API key from secrets, generates the project, archives Release with
    `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`, then exports with
@@ -55,6 +112,7 @@ Add these under **Settings → Secrets and variables → Actions**:
 | --- | --- |
 | `DEVELOPMENT_TEAM` | your 10-character Team ID |
 | `PRODUCT_BUNDLE_IDENTIFIER` | the app's bundle id (must match the App ID) |
+| `ICLOUD_CONTAINER_ID` | the CloudKit container to sync through, e.g. `iCloud.com.example.cairn.sync` |
 | `APPSTORE_API_KEY_ID` | the App Store Connect API key's Key ID |
 | `APPSTORE_API_ISSUER_ID` | the key's Issuer ID |
 | `APPSTORE_API_PRIVATE_KEY` | the `.p8` file, **base64-encoded** |
@@ -82,10 +140,11 @@ Before the first tag can upload, the surrounding Apple configuration must exist
 - An **App Store Connect app record** for the bundle id, with both the iOS and
   macOS platforms. One bundle id serves both — Cairn is a single target with
   `supportedDestinations: [iOS, macOS]`.
-- The App ID enabled for **iCloud → CloudKit**, with the container
-  `iCloud.<bundle id>` created. The entitlements derive the container from
-  `$(PRODUCT_BUNDLE_IDENTIFIER)` (`Config/Cairn.entitlements`); cloud signing
-  will not create CloudKit containers for you.
+- The App ID enabled for **iCloud → CloudKit**, with the container named by
+  `ICLOUD_CONTAINER_ID` created (it defaults to `iCloud.<bundle id>`). Cloud
+  signing creates profiles, not containers, so create it in the developer portal
+  and enable iCloud for the App ID there. See [Where the container comes
+  from](#where-the-container-comes-from).
 - TestFlight groups/testers configured as you like; the build appears under
   **App Store Connect → TestFlight**.
 
@@ -134,8 +193,13 @@ gh release delete v0.1.1 --yes
   Distribution* certificate. Cloud signing creates one when the API key can
   manage certificates; otherwise create it in the portal once.
 - **CloudKit container missing** — cloud signing creates provisioning profiles,
-  not CloudKit containers. Create `iCloud.<bundle id>` in the developer portal
-  and enable iCloud for the App ID.
+  not CloudKit containers. Create the container named by `ICLOUD_CONTAINER_ID` in
+  the developer portal and enable iCloud for the App ID.
+- **iCloud Sync stops making progress after a release** — a new field reached
+  TestFlight before the schema was deployed to Production, so CloudKit rejects the
+  records that carry it. Deploy the schema (see [CloudKit schema
+  promotions](#cloudkit-schema-promotions)), run
+  `Scripts/schema-hash.sh --record`, and commit.
 - **Duplicate build number** — re-running a tag that already uploaded will be
   rejected by App Store Connect. Make a new commit and tag a patch version.
 

@@ -1,0 +1,22 @@
+# CloudKit schema promotions.
+#
+# One line per deployment of Sources/CairnCore/Models to the CloudKit Production
+# environment:
+#
+#     <date>  <schema hash>  <commit>  <note>
+#
+# CloudKit fixes a field's encryption setting at deployment — it can never be
+# flipped afterwards, in either direction — so a schema change has to reach
+# Production before the release that carries it. `Scripts/schema-hash.sh --check`
+# (run by CI) fails until the current hash appears here, which is what stops a
+# new field or a new encryption attribute from shipping undeployed.
+#
+# Record a promotion with `Scripts/schema-hash.sh --record "<note>"` only once the
+# Console shows the fields as encrypted in Development and the schema is
+# deployed. Note the container in the release's ICLOUD_CONTAINER_ID, not here:
+# container names and bundle ids stay out of this repo by convention.
+#
+# If the container itself changes, the hash does not, so a new container needs
+# this step even when no model changed.
+
+2026-09-13  ff3851073f77809afa885ecc97836643b0b20cb25829b5381c3ef417564b3186  688b2da  first production promotion
