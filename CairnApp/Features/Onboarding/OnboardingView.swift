@@ -114,6 +114,11 @@ struct OnboardingView: View {
 
     private var actions: some View {
         VStack(spacing: 12) {
+            // Asked before the buttons: connecting stores a Keychain credential
+            // right away, and most people never look past the primary action.
+            storageChoice
+                .padding(.bottom, 4)
+
             Button {
                 connection = .simpleFIN
             } label: {
@@ -138,9 +143,6 @@ struct OnboardingView: View {
                 Text("Continue without a bank")
             }
             .buttonStyle(OnboardingSecondaryStyle())
-
-            storageChoice
-                .padding(.top, 8)
 
             Text("You can add SimpleFIN, Apple Wallet, or manual accounts any time from Home.")
                 .font(.caption)
