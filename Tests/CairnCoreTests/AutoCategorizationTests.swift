@@ -402,6 +402,9 @@ struct AutoCategorizationTests {
 
         _ = make("T1", "Payment Thank You-Mobile")
         _ = make("T2", "LOAN PAYMENT")
+        // Autopay wording that names a card reaches the deterministic path
+        // through the bank name rather than the transfer phrases.
+        _ = make("T3", "CHASE CREDIT CRD AUTOPAY")
         try context.save()
 
         let engine = SyncEngine(modelContainer: container)
@@ -423,6 +426,12 @@ struct AutoCategorizationTests {
         let loan = try refetch("T2")
         #expect(loan.isTransfer)
         #expect(loan.autoCategory?.name == "Loan Payments")
+
+        // The bank-name path must pick the specific kind too, not label every
+        // match a plain transfer.
+        let cardAutopay = try refetch("T3")
+        #expect(cardAutopay.isTransfer)
+        #expect(cardAutopay.autoCategory?.name == "Credit Card Payments")
 
         // Both are money movement, so neither is a spending row awaiting review.
         #expect(try await engine.uncategorizedCount() == 0)
