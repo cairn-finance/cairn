@@ -67,9 +67,10 @@ public enum TransactionHints {
 
     /// Words that name a card rather than the merchant being paid. Paired with
     /// `paymentWording`, they mean the money is moving to the card, so counting
-    /// it as spending would double-count the purchases.
+    /// it as spending would double-count the purchases. Deliberately no bare
+    /// "card": "GIFT CARD MALL" and "SIM CARD" are shops, not issuers.
     private static let cardWording: [String] = [
-        "credit card", "credit crd", "card",
+        "credit card", "credit crd",
         "visa", "mastercard", "amex", "american express",
         "discover", "barclaycard", "barclays", "synchrony",
         "capital one", "citi", "chase", "wells fargo", "bank of america", "us bank",

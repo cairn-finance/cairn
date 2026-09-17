@@ -71,6 +71,10 @@ struct TransactionHintsTests {
         #expect(TransactionHints.moneyMovement(description: "DISCOVER E-PAYMENT") == .creditCardPayment)
         #expect(TransactionHints.moneyMovement(description: "BARCLAYCARD AUTOPAY") == .creditCardPayment)
         #expect(TransactionHints.moneyMovement(description: "VISA AUTOMATIC PAYMENT") == .creditCardPayment)
+        // A card *shop* is not a card issuer, so a payment word next to it is a
+        // bill being paid, not money moving to a card.
+        #expect(TransactionHints.moneyMovement(description: "ONLINE PAYMENT GIFT CARD MALL") == nil)
+        #expect(TransactionHints.moneyMovement(description: "AUTOPAY SIM CARD") == nil)
     }
 
     @Test("A fee is always a debit")
