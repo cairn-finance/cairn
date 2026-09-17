@@ -52,9 +52,17 @@ public struct ModelContainerFactory: Sendable {
     }
 
     /// The resolution rule, split out so it can be tested without a bundle.
+    ///
+    /// A value that still contains a `$(…)` build-setting placeholder counts as
+    /// unset: the plist would carry it literally only when the setting was never
+    /// substituted, and asking CloudKit for `iCloud.$(ICLOUD_CONTAINER_ID)` traps
+    /// instead of failing softly.
     public static func resolveCloudKitContainerID(configured: String?, bundleIdentifier: String?) -> String {
-        if let configured, !configured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return configured
+        if let configured {
+            let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, !trimmed.contains("$(") {
+                return trimmed
+            }
         }
         if let bundleIdentifier, !bundleIdentifier.isEmpty {
             return "iCloud.\(bundleIdentifier)"

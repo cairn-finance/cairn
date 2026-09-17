@@ -26,8 +26,11 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.cairn
 //
 //     ICLOUD_CONTAINER_ID = iCloud.com.example.cairn.sync
 //
-// It must exist under your team, or iCloud Sync silently falls back to local
-// storage. See docs/releasing.md for the required production deployment step.
+// It must exist under your team and be enabled for the App ID. If it doesn't,
+// the build's provisioning fails, and a build that somehow carries an
+// unregistered container traps the process when CloudKit is asked for it — see
+// CloudAvailability. See docs/releasing.md for the required production
+// deployment step.
 ICLOUD_CONTAINER_ID = iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)
 
 // Empty by default so a fresh clone builds for the simulator without a team.

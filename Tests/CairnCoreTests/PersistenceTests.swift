@@ -54,8 +54,8 @@ struct PersistenceTests {
             ) == "iCloud.com.example.cairn.sync"
         )
 
-        // Absent or blank falls back to the convention, so a fresh clone, the
-        // test host, and an unsubstituted $(ICLOUD_CONTAINER_ID) all still work.
+        // Absent or blank falls back to the convention, so a fresh clone and the
+        // test host still work.
         #expect(
             ModelContainerFactory.resolveCloudKitContainerID(
                 configured: nil,
@@ -65,6 +65,14 @@ struct PersistenceTests {
         #expect(
             ModelContainerFactory.resolveCloudKitContainerID(
                 configured: "   ",
+                bundleIdentifier: "com.example.cairn"
+            ) == "iCloud.com.example.cairn"
+        )
+        // A value that was never substituted is not a container name, and asking
+        // CloudKit for it traps, so it counts as unset.
+        #expect(
+            ModelContainerFactory.resolveCloudKitContainerID(
+                configured: "$(ICLOUD_CONTAINER_ID)",
                 bundleIdentifier: "com.example.cairn"
             ) == "iCloud.com.example.cairn"
         )
