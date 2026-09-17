@@ -119,6 +119,12 @@ final class AppModel {
     @ObservationIgnored private var isAutoCategorizing = false
 
     init(inMemory: Bool = false) {
+        #if DEBUG
+        // Debug-only schema tool. It exits the process, and it runs here rather
+        // than in the App type so it cannot race the store that holds real data.
+        SchemaInitializer.runIfRequested()
+        #endif
+
         let defaults = UserDefaults.standard
         // Local-first: iCloud sync is opted into, never assumed. The privacy
         // policy and README both promise that data reaches iCloud only if the
@@ -284,7 +290,8 @@ final class AppModel {
         } catch {
             let message: String
             if error is CredentialStoreError {
-                message = "Cairn couldn’t save this credential to the Keychain, so the connection wasn’t completed. Create a new SimpleFIN token and try again."
+                message = "Cairn couldn’t save this credential to the Keychain, so the "
+                    + "connection wasn’t completed. Create a new SimpleFIN token and try again."
             } else {
                 message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
             }
@@ -822,7 +829,9 @@ final class AppModel {
         migrateCredentials(synchronizable: cloud)
         banner = cloud
             ? "iCloud Sync will be enabled the next time you open Cairn."
-            : "This Device Only takes effect the next time you open Cairn. Cairn now reads the credential from this device; the copy in iCloud Keychain is left for your other devices."
+            : "This Device Only takes effect the next time you open Cairn. Cairn now reads "
+                + "the credential from this device; the copy in iCloud Keychain is left for "
+                + "your other devices."
     }
 
     /// Stores the credential with the requested iCloud Keychain setting. Falls

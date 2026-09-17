@@ -38,26 +38,53 @@ deliberate: a failing check is the reminder that a deployment is outstanding.
 
 The order matters, because the last step cannot be undone:
 
-1. Create the CloudKit container if it is new, and set it in
-   `ICLOUD_CONTAINER_ID` (see [Where the container comes
-   from](#where-the-container-comes-from)).
-2. Run a **Debug** build signed into iCloud once, on a device, so the
-   Development environment creates the record types and fields.
-3. In **CloudKit Console → your container → Schema**, stay on **Development** and
-   confirm the fields that should be encrypted report as encrypted:
-   `payeeDescription`, `amountMinorUnits`, `note`, `normalizedMerchant`, the rule
-   amount bounds, `orgID`/`orgURL`/`sfinURL`, `lastSyncError`, the account and
-   holding names, `currencyCode`, and the custom-currency names. If any is
-   plaintext, fix the model and reset the Development schema — Development can be
-   reset as often as you like.
-4. Only then choose **Deploy Schema Changes**, which promotes Development to
-   Production.
-5. Record it: `Scripts/schema-hash.sh --record "what changed"`, then commit. This
-   is what turns CI green.
+1. **Create the container.** In the developer portal, create the CloudKit
+   container and enable **iCloud → CloudKit** for the App ID. Cairn's own
+   container is not derived from the bundle id, so it is set explicitly — see
+   [Where the container comes from](#where-the-container-comes-from).
+2. **Point your build at it.** Add `ICLOUD_CONTAINER_ID` to
+   `Config/Signing.local.xcconfig` (git-ignored):
+   `ICLOUD_CONTAINER_ID = <the container you just created>`.
+3. **Declare the whole schema at once, from a clean install.** Run a **Debug**
+   build with the `-cairn-initialize-cloudkit-schema` launch argument, on a
+   **fresh simulator or a clean install — never on a device that holds real
+   data**:
 
-A new container needs steps 2–5 even when no model changed, because the hash
-cannot see the container name (container names and bundle ids stay out of this
-repo).
+   ```sh
+   xcodebuild -project Cairn.xcodeproj -scheme Cairn -configuration Debug \
+     -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+   # then launch once with the argument (Xcode: Edit Scheme → Run → Arguments)
+   ```
+
+   The initializer builds its own `NSPersistentCloudKitContainer` over a
+   throwaway store in the temporary directory, calls
+   `initializeCloudKitSchema(options:)`, logs the result, and exits. It walks the
+   entire managed object model, so every record type and every field is declared
+   **whether or not a value exists for it** — the optional columns that a normal
+   run leaves nil would otherwise never appear, and a field missing from the
+   deploy cannot be added as encrypted later.
+
+   It never opens the app's own store, so no sample data and no old mirroring
+   metadata can reach the new container. That is also why you must not do this on
+   a device with real data: the app itself would be pointed at the new container.
+
+   You do **not** need to turn on iCloud Sync first. Sync is opt-in, and the
+   initializer talks to CloudKit directly rather than through the app's store —
+   it only needs a signed-in iCloud account.
+4. **Confirm encryption in Development.** In **CloudKit Console → your container
+   → Schema**, stay on **Development** and check that every field that should be
+   encrypted reports as encrypted: `payeeDescription`, `amountMinorUnits`, `note`,
+   `normalizedMerchant`, `postedDate`, `transactedAt`, the rule amount bounds,
+   `orgID`/`orgURL`/`sfinURL`, `lastSyncError`, the account and holding names,
+   `currencyCode`, `accountTypeRaw`, and the custom-currency names. If any is
+   plaintext, fix the model and reset the Development schema — Development resets
+   as often as you like.
+5. **Deploy to Production.** Only now choose **Deploy Schema Changes**.
+6. **Record it.** `Scripts/schema-hash.sh --record "what changed"`, then commit.
+   This is what turns CI green.
+
+A new container needs steps 2–6 even when no model changed, because the hash
+cannot see the container name.
 
 Skipping this does not fail loudly on the release itself: TestFlight keeps
 working against the old schema until a record carrying a new field is written,
