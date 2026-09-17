@@ -9,6 +9,15 @@ import SwiftData
 /// - Every scalar has a default value; relationships are optional.
 /// - Every relationship has an inverse, declared on one side.
 /// - Financial content is marked `@Attribute(.allowsCloudEncryption)`.
+///
+/// **Anything that reveals financial detail must be encrypted in the same change
+/// that introduces it.** CloudKit fixes a field's encryption setting when the
+/// schema is deployed to Production: it can never be flipped afterwards, in
+/// either direction. Adding a plaintext field and encrypting it "later" is
+/// therefore impossible without a parallel `…Encrypted` field and a data
+/// migration, so treat the encryption attribute as part of the field's type.
+/// `docs/releasing.md` covers the deployment step, and `ci.yml` fails when this
+/// file changes without a recorded promotion.
 public enum CairnSchemaV1: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
 
@@ -33,13 +42,17 @@ public enum CairnSchemaV1: VersionedSchema {
     public final class Institution {
         public var bankConnectionID: String = ""
         @Attribute(.allowsCloudEncryption) public var name: String = ""
-        public var orgID: String = ""
-        public var orgURL: String?
-        public var sfinURL: String = ""
+        /// SimpleFIN's own org identifier and the institution's website. Not
+        /// credentials, but they name the bank.
+        @Attribute(.allowsCloudEncryption) public var orgID: String = ""
+        @Attribute(.allowsCloudEncryption) public var orgURL: String?
+        @Attribute(.allowsCloudEncryption) public var sfinURL: String = ""
         public var credentialID: UUID = UUID()
         public var isActive: Bool = true
         public var lastSyncDate: Date?
-        public var lastSyncError: String?
+        /// Server-reported failures can name accounts, so this is treated as
+        /// content rather than diagnostics.
+        @Attribute(.allowsCloudEncryption) public var lastSyncError: String?
         public var createdAt: Date = Date.now
 
         // Per-institution SimpleFIN request budget. Each institution has its own
@@ -76,11 +89,12 @@ public enum CairnSchemaV1: VersionedSchema {
         public var bankAccountID: String = ""
         @Attribute(.allowsCloudEncryption) public var name: String = ""
         @Attribute(.allowsCloudEncryption) public var customDisplayName: String?
-        public var currencyCode: String = "USD"
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
         public var currencyExponent: Int = 2
         public var isCustomCurrency: Bool = false
-        public var customCurrencyName: String?
-        public var customCurrencyAbbreviation: String?
+        /// Loyalty programmes and points balances name what the person collects.
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
 
         @Attribute(.allowsCloudEncryption) public var balanceMinorUnits: Int64 = 0
         @Attribute(.allowsCloudEncryption) public var availableBalanceMinorUnits: Int64 = 0
@@ -173,11 +187,11 @@ public enum CairnSchemaV1: VersionedSchema {
         /// share counts never lose precision.
         @Attribute(.allowsCloudEncryption) public var sharesRaw: String?
 
-        public var currencyCode: String = "USD"
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
         public var currencyExponent: Int = 2
         public var isCustomCurrency: Bool = false
-        public var customCurrencyName: String?
-        public var customCurrencyAbbreviation: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
 
         @Attribute(.allowsCloudEncryption) public var marketValueMinorUnits: Int64 = 0
         @Attribute(.allowsCloudEncryption) public var costBasisMinorUnits: Int64 = 0
@@ -252,6 +266,9 @@ public enum CairnSchemaV1: VersionedSchema {
         // Bank-owned: overwritten on every sync.
         @Attribute(.allowsCloudEncryption) public var payeeDescription: String = ""
         @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
+        /// Dates stay plaintext on purpose. A date without its merchant or amount
+        /// says very little, and encrypted fields cannot be indexed or sorted
+        /// server-side — `[\.postedDate]` is indexed and drives every list.
         public var postedDate: Date?
         public var transactedAt: Date?
         public var isPending: Bool = false
@@ -282,8 +299,10 @@ public enum CairnSchemaV1: VersionedSchema {
         public var createdAt: Date = Date.now
 
         /// Lowercased merchant name used for grouping, recurring detection, and
-        /// import de-duplication.
-        public var normalizedMerchant: String = ""
+        /// import de-duplication. Derived from `payeeDescription`, which is
+        /// encrypted, so it has to be encrypted too — otherwise the plaintext
+        /// copy would give away what the description's encryption protects.
+        @Attribute(.allowsCloudEncryption) public var normalizedMerchant: String = ""
         /// True when the transaction was added by a CSV import rather than a sync.
         public var isImported: Bool = false
         /// When the on-device model last tried and failed to categorize this
@@ -427,8 +446,10 @@ public enum CairnSchemaV1: VersionedSchema {
         public var fieldRaw: String = RuleField.payee.rawValue
         public var matchKindRaw: String = RuleMatchKind.contains.rawValue
         @Attribute(.allowsCloudEncryption) public var pattern: String = ""
-        public var minAmountMinorUnits: Int64?
-        public var maxAmountMinorUnits: Int64?
+        /// Amount bounds say what the person considers worth a rule, so they are
+        /// content rather than configuration.
+        @Attribute(.allowsCloudEncryption) public var minAmountMinorUnits: Int64?
+        @Attribute(.allowsCloudEncryption) public var maxAmountMinorUnits: Int64?
         public var priority: Int = 0
         public var isEnabled: Bool = true
         public var createdAt: Date = Date.now
