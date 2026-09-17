@@ -95,9 +95,12 @@ xcodegen generate
 ```
 
 `Config/Signing.xcconfig` (committed) holds safe defaults and pulls in that
-local file via `#include?`. The CloudKit container is derived from your bundle
-identifier as `iCloud.<bundle id>`, so no shared container is baked into the
-repo and contributors never collide. Every configuration ships the same
+local file via `#include?`. One setting, `ICLOUD_CONTAINER_ID`, names the CloudKit
+container: it feeds both the entitlement and `Info.plist`, so the container the
+app requests is always the one it is entitled to. It defaults to
+`iCloud.<bundle id>`, so no shared container is baked into the repo and
+contributors never collide; override it when the container isn't derived from the
+bundle id. Every configuration ships the same
 entitlements (`Config/Cairn.entitlements`), so CloudKit and iCloud Keychain work
 in Debug as well as Release; whether iCloud is actually used is decided at
 runtime (`ubiquityIdentityToken`), with automatic local-only fallback when there

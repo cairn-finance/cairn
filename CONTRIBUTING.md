@@ -16,8 +16,9 @@ generated and git-ignored).
 Simulator builds need no signing configuration. For device builds or iCloud,
 copy `Config/Signing.example.xcconfig` to `Config/Signing.local.xcconfig`
 (git-ignored), set your `DEVELOPMENT_TEAM` and `PRODUCT_BUNDLE_IDENTIFIER`, then
-run `xcodegen generate`. Never commit team IDs or personal bundle identifiers;
-they belong in the local file, not `project.yml`.
+run `xcodegen generate`. Add `ICLOUD_CONTAINER_ID` only if your container is not
+`iCloud.<bundle id>`. Never commit team IDs, bundle identifiers, or container
+names; they belong in the local file, not `project.yml`.
 
 ## Ground rules
 
