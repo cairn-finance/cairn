@@ -66,15 +66,18 @@ forces local-only storage at runtime, and the test host always uses local storag
 
 - **CloudKit constraints**: no `@Attribute(.unique)`, every scalar has a default,
   relationships are optional with explicit inverses.
-- **Encrypted fields**: financial content uses
-  `@Attribute(.allowsCloudEncryption)`, including derived fields such as
-  `normalizedMerchant` (a plaintext copy would give away what encrypting
-  `payeeDescription` protects) and identifying metadata such as the institution's
-  org URL and the account's custom-currency names. Dates stay plaintext on
-  purpose: a date without its merchant or amount says little, and encrypted
-  fields cannot be indexed or sorted server-side. Encryption status is
-  irreversible once a schema reaches Production, which is why a new field's
-  encryption attribute is treated as part of its type — see
+- **Encrypted fields**: anything that reveals financial detail uses
+  `@Attribute(.allowsCloudEncryption)` — amounts, descriptions, notes, dates,
+  account and category names, `normalizedMerchant` (a plaintext copy would give
+  away what encrypting `payeeDescription` protects), and identifying metadata
+  such as the institution's org URL, the account type, and the account's
+  custom-currency names. What stays plaintext is sync bookkeeping, flags, and
+  opaque identifiers, which reveal little on their own: `modifiedAt`,
+  `modifiedByDeviceID`, `isPending`, `isTransfer`, `isIgnored`,
+  `hasAvailableBalance`, `displayOrder`, `credentialID`, `bankTransactionID`,
+  `bankAccountID`, `bankConnectionID`, and `accountIDIndex`.
+  Encryption status is irreversible once a schema reaches Production, which is
+  why a new field's encryption attribute is treated as part of its type — see
   [`docs/releasing.md`](releasing.md#cloudkit-schema-promotions) and
   `Scripts/schema-hash.sh`.
 - **Provenance**: transaction fields are split into bank-owned, automation-owned

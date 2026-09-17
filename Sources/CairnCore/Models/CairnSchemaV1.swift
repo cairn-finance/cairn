@@ -110,7 +110,10 @@ public enum CairnSchemaV1: VersionedSchema {
         /// institutions SimpleFIN can't reach (Apple Card, Apple Savings, cash,
         /// property, loans) and receive imported transactions.
         public var sourceRaw: String = AccountSource.simpleFIN.rawValue
-        public var accountTypeRaw: String = AccountType.other.rawValue
+        /// Which kind of account it is (checking, credit card, …). Metadata on
+        /// its own, but it narrows down what the rest of the record describes, so
+        /// it travels encrypted like the content.
+        @Attribute(.allowsCloudEncryption) public var accountTypeRaw: String = AccountType.other.rawValue
         @Attribute(.allowsCloudEncryption) public var startingBalanceMinorUnits: Int64 = 0
 
         public var institution: Institution?
@@ -266,11 +269,12 @@ public enum CairnSchemaV1: VersionedSchema {
         // Bank-owned: overwritten on every sync.
         @Attribute(.allowsCloudEncryption) public var payeeDescription: String = ""
         @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
-        /// Dates stay plaintext on purpose. A date without its merchant or amount
-        /// says very little, and encrypted fields cannot be indexed or sorted
-        /// server-side — `[\.postedDate]` is indexed and drives every list.
-        public var postedDate: Date?
-        public var transactedAt: Date?
+        /// Dates are encrypted like the rest of the content. CloudKit supports
+        /// `NSDate` in its encrypted payload, and it never queries or sorts by
+        /// these fields — sync uses change tokens, so only the local SQLite store
+        /// evaluates the `[\.postedDate]` index.
+        @Attribute(.allowsCloudEncryption) public var postedDate: Date?
+        @Attribute(.allowsCloudEncryption) public var transactedAt: Date?
         public var isPending: Bool = false
         public var currencyExponent: Int = 2
 
@@ -480,7 +484,7 @@ public enum CairnSchemaV1: VersionedSchema {
     /// transactions; snapshots act as anchors and speed up charts.
     @Model
     public final class BalanceSnapshot {
-        public var day: Date = Date.now
+        @Attribute(.allowsCloudEncryption) public var day: Date = Date.now
         @Attribute(.allowsCloudEncryption) public var balanceMinorUnits: Int64 = 0
         public var account: Account?
 
