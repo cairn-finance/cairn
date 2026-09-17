@@ -60,17 +60,41 @@ struct LockGate<Content: View>: View {
             guard locked, scenePhase == .active else { return }
             Task { await model.lock.unlock() }
         }
+        #if os(macOS)
+        // A Mac app goes inactive rather than to the background when the person
+        // switches away, and `.background` rarely arrives, so the lock would never
+        // re-engage while the app is running. Locking on these instead of on
+        // `.inactive` keeps the screen, the tab selection, and any unsaved text
+        // intact across ordinary app switching.
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidSleepNotification)) { _ in
+            model.lock.lock()
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)) { _ in
+            model.lock.lock()
+        }
+        .onReceive(DistributedNotificationCenter.default().publisher(for: cairnScreenIsLockedNotification)) { _ in
+            model.lock.lock()
+        }
+        #endif
     }
 }
+
+#if os(macOS)
+/// Posted by the system when the screen locks. It is a distributed notification
+/// rather than an `NSWorkspace` one, so it arrives on the distributed center.
+private let cairnScreenIsLockedNotification = Notification.Name("com.apple.screenIsLocked")
+#endif
 
 /// Covers a presented sheet while the app is locked.
 ///
 /// A sheet is drawn in its own window above the view that presented it, so the
 /// lock overlay in `LockGate` can never reach one. Sheet content opts in with
 /// this modifier, which keeps the sheet mounted — and any half-typed text — while
-/// hiding it behind the lock screen.
+/// hiding it behind the lock screen. It mirrors `LockGate`'s privacy cover too,
+/// so an open sheet isn't captured by the app switcher.
 private struct LockCoverModifier: ViewModifier {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
@@ -79,6 +103,13 @@ private struct LockCoverModifier: ViewModifier {
                     LockScreenView()
                         .transition(.opacity)
                         .zIndex(1)
+                }
+            }
+            .overlay {
+                if model.lock.isEnabled, scenePhase != .active {
+                    PrivacyCoverView()
+                        .transition(.opacity)
+                        .zIndex(2)
                 }
             }
             .animation(CairnTheme.Motion.standard, value: model.lock.isLocked)
