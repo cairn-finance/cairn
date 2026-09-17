@@ -16,7 +16,11 @@
 # deployed. Note the container in the release's ICLOUD_CONTAINER_ID, not here:
 # container names and bundle ids stay out of this repo by convention.
 #
+# The hashes come from the algorithm in Scripts/schema-hash.sh. If that algorithm
+# changes, older lines no longer match the current computation; only the newest
+# line matters for `--check`, so re-record the live schema and leave history be.
+#
 # If the container itself changes, the hash does not, so a new container needs
 # this step even when no model changed.
 
-2026-09-13  ff3851073f77809afa885ecc97836643b0b20cb25829b5381c3ef417564b3186  688b2da  first production promotion
+2026-09-13  1415eee53f1b8a109d196130eced8f6b52849a155ede945cdf7f7027209e80da  688b2da  first production promotion
