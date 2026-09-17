@@ -184,11 +184,6 @@ public actor WalletSyncEngine {
         return account
     }
 
-    /// Wallet account keys this device last saw. Device-local on purpose: it
-    /// records what *this* device can read from Wallet, which is what scopes
-    /// removal safely. See `WalletAccountRetention`.
-    private static let seenAccountsDefaultsKey = "cairn.wallet.seenAccountKeys"
-
     /// Removes only the Wallet accounts this device has seen before and no
     /// longer sees. Accounts it has never seen may belong to another device, and
     /// an empty result is never treated as "everything is gone".
@@ -198,7 +193,7 @@ public actor WalletSyncEngine {
         guard !seen.isEmpty else { return }
 
         let defaults = UserDefaults.standard
-        let previouslySeen = Set(defaults.stringArray(forKey: Self.seenAccountsDefaultsKey) ?? [])
+        let previouslySeen = WalletAccountRetention.previouslySeen(defaults: defaults)
 
         let source = AccountSource.financeKit.rawValue
         let accounts = try modelContext.fetch(
@@ -215,7 +210,7 @@ public actor WalletSyncEngine {
             outcome.accountsRemoved += 1
         }
 
-        defaults.set(Array(seen).sorted(), forKey: Self.seenAccountsDefaultsKey)
+        WalletAccountRetention.remember(seen, defaults: defaults)
     }
 
     // MARK: - Balances

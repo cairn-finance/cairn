@@ -347,7 +347,7 @@ struct SettingsView: View {
     /// uploaded, so there is nothing in iCloud to remove.
     private var deleteDataNote: String {
         if model.storeMode == .cloud {
-            "Delete All Data removes your transactions from this device and from your private iCloud database."
+            "Delete All Data removes everything here and asks iCloud to remove what your other devices can see, which finishes once the deletion uploads."
         } else {
             "This device isn’t using iCloud, so Delete All Data removes everything here; nothing was uploaded to delete."
         }

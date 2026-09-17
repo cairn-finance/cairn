@@ -13,6 +13,24 @@ import Foundation
 /// and no longer sees. Anything it has never seen belongs to another device and
 /// is left alone. Kept free of FinanceKit so it can be tested on any platform.
 public enum WalletAccountRetention {
+    /// Device-local memory of the Wallet account keys this device has seen. It
+    /// records what *this* device can read from FinanceKit, which is what scopes
+    /// removal safely. Deliberately not synced.
+    static let seenAccountsDefaultsKey = "cairn.wallet.seenAccountKeys"
+
+    public static func previouslySeen(defaults: UserDefaults = .standard) -> Set<String> {
+        Set(defaults.stringArray(forKey: seenAccountsDefaultsKey) ?? [])
+    }
+
+    public static func remember(_ keys: Set<String>, defaults: UserDefaults = .standard) {
+        defaults.set(Array(keys).sorted(), forKey: seenAccountsDefaultsKey)
+    }
+
+    /// Forgets the memory, so it never outlives the rows it describes.
+    public static func forget(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: seenAccountsDefaultsKey)
+    }
+
     /// Keys this device should delete, given device-local memory of what it saw
     /// last time, what it sees now, and what actually exists locally.
     ///

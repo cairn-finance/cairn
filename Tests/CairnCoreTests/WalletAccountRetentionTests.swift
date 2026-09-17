@@ -55,4 +55,25 @@ struct WalletAccountRetentionTests {
         )
         #expect(removed.isEmpty)
     }
+
+    @Test("Delete All Data clears the device-local memory with the rows")
+    func memoryIsForgotten() throws {
+        let name = "cairn.tests.walletRetention.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+
+        WalletAccountRetention.remember(["wallet-B", "wallet-A"], defaults: defaults)
+        #expect(WalletAccountRetention.previouslySeen(defaults: defaults) == ["wallet-A", "wallet-B"])
+
+        WalletAccountRetention.forget(defaults: defaults)
+        #expect(WalletAccountRetention.previouslySeen(defaults: defaults).isEmpty)
+        // The memory must not outlive the rows it describes, or a later sync
+        // would delete accounts it never actually saw.
+        let removed = WalletAccountRetention.keysToRemove(
+            previouslySeen: WalletAccountRetention.previouslySeen(defaults: defaults),
+            currentlySeen: ["wallet-A"],
+            storedKeys: ["wallet-A", "wallet-B"]
+        )
+        #expect(removed.isEmpty)
+    }
 }

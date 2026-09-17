@@ -787,6 +787,12 @@ final class AppModel {
         // app lock is part of "everything", so it is turned off and forgotten.
         UserDefaults.standard.removeObject(forKey: Self.Keys.appLockEnabled)
         lock.setEnabled(false)
+        // Wallet access is granted to the system rather than to us, so it can't
+        // be revoked here. Leaving the flag on would quietly re-import Apple Card
+        // data after "delete everything", so connecting again is explicit, like
+        // re-entering a SimpleFIN token.
+        walletSyncEnabled = false
+        WalletAccountRetention.forget()
 
         await DiagnosticsLog.shared.clear()
         recurringSeries = []
