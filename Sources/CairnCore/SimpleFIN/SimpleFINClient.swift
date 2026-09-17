@@ -11,8 +11,15 @@ public actor SimpleFINClient {
     /// Custom-currency descriptors (miles, points) are tiny and effectively
     /// static, so each URL is fetched once per client rather than on every sync.
     /// A lookup reveals this device's IP to the host named in the server's
-    /// response, so the fewer the better.
-    private var customCurrencyCache: [String: Currency] = [:]
+    /// response, so the fewer the better. Failures are remembered too, so a dead
+    /// host isn't retried on every sync in the same session.
+    private var customCurrencyCache: [String: CustomCurrencyLookup] = [:]
+
+    /// A descriptor that has been looked up, or a recorded failure.
+    private enum CustomCurrencyLookup {
+        case resolved(Currency)
+        case failed
+    }
 
     /// How many descriptor lookups one response may trigger, so a bad or hostile
     /// response can't turn a sync into a long serial crawl.
@@ -223,20 +230,37 @@ public actor SimpleFINClient {
 
         var resolved: [String: Currency] = [:]
         var lookups = 0
+        var warnedAboutLimit = false
         for value in urls.sorted() {
+            // Anything already known — including a host that failed — is served
+            // without spending one of the limited lookups.
             if let cached = customCurrencyCache[value] {
-                resolved[value] = cached
+                if case let .resolved(currency) = cached {
+                    resolved[value] = currency
+                }
                 continue
             }
             guard lookups < Self.customCurrencyLookupLimit else {
-                await cairnLog(.warning, "Skipping further custom-currency lookups for this sync.")
-                break
+                // Cached values above are still served; only new hosts are
+                // skipped, so a bad response can't turn a sync into a crawl.
+                if !warnedAboutLimit {
+                    warnedAboutLimit = true
+                    await cairnLog(.warning, "Skipping further custom-currency lookups for this sync.")
+                }
+                continue
             }
             lookups += 1
-            guard let url = URL(string: value) else { continue }
+            guard let url = URL(string: value) else {
+                customCurrencyCache[value] = .failed
+                continue
+            }
             if let currency = try? await fetchCustomCurrency(at: url) {
                 resolved[value] = currency
-                customCurrencyCache[value] = currency
+                customCurrencyCache[value] = .resolved(currency)
+            } else {
+                // Remember the failure, so a dead host isn't retried on every
+                // sync for the rest of the session.
+                customCurrencyCache[value] = .failed
             }
         }
         return resolved
