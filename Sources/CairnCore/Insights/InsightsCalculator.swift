@@ -189,10 +189,10 @@ public struct InsightsSnapshot: Sendable {
     public var projectedSpending: Int64 {
         if lastDayWithData >= 5 {
             let rate = Double(currentToDateSpending) / Double(max(1, lastDayWithData))
-            return Int64((rate * Double(daysInMonth)).rounded())
+            return MinorUnits.clampedFromDouble(rate * Double(daysInMonth))
         }
         if averageDailyPace > 0 {
-            return averageDailyPace * Int64(daysInMonth)
+            return MinorUnits.multiplyClamped(averageDailyPace, Int64(daysInMonth))
         }
         return current.spendingMinorUnits
     }

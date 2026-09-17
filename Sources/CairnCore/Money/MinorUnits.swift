@@ -97,6 +97,32 @@ public enum MinorUnits {
         value == .min ? .max : Swift.abs(value)
     }
 
+    /// Multiplies without trapping, for the same reason as ``addClamped``.
+    public static func multiplyClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (product, overflow) = lhs.multipliedReportingOverflow(by: rhs)
+        guard overflow else { return product }
+        return lhs.signum() == rhs.signum() ? .max : .min
+    }
+
+    /// Converts a rounded floating-point amount into the `Int64` range, saturating
+    /// instead of trapping.
+    ///
+    /// `Int64(_: Double)` is a fatal error when the value is out of range or not a
+    /// number, and these conversions sit on values derived from bank input. A
+    /// projection is also the easiest place to produce an infinity — a rate
+    /// divided by a very small denominator — so this must not be a plain cast.
+    public static func clampedFromDouble(_ value: Double) -> Int64 {
+        guard value.isFinite else {
+            return value > 0 ? .max : (value < 0 ? .min : 0)
+        }
+        let rounded = value.rounded()
+        // `Double(Int64.max)` rounds up past `Int64.max`, so compare against it
+        // rather than converting and checking afterwards.
+        if rounded >= Double(Int64.max) { return .max }
+        if rounded <= Double(Int64.min) { return .min }
+        return Int64(rounded)
+    }
+
     private static func powerOfTenDecimal(_ exponent: Int) -> Decimal {
         var result = Decimal(1)
         for _ in 0..<exponent { result *= 10 }
