@@ -131,7 +131,7 @@ public actor SyncEngine {
         now: Date,
         calendar: Calendar = .current
     ) throws -> SyncDecision {
-        guard let institution = self[institutionID, as: Institution.self] else {
+        guard let institution = liveInstitution(institutionID) else {
             throw SimpleFINError.transport("This institution is no longer in the local database.")
         }
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
@@ -182,7 +182,7 @@ public actor SyncEngine {
         now: Date,
         calendar: Calendar = .current
     ) async throws -> SyncOutcome {
-        guard let institution = self[institutionID, as: Institution.self] else {
+        guard let institution = liveInstitution(institutionID) else {
             throw SimpleFINError.transport("This institution is no longer in the local database.")
         }
 
@@ -205,7 +205,7 @@ public actor SyncEngine {
             await cairnLog(.info, "Requesting a \(windowDays)-day window (attempt \(index + 1) of \(candidates.count)).")
             // Re-resolve: a previous iteration's network call may have outlived
             // the row, and writing to a deleted model traps.
-            guard let live = self[institutionID, as: Institution.self] else {
+            guard let live = liveInstitution(institutionID) else {
                 throw SimpleFINError.transport("This institution is no longer in the local database.")
             }
             live.dailyRequestCount += 1
@@ -242,7 +242,7 @@ public actor SyncEngine {
                 await cairnLog(.error, "Sync failed: \(message)")
                 // The fetch can outlive the connection; only write if it is still
                 // there.
-                if let live = self[institutionID, as: Institution.self] {
+                if let live = liveInstitution(institutionID) {
                     live.lastSyncError = message
                     // The very first fetch failed, so the connection still wears
                     // its stand-in name; make sure it is at least readable.
@@ -258,7 +258,7 @@ public actor SyncEngine {
         // Every candidate window was rejected.
         let message = Self.describe(lastError)
         await cairnLog(.error, "Sync exhausted all windows: \(message)")
-        if let live = self[institutionID, as: Institution.self] {
+        if let live = liveInstitution(institutionID) {
             live.lastSyncError = message
             if Self.isPlaceholderName(live.name, for: accessURL) {
                 live.name = Self.fallbackName(for: accessURL)
@@ -282,7 +282,7 @@ public actor SyncEngine {
         now: Date,
         calendar: Calendar = .current
     ) async throws -> SyncOutcome {
-        guard let owner = self[institutionID, as: Institution.self] else {
+        guard let owner = liveInstitution(institutionID) else {
             throw SimpleFINError.transport("This institution is no longer in the local database.")
         }
 
@@ -1639,6 +1639,22 @@ public actor SyncEngine {
             && transaction.autoCategory == nil
             && !transaction.isIgnored
             && !transaction.isPending
+    }
+
+    /// Resolves an institution by asking the store, not the context's cache.
+    ///
+    /// `self[id, as: Institution.self]` hands back the copy this context already
+    /// holds without checking that the row still exists, so a deletion made
+    /// anywhere else — a batch `delete(model:)`, a removed connection, Delete All
+    /// Data from the main context — is invisible and the first write traps.
+    /// Fetching by identifier is the check that sees those.
+    ///
+    /// Returns nil when the row is gone; callers skip the write.
+    private func liveInstitution(_ id: PersistentIdentifier) -> Institution? {
+        let descriptor = FetchDescriptor<Institution>(
+            predicate: #Predicate { $0.persistentModelID == id }
+        )
+        return try? modelContext.fetch(descriptor).first
     }
 
     /// Re-fetches rows from the store after a suspension, dropping any that are
