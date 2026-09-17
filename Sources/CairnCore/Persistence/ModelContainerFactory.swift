@@ -32,12 +32,32 @@ public enum StoreMode: String, Sendable, CaseIterable, Codable {
 public struct ModelContainerFactory: Sendable {
     public static let cloudKitContainerID = "iCloud.com.example.cairn"
 
-    /// The CloudKit container to use at runtime. It follows the bundle
-    /// identifier (`iCloud.<bundle id>`), matching the entitlement, so each
-    /// developer's local signing automatically uses their own container.
+    /// Info.plist key carrying the configured CloudKit container. It is populated
+    /// from the `ICLOUD_CONTAINER_ID` build setting — the same one the
+    /// entitlement uses — so the container the app requests and the container it
+    /// is entitled to cannot drift apart.
+    public static let containerIDInfoPlistKey = "CairnCloudKitContainerID"
+
+    /// The CloudKit container to use at runtime.
+    ///
+    /// Prefers the configured value, because a container created under an
+    /// earlier bundle id (or shared between apps) is not `iCloud.<bundle id>`.
+    /// Falls back to that convention so a fresh clone, a test target, and a
+    /// developer running without the xcconfig all still work.
     public static var configuredCloudKitContainerID: String {
-        if let bundleID = Bundle.main.bundleIdentifier, !bundleID.isEmpty {
-            return "iCloud.\(bundleID)"
+        resolveCloudKitContainerID(
+            configured: Bundle.main.object(forInfoDictionaryKey: containerIDInfoPlistKey) as? String,
+            bundleIdentifier: Bundle.main.bundleIdentifier
+        )
+    }
+
+    /// The resolution rule, split out so it can be tested without a bundle.
+    public static func resolveCloudKitContainerID(configured: String?, bundleIdentifier: String?) -> String {
+        if let configured, !configured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return configured
+        }
+        if let bundleIdentifier, !bundleIdentifier.isEmpty {
+            return "iCloud.\(bundleIdentifier)"
         }
         return cloudKitContainerID
     }

@@ -10,6 +10,15 @@
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<!--
+	  The CloudKit container to sync through. It comes from the same
+	  `ICLOUD_CONTAINER_ID` build setting the entitlement uses, so the container
+	  the app requests and the one it is entitled to can never disagree.
+	  ModelContainerFactory reads this key and falls back to the bundle-id
+	  convention when it is absent or empty.
+	-->
+	<key>CairnCloudKitContainerID</key>
+	<string>$(ICLOUD_CONTAINER_ID)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

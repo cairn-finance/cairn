@@ -13,7 +13,13 @@ DEVELOPMENT_TEAM = ABCDE12345
 // control. Apple registers this as your App ID.
 PRODUCT_BUNDLE_IDENTIFIER = com.yourname.cairn
 
-// The CloudKit container is derived automatically as
-// `iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)`, so no separate setting is needed. It
-// must exist under your team (and be enabled for the App ID) before Release
+// The CloudKit container the app syncs through, and the same value its
+// entitlement requests. It defaults to the bundle-id convention, so most people
+// never set it. Set it when the container is *not* derived from the bundle id —
+// for example a container created before the app's bundle id settled, or one
+// shared by more than one app.
+//
+//     ICLOUD_CONTAINER_ID = iCloud.com.yourname.cairn.sync
+//
+// It must exist under your team (and be enabled for the App ID) before Release
 // builds sync through iCloud. See docs/architecture.md.

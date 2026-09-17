@@ -7,11 +7,28 @@
 //
 //     DEVELOPMENT_TEAM = YOUR_TEAM_ID
 //     PRODUCT_BUNDLE_IDENTIFIER = com.yourname.cairn
+//     ICLOUD_CONTAINER_ID = iCloud.com.yourname.cairn.sync   # only when it is
+//                                                            # not derived from
+//                                                            # the bundle id
 //
 // See Config/Signing.example.xcconfig and CONTRIBUTING.md.
 
 // A harmless placeholder. Override it locally with a bundle id you own.
 PRODUCT_BUNDLE_IDENTIFIER = com.example.cairn
+
+// The CloudKit container to sync through, and the value the entitlement
+// requests. Derived from the bundle id by default so a fresh clone uses its own
+// container and never tries to open someone else's.
+//
+// Override it (here or in Signing.local.xcconfig) when the container is not
+// `iCloud.<bundle id>` — for example once a container created under an earlier
+// bundle id is in use:
+//
+//     ICLOUD_CONTAINER_ID = iCloud.com.example.cairn.sync
+//
+// It must exist under your team, or iCloud Sync silently falls back to local
+// storage. See docs/releasing.md for the required production deployment step.
+ICLOUD_CONTAINER_ID = iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)
 
 // Empty by default so a fresh clone builds for the simulator without a team.
 DEVELOPMENT_TEAM =

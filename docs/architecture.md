@@ -42,11 +42,16 @@ flag change.
 
 Signing settings live in `Config/Signing.xcconfig` (committed defaults) plus an
 optional, git-ignored `Config/Signing.local.xcconfig` for each developer's team
-and bundle identifier. The entitlement references
-`iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)`, and the runtime derives the same value, so
-each developer gets their own `iCloud.<bundle id>` container instead of a shared
-one. Register that container (and enable CloudKit on the App ID) before using
-Release builds that sync through iCloud.
+and bundle identifier. One build setting, `ICLOUD_CONTAINER_ID`, defines the
+iCloud container: it feeds the entitlement's
+`com.apple.developer.icloud-container-identifiers` and the `CairnCloudKitContainerID`
+entry in `Info.plist`, which `ModelContainerFactory` reads at runtime. The
+container the app requests and the container it is entitled to therefore cannot
+disagree. It defaults to `iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)`, so each developer
+gets their own container instead of a shared one; override it (locally, or from
+the `ICLOUD_CONTAINER_ID` secret in CI) when the container is not derived from the
+bundle id. Register that container (and enable CloudKit on the App ID) before
+using Release builds that sync through iCloud.
 
 Every configuration ships the **same** iCloud entitlement, so CloudKit works in
 Debug and Release. Availability is decided at runtime in `CloudAvailability`:
@@ -62,8 +67,16 @@ forces local-only storage at runtime, and the test host always uses local storag
 - **CloudKit constraints**: no `@Attribute(.unique)`, every scalar has a default,
   relationships are optional with explicit inverses.
 - **Encrypted fields**: financial content uses
-  `@Attribute(.allowsCloudEncryption)`. Encryption status is irreversible after a
-  Production schema deploy, so it is fixed in schema version 1.
+  `@Attribute(.allowsCloudEncryption)`, including derived fields such as
+  `normalizedMerchant` (a plaintext copy would give away what encrypting
+  `payeeDescription` protects) and identifying metadata such as the institution's
+  org URL and the account's custom-currency names. Dates stay plaintext on
+  purpose: a date without its merchant or amount says little, and encrypted
+  fields cannot be indexed or sorted server-side. Encryption status is
+  irreversible once a schema reaches Production, which is why a new field's
+  encryption attribute is treated as part of its type — see
+  [`docs/releasing.md`](releasing.md#cloudkit-schema-promotions) and
+  `Scripts/schema-hash.sh`.
 - **Provenance**: transaction fields are split into bank-owned, automation-owned
   (`autoCategory`, `autoCategorySource`), and user-owned (`userCategory`, `note`,
   `tags`, `isTransfer`, `isIgnored`). No field has two writers, so CloudKit's

@@ -41,6 +41,39 @@ struct PersistenceTests {
         #expect(account.currency.exponent == 2)
     }
 
+    @Test("The configured CloudKit container wins over the bundle-id convention")
+    func containerIDResolution() {
+        // A container created under an earlier bundle id, or one shared between
+        // apps, is not `iCloud.<bundle id>`. The configured value has to win, or
+        // the app asks CloudKit for a container it is not entitled to — which
+        // traps the process instead of throwing.
+        #expect(
+            ModelContainerFactory.resolveCloudKitContainerID(
+                configured: "iCloud.com.example.cairn.sync",
+                bundleIdentifier: "com.example.cairn"
+            ) == "iCloud.com.example.cairn.sync"
+        )
+
+        // Absent or blank falls back to the convention, so a fresh clone, the
+        // test host, and an unsubstituted $(ICLOUD_CONTAINER_ID) all still work.
+        #expect(
+            ModelContainerFactory.resolveCloudKitContainerID(
+                configured: nil,
+                bundleIdentifier: "com.example.cairn"
+            ) == "iCloud.com.example.cairn"
+        )
+        #expect(
+            ModelContainerFactory.resolveCloudKitContainerID(
+                configured: "   ",
+                bundleIdentifier: "com.example.cairn"
+            ) == "iCloud.com.example.cairn"
+        )
+        #expect(
+            ModelContainerFactory.resolveCloudKitContainerID(configured: nil, bundleIdentifier: nil)
+                == ModelContainerFactory.cloudKitContainerID
+        )
+    }
+
     @Test("Every relationship has an inverse and is optional (CloudKit requirement)")
     func relationshipsAreCloudKitCompatible() {
         // CloudKit refuses to load a store when any relationship lacks an
