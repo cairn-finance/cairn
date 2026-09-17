@@ -28,9 +28,28 @@ enum BackgroundCategorization {
     #if os(iOS)
     /// A `BGTask` may only be completed from the handler, but it isn't
     /// `Sendable`; this box lets the completion hop to the main actor safely.
-    private final class TaskBox: @unchecked Sendable {
-        let task: BGProcessingTask
+    ///
+    /// It also owns the once-only gate. Completing a task twice traps, so every
+    /// exit — the work finishing, or the system reclaiming the task — funnels
+    /// through `finish`. Holding the gate in a class rather than a local closure
+    /// keeps it shareable across both exits: a nested function that captured
+    /// these locals had to be *sent* into each of them, which the compiler
+    /// rejects as a potential data race.
+    private final class TaskGate: @unchecked Sendable {
+        private let task: BGProcessingTask
+        private let done = Mutex(false)
+
         init(_ task: BGProcessingTask) { self.task = task }
+
+        func finish(success: Bool) {
+            let alreadyDone = done.withLock { done -> Bool in
+                if done { return true }
+                done = true
+                return false
+            }
+            guard !alreadyDone else { return }
+            task.setTaskCompleted(success: success)
+        }
     }
 
     static func register() {
@@ -61,21 +80,7 @@ enum BackgroundCategorization {
         let requiresPower = lastRequiresPower.withLock { $0 }
         schedule(requiresPower: requiresPower)
 
-        let box = TaskBox(processing)
-        let completed = Mutex(false)
-
-        // The system can reclaim the task at any moment, and completing one
-        // twice traps, so every exit funnels through a single gate.
-        func complete(success: Bool) {
-            let alreadyDone = completed.withLock { done -> Bool in
-                if done { return true }
-                done = true
-                return false
-            }
-            guard !alreadyDone else { return }
-            box.task.setTaskCompleted(success: success)
-        }
-
+        let gate = TaskGate(processing)
         let work = Mutex<Task<Void, Never>?>(nil)
 
         // Being reclaimed means "stop now". Cancel the pass and report it as
@@ -83,12 +88,12 @@ enum BackgroundCategorization {
         // completing the task.
         processing.expirationHandler = {
             work.withLock { $0 }?.cancel()
-            complete(success: false)
+            gate.finish(success: false)
         }
 
         let running = Task { @MainActor in
             await run?()
-            complete(success: true)
+            gate.finish(success: true)
         }
         work.withLock { $0 = running }
     }
