@@ -126,6 +126,21 @@ public struct KeychainCredentialStore: CredentialStore {
     }
 
     public func isSynchronizable(for id: UUID) throws -> Bool? {
+        try attributes(id: id)?[kSecAttrSynchronizable as String] as? Bool
+    }
+
+    public func accessibility(for id: UUID) throws -> CredentialAccessibility? {
+        guard let raw = try attributes(id: id)?[kSecAttrAccessible as String] as? String else { return nil }
+        if raw == (kSecAttrAccessibleAfterFirstUnlock as String) { return .afterFirstUnlock }
+        if raw == (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String) {
+            return .afterFirstUnlockThisDeviceOnly
+        }
+        return .other
+    }
+
+    /// The item's attributes regardless of synchronizability, or `nil` when
+    /// nothing is stored.
+    private func attributes(id: UUID) throws -> [String: Any]? {
         var query = commonAttributes(id: id)
         query[kSecReturnAttributes as String] = kCFBooleanTrue
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -135,8 +150,7 @@ public struct KeychainCredentialStore: CredentialStore {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         switch status {
         case errSecSuccess:
-            let attributes = result as? [String: Any]
-            return attributes?[kSecAttrSynchronizable as String] as? Bool
+            return result as? [String: Any]
         case errSecItemNotFound:
             return nil
         default:
@@ -195,6 +209,7 @@ public final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable
     private struct Item {
         var secret: String
         var synchronizable: Bool
+        var accessibility: CredentialAccessibility
     }
 
     private let lock = NSLock()
@@ -203,8 +218,26 @@ public final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable
     public init() {}
 
     public func store(_ secret: String, id: UUID, synchronizable: Bool) throws {
+        try store(
+            secret,
+            id: id,
+            synchronizable: synchronizable,
+            accessibility: synchronizable ? .afterFirstUnlock : .afterFirstUnlockThisDeviceOnly
+        )
+    }
+
+    /// Stores an item with an explicit accessibility class, mirroring what the
+    /// Keychain would report. Tests use it to reproduce a credential written by
+    /// an older build, which claimed to be device-only but carried the migratable
+    /// class.
+    public func store(
+        _ secret: String,
+        id: UUID,
+        synchronizable: Bool,
+        accessibility: CredentialAccessibility
+    ) throws {
         lock.lock(); defer { lock.unlock() }
-        items[id] = Item(secret: secret, synchronizable: synchronizable)
+        items[id] = Item(secret: secret, synchronizable: synchronizable, accessibility: accessibility)
     }
 
     public func secret(for id: UUID) throws -> String? {
@@ -215,6 +248,11 @@ public final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable
     public func isSynchronizable(for id: UUID) throws -> Bool? {
         lock.lock(); defer { lock.unlock() }
         return items[id]?.synchronizable
+    }
+
+    public func accessibility(for id: UUID) throws -> CredentialAccessibility? {
+        lock.lock(); defer { lock.unlock() }
+        return items[id]?.accessibility
     }
 
     public func delete(id: UUID) throws {

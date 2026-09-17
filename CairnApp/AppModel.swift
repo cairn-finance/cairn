@@ -849,14 +849,26 @@ final class AppModel {
         guard let institutions = try? container.mainContext.fetch(FetchDescriptor<Institution>()) else {
             return
         }
-        // Re-store every credential rather than skipping ones whose sync setting
-        // already matches: a rewrite also refreshes the item's accessibility
-        // class, which is how credentials created before device-only storage
-        // existed get upgraded to it.
+        // Rewrite only what differs. Rewriting a synced item pushes a new revision
+        // through iCloud Keychain to every device, so doing it unconditionally
+        // would generate sync traffic from every device on every launch. The one
+        // exception is a device-only item still carrying the older, backup-
+        // migratable accessibility class, which is refreshed once and then left
+        // alone.
         for institution in institutions {
-            guard let secret = try? credentials.secret(for: institution.credentialID) else { continue }
+            let id = institution.credentialID
+            guard let secret = try? credentials.secret(for: id) else { continue }
+            let currentSynchronizable = (try? credentials.isSynchronizable(for: id)) ?? nil
+            let currentAccessibility = (try? credentials.accessibility(for: id)) ?? nil
+            guard CredentialMigration.needsRewrite(
+                currentSynchronizable: currentSynchronizable,
+                currentAccessibility: currentAccessibility,
+                wantedSynchronizable: synchronizable
+            ) else {
+                continue
+            }
             do {
-                try credentials.store(secret, id: institution.credentialID, synchronizable: synchronizable)
+                try credentials.store(secret, id: id, synchronizable: synchronizable)
             } catch {
                 let name = institution.name.isEmpty ? "an institution" : institution.name
                 banner = "Couldn’t update iCloud Keychain sync for \(name): \(error.localizedDescription)"
