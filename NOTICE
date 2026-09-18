@@ -17,3 +17,6 @@ specific language governing permissions and limitations under the License.
 Cairn implements the SimpleFIN protocol to read user-authorized financial data.
 SimpleFIN is a separate project and is not affiliated with Cairn. See
 https://www.simplefin.org for details.
+
+The Apache License, Version 2.0, does not grant permission to use the "Cairn"
+name or the Cairn app icon to identify a derivative app.
