@@ -858,12 +858,16 @@ final class AppModel {
         for institution in institutions {
             let id = institution.credentialID
             guard let secret = try? credentials.secret(for: id) else { continue }
-            let currentSynchronizable = (try? credentials.isSynchronizable(for: id)) ?? nil
-            let currentAccessibility = (try? credentials.accessibility(for: id)) ?? nil
+            // Ask about each copy separately: after switching from iCloud to This
+            // Device Only both exist, and a lookup that ignores synchronizability
+            // can return the iCloud copy — which would make the local copy look
+            // wrong, and rewrite it, on every launch.
+            let deviceOnly = try? credentials.accessibility(for: id, synchronizable: false)
+            let synced = try? credentials.accessibility(for: id, synchronizable: true)
             guard CredentialMigration.needsRewrite(
-                currentSynchronizable: currentSynchronizable,
-                currentAccessibility: currentAccessibility,
-                wantedSynchronizable: synchronizable
+                wantedSynchronizable: synchronizable,
+                deviceOnlyAccessibility: deviceOnly,
+                syncedAccessibility: synced
             ) else {
                 continue
             }

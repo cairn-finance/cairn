@@ -125,12 +125,10 @@ public struct KeychainCredentialStore: CredentialStore {
         }
     }
 
-    public func isSynchronizable(for id: UUID) throws -> Bool? {
-        try attributes(id: id)?[kSecAttrSynchronizable as String] as? Bool
-    }
-
-    public func accessibility(for id: UUID) throws -> CredentialAccessibility? {
-        guard let raw = try attributes(id: id)?[kSecAttrAccessible as String] as? String else { return nil }
+    public func accessibility(for id: UUID, synchronizable: Bool) throws -> CredentialAccessibility? {
+        guard let raw = try attributes(id: id, synchronizable: synchronizable)?[kSecAttrAccessible as String] as? String else {
+            return nil
+        }
         if raw == (kSecAttrAccessibleAfterFirstUnlock as String) { return .afterFirstUnlock }
         if raw == (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String) {
             return .afterFirstUnlockThisDeviceOnly
@@ -138,13 +136,12 @@ public struct KeychainCredentialStore: CredentialStore {
         return .other
     }
 
-    /// The item's attributes regardless of synchronizability, or `nil` when
-    /// nothing is stored.
-    private func attributes(id: UUID) throws -> [String: Any]? {
+    /// The copy's attributes, or `nil` when that copy isn't stored.
+    private func attributes(id: UUID, synchronizable: Bool) throws -> [String: Any]? {
         var query = commonAttributes(id: id)
         query[kSecReturnAttributes as String] = kCFBooleanTrue
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        query[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
+        query[kSecAttrSynchronizable as String] = synchronizable
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -208,8 +205,9 @@ public struct KeychainCredentialStore: CredentialStore {
 public final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable {
     private struct Item {
         var secret: String
-        var synchronizable: Bool
-        var accessibility: CredentialAccessibility
+        /// One entry per stored copy, keyed by whether that copy syncs. Both can
+        /// exist at once, exactly as in the Keychain.
+        var copies: [Bool: CredentialAccessibility]
     }
 
     private let lock = NSLock()
@@ -226,10 +224,9 @@ public final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable
         )
     }
 
-    /// Stores an item with an explicit accessibility class, mirroring what the
+    /// Stores a copy with an explicit accessibility class, mirroring what the
     /// Keychain would report. Tests use it to reproduce a credential written by
-    /// an older build, which claimed to be device-only but carried the migratable
-    /// class.
+    /// an older build, or the two-copy state left behind by switching modes.
     public func store(
         _ secret: String,
         id: UUID,
@@ -237,7 +234,16 @@ public final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable
         accessibility: CredentialAccessibility
     ) throws {
         lock.lock(); defer { lock.unlock() }
-        items[id] = Item(secret: secret, synchronizable: synchronizable, accessibility: accessibility)
+        var item = items[id] ?? Item(secret: secret, copies: [:])
+        item.secret = secret
+        item.copies[synchronizable] = accessibility
+        // Mirroring the Keychain: moving to iCloud replaces this device's own
+        // copy, while moving to This Device Only leaves the iCloud copy alone for
+        // the other signed-in devices.
+        if synchronizable {
+            item.copies[false] = nil
+        }
+        items[id] = item
     }
 
     public func secret(for id: UUID) throws -> String? {
@@ -245,14 +251,9 @@ public final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable
         return items[id]?.secret
     }
 
-    public func isSynchronizable(for id: UUID) throws -> Bool? {
+    public func accessibility(for id: UUID, synchronizable: Bool) throws -> CredentialAccessibility? {
         lock.lock(); defer { lock.unlock() }
-        return items[id]?.synchronizable
-    }
-
-    public func accessibility(for id: UUID) throws -> CredentialAccessibility? {
-        lock.lock(); defer { lock.unlock() }
-        return items[id]?.accessibility
+        return items[id]?.copies[synchronizable]
     }
 
     public func delete(id: UUID) throws {

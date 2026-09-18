@@ -23,20 +23,27 @@ public enum CredentialMigration {
     /// Rewriting a synced item pushes a new revision through iCloud Keychain to
     /// every device, so it has to happen only when something actually differs —
     /// otherwise every launch of every device generates sync traffic.
+    ///
+    /// Each copy is asked about separately, because both can exist at once: after
+    /// switching from iCloud to This Device Only the device-only copy is added and
+    /// the iCloud copy is deliberately left in place for the other devices. A
+    /// lookup that ignores synchronizability returns whichever copy it happens to
+    /// match, which would make the local copy look wrong — and rewrite it — on
+    /// every launch.
     public static func needsRewrite(
-        currentSynchronizable: Bool?,
-        currentAccessibility: CredentialAccessibility?,
-        wantedSynchronizable: Bool
+        wantedSynchronizable: Bool,
+        deviceOnlyAccessibility: CredentialAccessibility?,
+        syncedAccessibility: CredentialAccessibility?
     ) -> Bool {
-        // Nothing stored under this id yet, so there is nothing to rewrite.
-        guard let currentSynchronizable else { return false }
-        if currentSynchronizable != wantedSynchronizable { return true }
-        // Device-only items written before this rule existed still carry the
-        // older, backup-migratable class. Refresh those once, then leave them be.
-        if !wantedSynchronizable, currentAccessibility != .afterFirstUnlockThisDeviceOnly {
-            return true
+        if wantedSynchronizable {
+            // One iCloud copy is all this mode wants, and iCloud Keychain fixes
+            // its accessibility class.
+            return syncedAccessibility == nil
         }
-        return false
+        // Device-only mode wants a local copy that cannot ride along in a backup.
+        // A device-only item written before that rule existed still carries the
+        // older, migratable class: refresh those once, then leave them be.
+        return deviceOnlyAccessibility != .afterFirstUnlockThisDeviceOnly
     }
 }
 
@@ -52,16 +59,13 @@ public protocol CredentialStore: Sendable {
     /// Reads a secret, or `nil` when none is stored.
     func secret(for id: UUID) throws -> String?
 
-    /// Whether the stored item currently syncs through iCloud Keychain, or `nil`
-    /// when no item is stored. Used to avoid rewriting (and churning the synced
-    /// copy of) a credential that already has the desired mode.
-    func isSynchronizable(for id: UUID) throws -> Bool?
-
-    /// The accessibility class of the stored item, or `nil` when no item is
-    /// stored. Lets a migration tell a device-only item that already has the
-    /// device-only class from one written before that rule existed, so it only
-    /// rewrites the latter.
-    func accessibility(for id: UUID) throws -> CredentialAccessibility?
+    /// The accessibility class of the copy with the given synchronizability, or
+    /// `nil` when that copy is not stored.
+    ///
+    /// Lets a migration tell a device-only copy that already has the device-only
+    /// class from one written before that rule existed, without having to guess
+    /// which of the two copies a lookup would return.
+    func accessibility(for id: UUID, synchronizable: Bool) throws -> CredentialAccessibility?
 
     func delete(id: UUID) throws
 
