@@ -5,7 +5,12 @@
 [![License](https://img.shields.io/github/license/sehejjain/cairn)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2026%20%C2%B7%20iPadOS%2026%20%C2%B7%20macOS%2026-blue)](#requirements)
 [![Swift 6](https://img.shields.io/badge/Swift-6-orange)](#build)
-[![TestFlight](https://img.shields.io/badge/TestFlight-join%20the%20beta-0D96F6?logo=apple&logoColor=white)](TESTFLIGHT_PUBLIC_LINK)
+![TestFlight beta: coming soon](https://img.shields.io/badge/TestFlight-beta%20coming%20soon-lightgrey)
+
+<!-- When the public beta is live, replace the badge above with
+     [![TestFlight](https://img.shields.io/badge/TestFlight-join%20the%20beta-0D96F6?logo=apple&logoColor=white)](TESTFLIGHT_PUBLIC_LINK)
+     and link the "Try it" line to TESTFLIGHT_PUBLIC_LINK. That is the
+     placeholder for the public TestFlight URL. -->
 
 Cairn is a privacy-first personal finance app for iPhone, iPad, and Mac, for
 people who want to see their whole financial picture without handing it to a
@@ -34,7 +39,7 @@ no budgets, reports, or exchange rates yet.
 
 ## Try it
 
-- Join the beta: **[TESTFLIGHT_PUBLIC_LINK]**
+- TestFlight beta: **coming soon**.
 - Bank sync needs a [SimpleFIN Bridge](https://www.simplefin.org) account, which
   is a separate paid service. Cairn talks to it directly; there is no Cairn
   server in between.
