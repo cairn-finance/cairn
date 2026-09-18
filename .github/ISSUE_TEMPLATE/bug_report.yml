@@ -1,0 +1,65 @@
+name: Bug report
+description: Report something that isn't working in Cairn.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make Cairn better. Please **do not paste account
+        numbers, balances, transactions, or your SimpleFIN Access URL** — they
+        are private, and we can usually diagnose a bug without them. If a
+        screenshot helps, redact or blur anything financial first.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings → About → Version (for example, 0.3.0 (1234)).
+      placeholder: "0.3.0 (1234)"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and OS
+      description: Which device, and which OS version?
+      placeholder: "iPhone 17 Pro, iOS 26.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Data source
+      description: Which part of Cairn is involved?
+      options:
+        - SimpleFIN (bank sync)
+        - Apple Wallet (FinanceKit)
+        - Manual account
+        - CSV import
+        - Not sure / something else
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, and what happened?
+      placeholder: |
+        1. Open …
+        2. Tap …
+        3. See …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Logs, screenshots (redacted), or other context.
+    validations:
+      required: false

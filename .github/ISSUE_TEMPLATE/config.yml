@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/sehejjain/cairn/security/policy
+    about: Please report security issues privately, following SECURITY.md — never in a public issue.
+  - name: Questions and support
+    url: https://sehejjain.github.io/cairn/support.html
+    about: Setup and troubleshooting questions are answered on the support site.

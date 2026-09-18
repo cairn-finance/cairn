@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest an idea or improvement for Cairn.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Cairn to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: |
+        Cairn is deliberately local and account-free. Features that require a
+        Cairn server or collecting personal data are out of scope. See
+        [CONTRIBUTING.md](https://github.com/sehejjain/cairn/blob/main/CONTRIBUTING.md).
