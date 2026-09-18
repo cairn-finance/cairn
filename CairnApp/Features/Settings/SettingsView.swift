@@ -488,8 +488,13 @@ struct SettingsView: View {
                     Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                 }
             }
-            Link(destination: URL(string: "https://github.com/sehejjain/cairn/blob/main/docs/privacy-policy.md")!) {
+            Link(destination: URL(string: "https://sehejjain.github.io/cairn/privacy.html")!) {
                 IconRow("Privacy Policy", systemImage: "hand.raised.fill", tint: .gray) {
+                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+            Link(destination: URL(string: "https://sehejjain.github.io/cairn/support.html")!) {
+                IconRow("Support", systemImage: "questionmark.circle.fill", tint: .gray) {
                     Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                 }
             }
