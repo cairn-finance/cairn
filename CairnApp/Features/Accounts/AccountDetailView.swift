@@ -148,7 +148,11 @@ struct AccountDetailView: View {
                             Text(account.accountType.isLiability ? "Available credit" : "Available")
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.6))
-                            AmountText(money: account.availableBalance, font: .subheadline.weight(.semibold), colorOverride: .white)
+                            AmountText(
+                                money: account.availableBalance,
+                                font: .subheadline.weight(.semibold),
+                                colorOverride: .white
+                            )
                         }
                     }
                     VStack(alignment: .leading, spacing: 2) {
@@ -257,7 +261,9 @@ struct AccountDetailView: View {
     private func changeSentence(_ delta: Int64) -> String {
         if delta == 0 { return "Balance unchanged over the period." }
         let money = Money(minorUnits: abs(delta), currency: account.currency)
-        return "\(delta > 0 ? "Up" : "Down") \(money.formatted()) since \(Calendar.current.date(byAdding: .day, value: -90, to: .now)?.formatted(date: .abbreviated, time: .omitted) ?? "90 days ago")."
+        let since = Calendar.current.date(byAdding: .day, value: -90, to: .now)?
+            .formatted(date: .abbreviated, time: .omitted) ?? "90 days ago"
+        return "\(delta > 0 ? "Up" : "Down") \(money.formatted()) since \(since)."
     }
 
     private var emptyTransactions: some View {
@@ -455,7 +461,10 @@ struct TransactionDetailView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(selected ? Color.white : tint)
                 .frame(width: 24, height: 24)
-                .background(selected ? Color.white.opacity(0.22) : tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(
+                    selected ? Color.white.opacity(0.22) : tint.opacity(0.14),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
             Text(category.name)
                 .font(.subheadline.weight(selected ? .semibold : .medium))
                 .foregroundStyle(selected ? Color.white : Color.primary)
@@ -548,7 +557,10 @@ struct TransactionDetailView: View {
                     .lineLimit(2...6)
                     .textFieldStyle(.plain)
                     .padding(12)
-                    .background(CairnTheme.surfaceInset, in: RoundedRectangle(cornerRadius: CairnTheme.controlRadius, style: .continuous))
+                    .background(
+                        CairnTheme.surfaceInset,
+                        in: RoundedRectangle(cornerRadius: CairnTheme.controlRadius, style: .continuous)
+                    )
             }
         }
     }

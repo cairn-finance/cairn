@@ -184,7 +184,7 @@ struct AutoCategorizationTests {
         }
 
         let corrected = make("T1")
-        let other = make("T2")
+        _ = make("T2")
         corrected.userCategory = rent
         try context.save()
 
