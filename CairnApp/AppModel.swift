@@ -450,7 +450,6 @@ final class AppModel {
                 + "Connect again, or forget it with Not Now."
             return false
         }
-        syncState = .syncing
         await cairnLog(.info, "Reconnecting saved credential for \(credential.host).")
 
         // A row may have arrived while this was pending — iCloud delivered it,
@@ -468,6 +467,9 @@ final class AppModel {
             return false
         }
 
+        // Only now that the reconnect will proceed: a dropped offer above must
+        // leave the sync state alone rather than stuck on "Syncing…".
+        syncState = .syncing
         do {
             try await establishInstitution(accessURL: accessURL, credentialID: id)
             removeRecoverable(id: id)
