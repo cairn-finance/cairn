@@ -30,6 +30,10 @@ enum SampleData {
             sfinURL: "https://bridge.simplefin.org"
         )
         institution.lastSyncDate = now
+        // Settings reads the *successful* fetch time, not lastSyncDate, so set
+        // both or the sample account looks connected on Home but "Never" in
+        // Settings. Sample mode only; the real sync path sets this itself.
+        institution.lastSuccessfulFetch = now
         context.insert(institution)
 
         let checking = Account(bankAccountID: "ACT-CHK", name: "Everyday Checking", currency: .usd)
