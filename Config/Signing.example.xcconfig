@@ -23,3 +23,9 @@ PRODUCT_BUNDLE_IDENTIFIER = com.yourname.cairn
 //
 // It must exist under your team (and be enabled for the App ID) before Release
 // builds sync through iCloud. See docs/architecture.md.
+//
+// Setting it repoints every local build, including Debug runs on devices that
+// already hold data: with iCloud Sync on, that device's store — and any old
+// mirroring metadata — would be uploaded to the new container. Wipe or reinstall
+// the app, or leave sync off, before running normally on those devices. The
+// schema initializer is safe anywhere: it uses its own throwaway store.

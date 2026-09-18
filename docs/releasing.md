@@ -45,6 +45,13 @@ The order matters, because the last step cannot be undone:
 2. **Point your build at it.** Add `ICLOUD_CONTAINER_ID` to
    `Config/Signing.local.xcconfig` (git-ignored):
    `ICLOUD_CONTAINER_ID = <the container you just created>`.
+
+   This repoints **every** local build, not just the initializer. A Debug run on
+   a device that already holds data will, with iCloud Sync on, upload that
+   device's store — including any old mirroring metadata — into the new
+   container. Wipe or reinstall the app, or leave sync off, before running
+   normally on those devices. The initializer itself is safe anywhere, because it
+   builds its own throwaway store.
 3. **Declare the whole schema at once, from a clean install.** Run a **Debug**
    build with the `-cairn-initialize-cloudkit-schema` launch argument, on a
    **fresh simulator or a clean install — never on a device that holds real

@@ -31,6 +31,12 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.cairn
 // unregistered container traps the process when CloudKit is asked for it — see
 // CloudAvailability. See docs/releasing.md for the required production
 // deployment step.
+//
+// Changing it repoints *every* local build, including Debug runs on devices that
+// already hold data: with iCloud Sync on, that device's store — and any old
+// mirroring metadata — would be uploaded to the new container. Wipe or reinstall
+// the app, or leave sync off, before running normally on those devices. The
+// schema initializer is safe anywhere, because it builds its own throwaway store.
 ICLOUD_CONTAINER_ID = iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)
 
 // Empty by default so a fresh clone builds for the simulator without a team.
