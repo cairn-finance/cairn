@@ -428,6 +428,9 @@ final class AppModel {
         do {
             try await establishInstitution(accessURL: accessURL, credentialID: id)
             removeRecoverable(id: id)
+            // Reconnecting from onboarding has to leave that screen; from
+            // Settings the app is already past it.
+            if !onboardingComplete { completeOnboarding() }
             return true
         } catch {
             let message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
