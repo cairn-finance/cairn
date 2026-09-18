@@ -73,28 +73,34 @@ struct InsightsView: View {
         InsightsCalculator.snapshot(
             transactions: insightTransactions,
             month: month,
-            historyMonths: 6,
+            historyMonths: InsightsCalculator.defaultHistoryMonths,
             now: .now
         )
     }
 
     private var insightTransactions: [InsightTransaction] {
-        currencyAccounts.flatMap { account in
-            (account.transactions ?? []).map { transaction in
-                InsightTransaction(
-                    date: transaction.effectiveDate,
-                    amountMinorUnits: transaction.amountMinorUnits,
-                    categoryName: transaction.effectiveCategory?.name,
-                    categoryColorHex: transaction.effectiveCategory?.colorHex,
-                    merchant: transaction.normalizedMerchant.isEmpty
-                        ? transaction.payeeDescription
-                        : transaction.normalizedMerchant,
-                    accountName: account.displayName,
-                    isTransfer: transaction.countsAsTransfer,
-                    isIgnored: transaction.isIgnored,
-                    isPending: transaction.isPending
-                )
-            }
+        // Rows older than the snapshot's window cannot change any part of it, and
+        // on a long ledger they are most of the store, so they are dropped before
+        // a value is built for them.
+        let earliest = InsightsCalculator.earliestUsedDate(month: month)
+        return currencyAccounts.flatMap { account in
+            (account.transactions ?? [])
+                .filter { $0.effectiveDate >= earliest }
+                .map { transaction in
+                    InsightTransaction(
+                        date: transaction.effectiveDate,
+                        amountMinorUnits: transaction.amountMinorUnits,
+                        categoryName: transaction.effectiveCategory?.name,
+                        categoryColorHex: transaction.effectiveCategory?.colorHex,
+                        merchant: transaction.normalizedMerchant.isEmpty
+                            ? transaction.payeeDescription
+                            : transaction.normalizedMerchant,
+                        accountName: account.displayName,
+                        isTransfer: transaction.countsAsTransfer,
+                        isIgnored: transaction.isIgnored,
+                        isPending: transaction.isPending
+                    )
+                }
         }
     }
 

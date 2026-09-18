@@ -225,10 +225,31 @@ public enum InsightsCalculator {
     public static let uncategorizedName = "Uncategorized"
     public static let uncategorizedColorHex = "#8E8E93"
 
+    /// How many months of history a snapshot carries.
+    ///
+    /// Callers that assemble `InsightTransaction` values from a whole store can
+    /// skip anything older than ``earliestUsedDate(month:historyMonths:calendar:)``,
+    /// and share this constant so their window cannot drift from this one.
+    public static let defaultHistoryMonths = 6
+
+    /// The oldest date a snapshot can use. Anything older than this cannot
+    /// affect any part of it, so building values for it is wasted work — and on a
+    /// long ledger most rows are older.
+    public static func earliestUsedDate(
+        month: Date,
+        historyMonths: Int = defaultHistoryMonths,
+        calendar: Calendar = .current
+    ) -> Date {
+        let monthStart = startOfMonth(month, calendar: calendar)
+        // A month of slack: the window is `historyMonths` ending at this month,
+        // so this never drops a row the snapshot would have counted.
+        return calendar.date(byAdding: .month, value: -max(1, historyMonths), to: monthStart) ?? monthStart
+    }
+
     public static func snapshot(
         transactions: [InsightTransaction],
         month: Date,
-        historyMonths: Int = 6,
+        historyMonths: Int = defaultHistoryMonths,
         now: Date = .now,
         calendar: Calendar = .current
     ) -> InsightsSnapshot {

@@ -1689,7 +1689,13 @@ public actor SyncEngine {
     /// bump clears those automatic rows first, so a remembered guess can always be
     /// revised by a later, better build.
     private func buildMerchantMemory() throws -> MerchantMemory {
-        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        // Only rows carrying a category can say anything about how the person
+        // categorizes; the rest contribute nothing but the cost of materializing
+        // them, and on a long ledger that is most of the store.
+        let descriptor = FetchDescriptor<LedgerTransaction>(
+            predicate: #Predicate { $0.userCategory != nil || $0.autoCategory != nil }
+        )
+        let transactions = try modelContext.fetch(descriptor)
         var userKeys = Set<String>()
         var userSamples: [MemorySample] = []
         var automaticSamples: [MemorySample] = []

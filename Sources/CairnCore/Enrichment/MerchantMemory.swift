@@ -37,6 +37,22 @@ public struct MerchantMemory: Sendable {
     public let confidence: [String: Double]
     public let samples: [MemorySample]
 
+    /// One entry per distinct merchant, for the fuzzy pass.
+    ///
+    /// `samples` holds one entry per transaction, so a merchant the person has
+    /// corrected fifty times appears fifty times. Comparing a query against every
+    /// one of those is what made the fuzzy pass quadratic — a few hundred
+    /// merchants repeated thousands of times — so each merchant is represented
+    /// once, by the majority category the exact pass already chose, with its
+    /// tokens precomputed rather than re-split for every pair.
+    private struct DistinctMerchant: Sendable {
+        let key: String
+        let categoryID: UUID
+        let tokens: Set<String>
+    }
+
+    private let distinct: [DistinctMerchant]
+
     public init(samples: [MemorySample]) {
         self.samples = samples
 
@@ -47,6 +63,7 @@ public struct MerchantMemory: Sendable {
 
         var exact: [String: UUID] = [:]
         var confidence: [String: Double] = [:]
+        var distinct: [DistinctMerchant] = []
         for (key, tally) in tallies {
             let total = tally.values.reduce(0, +)
             guard let best = tally.max(by: { lhs, rhs in
@@ -55,10 +72,14 @@ public struct MerchantMemory: Sendable {
             }) else { continue }
             exact[key] = best.key
             confidence[key] = total > 0 ? Double(best.value) / Double(total) : 0
+            distinct.append(
+                DistinctMerchant(key: key, categoryID: best.key, tokens: Self.tokens(of: key))
+            )
         }
 
         self.exact = exact
         self.confidence = confidence
+        self.distinct = distinct
     }
 
     public var isEmpty: Bool { samples.isEmpty }
@@ -85,27 +106,42 @@ public struct MerchantMemory: Sendable {
     ) -> (categoryID: UUID, score: Double)? {
         let key = memoryKey(for: merchant)
         guard !key.isEmpty else { return nil }
+        let keyTokens = Self.tokens(of: key)
 
         var best: (categoryID: UUID, score: Double)?
-        for sample in samples {
-            let score = Self.similarity(key, memoryKey(for: sample.merchantKey))
+        for candidate in distinct {
+            let score = Self.similarity(key, keyTokens, candidate.key, candidate.tokens)
             guard score >= threshold else { continue }
             if score > (best?.score ?? 0) {
-                best = (sample.categoryID, score)
+                best = (candidate.categoryID, score)
             }
         }
         return best
+    }
+
+    /// The tokens a normalized key is compared by.
+    private static func tokens(of key: String) -> Set<String> {
+        Set(key.split(separator: " ").map(String.init))
     }
 
     /// Token-aware similarity. When one merchant's tokens are a subset of the
     /// other's ("trader joes" ⊂ "trader joes market") that is a strong signal
     /// even though the edit distance would be poor.
     static func similarity(_ lhs: String, _ rhs: String) -> Double {
+        similarity(lhs, tokens(of: lhs), rhs, tokens(of: rhs))
+    }
+
+    /// The same comparison with both token sets already in hand, so a pass over
+    /// many candidates tokenizes each string once instead of once per pair.
+    static func similarity(
+        _ lhs: String,
+        _ lhsTokens: Set<String>,
+        _ rhs: String,
+        _ rhsTokens: Set<String>
+    ) -> Double {
         if lhs == rhs { return 1 }
         guard !lhs.isEmpty, !rhs.isEmpty else { return 0 }
 
-        let lhsTokens = Set(lhs.split(separator: " ").map(String.init))
-        let rhsTokens = Set(rhs.split(separator: " ").map(String.init))
         let intersection = lhsTokens.intersection(rhsTokens).count
         guard intersection > 0 else { return TextSimilarity.ratio(lhs, rhs) }
 

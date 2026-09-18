@@ -173,6 +173,47 @@ struct InsightsCalculatorTests {
         #expect(snapshot.projectedSpending == 13_000)
         #expect(snapshot.topMoverNames.contains("Groceries"))
     }
+
+    @Test("Nothing older than the window can change a snapshot")
+    func olderRowsCannotChangeASnapshot() {
+        // `InsightsView` relies on this: it stops building values for rows older
+        // than `earliestUsedDate`, which on a long ledger is most of the store.
+        let month = date(2026, 6, 1)
+        let inWindow = InsightTransaction(
+            date: date(2026, 3, 15),
+            amountMinorUnits: -1_000,
+            categoryName: "Groceries",
+            merchant: "Whole Foods"
+        )
+        let ancient = InsightTransaction(
+            date: date(2025, 1, 15),
+            amountMinorUnits: -999_999,
+            categoryName: "Dining",
+            merchant: "Ancient Merchant"
+        )
+        #expect(InsightsCalculator.earliestUsedDate(month: month, calendar: Self.calendar) <= date(2026, 3, 15))
+
+        let withoutAncient = InsightsCalculator.snapshot(
+            transactions: [inWindow],
+            month: month,
+            now: month,
+            calendar: Self.calendar
+        )
+        let withAncient = InsightsCalculator.snapshot(
+            transactions: [inWindow, ancient],
+            month: month,
+            now: month,
+            calendar: Self.calendar
+        )
+        #expect(withAncient.current.spendingMinorUnits == withoutAncient.current.spendingMinorUnits)
+        #expect(withAncient.previous.spendingMinorUnits == withoutAncient.previous.spendingMinorUnits)
+        #expect(withAncient.months == withoutAncient.months)
+        #expect(withAncient.averageDailyPace == withoutAncient.averageDailyPace)
+        #expect(withAncient.previousToDateSpending == withoutAncient.previousToDateSpending)
+        #expect(withAncient.categories.count == withoutAncient.categories.count)
+        #expect(withAncient.topMerchants.count == withoutAncient.topMerchants.count)
+        #expect(withAncient.transactionCount == withoutAncient.transactionCount)
+    }
 }
 
 @Suite("Merchant memory")
@@ -200,6 +241,36 @@ struct MerchantMemoryTests {
         ])
         #expect(memory.category(forMerchant: "Trader Joes")?.categoryID == groceries)
         #expect(memory.categoryBySimilarity(forMerchant: "Trader Joes Market")?.categoryID == groceries)
+    }
+
+    @Test("The fuzzy pass judges each merchant once, by its majority category")
+    func similarMerchantUsesMajority() {
+        // The outlier comes first on purpose: the old pass kept whichever
+        // duplicate happened to score first, so it could return a category the
+        // majority vote (and the exact pass) would never choose.
+        let memory = MerchantMemory(samples: [
+            MemorySample(merchant: "Trader Joe's", categoryID: dining),
+            MemorySample(merchant: "Trader Joe's", categoryID: groceries),
+            MemorySample(merchant: "Trader Joe's", categoryID: groceries),
+        ])
+        #expect(memory.categoryBySimilarity(forMerchant: "Trader Joes Market")?.categoryID == groceries)
+    }
+
+    @Test("A merchant's cost does not grow with how often it was corrected")
+    func repeatedMerchantsCollapseInTheFuzzyPass() {
+        // One merchant, two thousand corrections: the fuzzy pass used to compare
+        // a query against every one of them.
+        let samples = (0..<2_000).map { _ in
+            MemorySample(merchant: "Blue Bottle Coffee", categoryID: dining)
+        }
+        let memory = MerchantMemory(samples: samples)
+
+        let started = Date()
+        for _ in 0..<200 {
+            _ = memory.categoryBySimilarity(forMerchant: "Blue Bottle Coffe")
+        }
+        let elapsed = Date().timeIntervalSince(started)
+        #expect(elapsed < 1, "the fuzzy pass must scale with merchants, not transactions")
     }
 
     @Test("Returns nothing when there is no prior knowledge")
