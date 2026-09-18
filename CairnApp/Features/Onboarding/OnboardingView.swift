@@ -80,14 +80,24 @@ struct OnboardingView: View {
                         Button {
                             Task { await model.reconnect(credential) }
                         } label: {
-                            Text("Reconnect")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(CairnTheme.ink)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(CairnTheme.cream, in: Capsule())
+                            HStack(spacing: 6) {
+                                if model.reconnectingCredentialIDs.contains(credential.id) {
+                                    ProgressView().controlSize(.mini).tint(CairnTheme.ink)
+                                }
+                                Text(
+                                    model.reconnectingCredentialIDs.contains(credential.id)
+                                        ? "Reconnecting…"
+                                        : "Reconnect"
+                                )
+                            }
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(CairnTheme.ink)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(CairnTheme.cream, in: Capsule())
                         }
                         .buttonStyle(.plain)
+                        .disabled(model.reconnectingCredentialIDs.contains(credential.id))
                         Button {
                             credentialToForget = credential
                         } label: {

@@ -71,6 +71,9 @@ final class AppModel {
 
     /// Keychain credentials with no `Institution` row, offered for reconnection.
     private(set) var recoverableCredentials: [RecoverableCredential] = []
+    /// Credentials whose reconnect is currently in flight, so the action can be
+    /// disabled and a second tap ignored.
+    private(set) var reconnectingCredentialIDs: Set<UUID> = []
 
     /// Automatic categorization progress, surfaced in Insights.
     enum CategorizationState: Equatable {
@@ -392,6 +395,12 @@ final class AppModel {
     /// credential id, so no second copy is stored.
     @discardableResult
     func reconnect(_ credential: RecoverableCredential) async -> Bool {
+        // One reconnect per credential. Both taps run on the main actor, so the
+        // guard and the insert happen before this pass can suspend.
+        guard !reconnectingCredentialIDs.contains(credential.id) else { return false }
+        reconnectingCredentialIDs.insert(credential.id)
+        defer { reconnectingCredentialIDs.remove(credential.id) }
+
         guard let secret = try? credentials.secret(for: credential.id),
               let accessURL = URL(string: secret) else {
             banner = "That saved SimpleFIN connection couldn’t be read. "
@@ -400,9 +409,25 @@ final class AppModel {
         }
         syncState = .syncing
         await cairnLog(.info, "Reconnecting saved credential for \(credential.host).")
+
+        // A row may have arrived while this was pending — iCloud delivered it,
+        // or another pass created it. Re-check after the await and drop the
+        // offer rather than inserting a second institution for one credential.
+        let id = credential.id
+        let existing = (try? container.mainContext.fetch(
+            FetchDescriptor<Institution>(predicate: #Predicate { $0.credentialID == id })
+        )) ?? []
+        guard CredentialRecovery.shouldRebuild(
+            credentialID: id,
+            institutionCredentialIDs: existing.map(\.credentialID)
+        ) else {
+            removeRecoverable(id: id)
+            return false
+        }
+
         do {
-            try await establishInstitution(accessURL: accessURL, credentialID: credential.id)
-            removeRecoverable(id: credential.id)
+            try await establishInstitution(accessURL: accessURL, credentialID: id)
+            removeRecoverable(id: id)
             return true
         } catch {
             let message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription

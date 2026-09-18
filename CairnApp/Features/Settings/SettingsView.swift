@@ -231,11 +231,15 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Reconnect") {
-                        Task { await model.reconnect(credential) }
+                    if model.reconnectingCredentialIDs.contains(credential.id) {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Reconnect") {
+                            Task { await model.reconnect(credential) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
                 }
                 .swipeActions {
                     Button("Forget", systemImage: "trash", role: .destructive) {

@@ -38,4 +38,17 @@ public enum CredentialRecovery {
         let orphans = storedCredentialIDs.filter { !known.contains($0) }
         return orphans.isEmpty ? .none : .offer(credentialIDs: orphans)
     }
+
+    /// Whether a reconnect should still build a connection for `credentialID`.
+    ///
+    /// Re-checked after a reconnect's first `await`, because an institution row
+    /// can arrive in the meantime (iCloud, or another pass). If one now
+    /// references the credential, the offer is dropped rather than creating a
+    /// second institution for it.
+    public static func shouldRebuild(
+        credentialID: UUID,
+        institutionCredentialIDs: [UUID]
+    ) -> Bool {
+        !institutionCredentialIDs.contains(credentialID)
+    }
 }

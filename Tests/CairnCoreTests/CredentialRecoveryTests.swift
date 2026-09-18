@@ -84,4 +84,19 @@ struct CredentialRecoveryTests {
             ) == .none
         )
     }
+
+    @Test("A reconnect is abandoned if an institution arrives meanwhile")
+    func shouldRebuildRechecks() {
+        // The re-check runs after the reconnect's first await, so a row that
+        // arrived in the meantime (iCloud, or another pass) wins over building
+        // a second institution for the same credential.
+        let id = UUID()
+        #expect(CredentialRecovery.shouldRebuild(credentialID: id, institutionCredentialIDs: []))
+        #expect(
+            !CredentialRecovery.shouldRebuild(
+                credentialID: id,
+                institutionCredentialIDs: [UUID(), id]
+            )
+        )
+    }
 }
