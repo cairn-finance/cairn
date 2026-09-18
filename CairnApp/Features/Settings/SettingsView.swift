@@ -66,7 +66,13 @@ struct SettingsView: View {
             document: exportDocument,
             contentType: exportType,
             defaultFilename: "cairn-transactions"
-        ) { _ in }
+        ) { result in
+            if case let .failure(error) = result {
+                // Cancelling the save dialog is a choice, not a failure.
+                guard (error as? CocoaError)?.code != .userCancelled else { return }
+                model.banner = "Export failed: \(error.localizedDescription)"
+            }
+        }
         .confirmationDialog(
             "Delete all Cairn data?",
             isPresented: $showingDeleteConfirm,
@@ -417,7 +423,7 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Exports include every transaction and your categories and notes. Nothing is uploaded; the file is shared through the system share sheet.")
+            Text("Exports include every transaction and your categories and notes. Nothing is uploaded; the file is saved where you choose.")
         }
     }
 
