@@ -1,18 +1,51 @@
-# Cairn
+![Cairn — Your money. Your data. No account, no server, no tracking.](docs/images/banner.png)
 
-**Your money. Your data. No account, no server, no tracking.**
+[![CI](https://github.com/sehejjain/cairn/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sehejjain/cairn/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/sehejjain/cairn)](https://github.com/sehejjain/cairn/releases/latest)
+[![License](https://img.shields.io/github/license/sehejjain/cairn)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-iOS%2026%20%C2%B7%20iPadOS%2026%20%C2%B7%20macOS%2026-blue)](#requirements)
+[![Swift 6](https://img.shields.io/badge/Swift-6-orange)](#build)
+[![TestFlight](https://img.shields.io/badge/TestFlight-join%20the%20beta-0D96F6?logo=apple&logoColor=white)](TESTFLIGHT_PUBLIC_LINK)
 
-Cairn is a privacy-first personal finance app for iPhone, iPad, and Mac. It reads
-balances and transactions from the bank accounts you authorize through
-[SimpleFIN](https://www.simplefin.org), enriches them entirely on your device,
-and — if you choose — syncs them across your devices using your own iCloud
-private database.
+Cairn is a privacy-first personal finance app for iPhone, iPad, and Mac, for
+people who want to see their whole financial picture without handing it to a
+company. It reads the bank accounts you authorize through
+[SimpleFIN](https://www.simplefin.org) and Apple Wallet, enriches everything on
+your device, and — if you choose — syncs between your devices through your own
+private iCloud database. There is no Cairn backend. Ever.
 
-There is no Cairn backend. Ever.
+## Screenshots
 
-```
-SimpleFIN server (Bridge or your bank)  ──►  your device  ──►  your iCloud (optional)
-```
+| iPhone — Home | iPhone — Insights | iPhone — Subscriptions |
+| --- | --- | --- |
+| ![Cairn home screen on iPhone, showing net worth and account balances](docs/images/iphone-home.png) | ![Cairn Insights screen on iPhone, showing spending pace and category breakdown](docs/images/iphone-insights.png) | ![Cairn subscriptions screen on iPhone, showing detected recurring payments](docs/images/iphone-subscriptions.png) |
+
+| Mac — Home |
+| --- |
+| ![Cairn home window on Mac, showing net worth and account balances](docs/images/mac-home.png) |
+
+## Status
+
+Cairn is in **public beta on TestFlight**, heading toward **1.0 on the App
+Store**. It is usable today for read-only tracking of real accounts; there are
+no budgets, reports, or exchange rates yet.
+
+## Try it
+
+- Join the beta: **[TESTFLIGHT_PUBLIC_LINK]**
+- Bank sync needs a [SimpleFIN Bridge](https://www.simplefin.org) account, which
+  is a separate paid service. Cairn talks to it directly; there is no Cairn
+  server in between.
+- You can use Cairn without SimpleFIN: add manual accounts and import CSV
+  exports from your bank or another app.
+- Apple Wallet import (Apple Card, Apple Cash, Savings) works on iPhone and
+  iPad. On the Mac, Wallet accounts appear through **iCloud Sync**.
+- **This is a beta.** Bank transactions can always be downloaded again from
+  SimpleFIN, and a saved connection can be reconnected without a new setup
+  token. But notes, tags, categories, rules, manual accounts, and CSV imports
+  live only in Cairn — turn on iCloud Sync, or export from **Settings → Your
+  data**, if you rely on them.
+- Requires iOS 26, iPadOS 26, or macOS 26.
 
 ## What it does
 
@@ -37,20 +70,24 @@ SimpleFIN server (Bridge or your bank)  ──►  your device  ──►  your 
 
 ## Privacy
 
-- **No server, no analytics, no third-party SDKs.** The only network traffic is to
-  the SimpleFIN server you configure, plus your own iCloud database if you turn
-  sync on. Nothing is sent to us. If a bank reports a custom currency (miles,
-  points), Cairn fetches that descriptor once from the HTTPS URL the SimpleFIN
-  response names, and caches it.
+- **No server, no analytics, no third-party SDKs.** The only network traffic is
+  to the SimpleFIN server you configure, plus your own iCloud database if you
+  turn sync on. Nothing is sent to us. If a bank reports a custom currency
+  (miles, points), Cairn fetches that descriptor once from the HTTPS URL the
+  SimpleFIN response names, and caches it.
 - Apple Wallet data is read through FinanceKit on-device and mirrored into the
   same store as everything else, so it follows the same storage choice.
-- Categorization runs on-device. When Apple Intelligence is used, transaction text
-  is handled by the system model locally and never sent to a server.
+- Categorization runs on-device. When Apple Intelligence is used, transaction
+  text is handled by the system model locally and never sent to a server.
 - The SimpleFIN Access URL is a bearer credential and lives in the **Keychain**,
   never in the database or logs.
-- `amountMinorUnits`, `balanceMinorUnits`, `description`, `note`, and names use
-  `@Attribute(.allowsCloudEncryption)`, so they are end-to-end encrypted
-  independent of Advanced Data Protection.
+- Every field that reveals financial detail is marked
+  `@Attribute(.allowsCloudEncryption)`: balance and amount minor units, account
+  and holding values, transaction descriptions, dates and normalized merchant
+  names, notes, institution/account/category/tag names, currency codes and
+  custom-currency labels, account type, and rule names, patterns, and amount
+  bounds. CloudKit encrypts those fields end-to-end, independent of Advanced
+  Data Protection.
 - Financial amounts are stored as integer minor units — exact, and never a float.
 
 See [`docs/threat-model.md`](docs/threat-model.md) and
@@ -85,8 +122,7 @@ The Xcode project is generated and not checked in. Edit `project.yml`, not the
 ### Signing (device builds and iCloud)
 
 The simulator needs no signing setup. To build for a device or enable iCloud
-sync, put your own team and bundle identifier in a git-ignored local file — they
-are never committed:
+sync, put your own team and bundle identifier in a git-ignored local file:
 
 ```sh
 cp Config/Signing.example.xcconfig Config/Signing.local.xcconfig
@@ -94,17 +130,13 @@ cp Config/Signing.example.xcconfig Config/Signing.local.xcconfig
 xcodegen generate
 ```
 
-`Config/Signing.xcconfig` (committed) holds safe defaults and pulls in that
-local file via `#include?`. One setting, `ICLOUD_CONTAINER_ID`, names the CloudKit
-container: it feeds both the entitlement and `Info.plist`, so the container the
-app requests is always the one it is entitled to. It defaults to
-`iCloud.<bundle id>`, so no shared container is baked into the repo and
-contributors never collide; override it when the container isn't derived from the
-bundle id. Every configuration ships the same
-entitlements (`Config/Cairn.entitlements`), so CloudKit and iCloud Keychain work
-in Debug as well as Release; whether iCloud is actually used is decided at
-runtime (`ubiquityIdentityToken`), with automatic local-only fallback when there
-is no iCloud account.
+`Config/Signing.xcconfig` holds safe defaults and pulls in that local file via
+`#include?`. `ICLOUD_CONTAINER_ID` names the CloudKit container and defaults to
+`iCloud.<bundle id>`, so no shared container is baked into the repo. Every
+configuration ships the same entitlements, so CloudKit and iCloud Keychain work
+in Debug as well as Release; whether iCloud is used is decided at runtime
+(`ubiquityIdentityToken`), with local-only fallback when there is no account.
+See [`docs/releasing.md`](docs/releasing.md) for the details.
 
 ### Running without a SimpleFIN token
 
@@ -124,19 +156,6 @@ without a simulator. The app target is a thin SwiftUI layer.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full picture.
 
-## Project status
-
-**v0.3.0** — Read-only SimpleFIN sync (Bridge and bank-hosted servers), Apple
-Wallet through FinanceKit, on-device categorization with rules, merchant memory,
-and an optional Apple Intelligence pass, subscriptions and recurring payments,
-notes/tags/transfers, investments and holdings, per-currency net worth with
-derived history, Insights, CSV import, CSV + JSON export, and an optional
-Face ID / Touch ID lock. Not included yet: budgets, reports, and exchange rates.
-
-If the console looks noisy, see
-[`docs/troubleshooting.md`](docs/troubleshooting.md) — most of it is framework
-logging, and it explains the two or three messages that aren't.
-
 ## Releasing
 
 Releases are cut from `main` by pushing a `vX.Y.Z` tag. CI runs the tests,
@@ -148,7 +167,8 @@ Scripts/release.sh patch    # or minor / major
 ```
 
 See [`docs/releasing.md`](docs/releasing.md) for the versioning scheme, the
-required repository secrets, and the hotfix flow.
+required repository secrets, the CloudKit schema-promotion step, and the hotfix
+flow.
 
 ## Contributing
 
