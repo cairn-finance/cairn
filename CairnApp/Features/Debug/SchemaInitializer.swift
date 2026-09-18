@@ -47,7 +47,16 @@ enum SchemaInitializer {
         let container = makeContainer(containerID: containerID)
         container.loadPersistentStores { _, error in
             if let error {
-                report("Could not open the throwaway store: \(error.localizedDescription)")
+                report("Could not open the throwaway store:")
+                describe(error)
+                exit(1)
+            }
+            // Check the model against CloudKit's rules first: a model it cannot
+            // translate fails with "A Core Data error occurred." and no clue as to
+            // which field, and there is no point in a CloudKit round trip for that.
+            let problems = validateForCloudKit(container.managedObjectModel)
+            guard problems.isEmpty else {
+                report("Fix those, then run this again. Nothing was sent to CloudKit.")
                 exit(1)
             }
             do {
@@ -62,9 +71,147 @@ enum SchemaInitializer {
                 )
                 exit(0)
             } catch {
-                report("CloudKit refused the schema: \(error.localizedDescription)")
+                report("CloudKit refused the schema:")
+                describe(error)
                 exit(1)
             }
+        }
+    }
+
+    /// Prints the whole error chain.
+    ///
+    /// Core Data wraps the useful part: a refusal surfaces as "A Core Data error
+    /// occurred." with the field or rule that was rejected buried in
+    /// `NSUnderlyingErrorKey` or `NSDetailedErrorsKey`. Without this the tool
+    /// reports a dead end instead of something to act on.
+    private static func describe(_ error: any Error, depth: Int = 0) {
+        guard depth < 6 else { return }
+        let nsError = error as NSError
+        let indent = String(repeating: "  ", count: depth)
+        report("\(indent)\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)")
+        for key in [NSLocalizedFailureReasonErrorKey, NSLocalizedRecoverySuggestionErrorKey] {
+            if let value = nsError.userInfo[key] {
+                report("\(indent)  \(key): \(value)")
+            }
+        }
+        for detail in (nsError.userInfo[NSDetailedErrorsKey] as? [NSError]) ?? [] {
+            describe(detail, depth: depth + 1)
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            describe(underlying, depth: depth + 1)
+        }
+    }
+
+    /// Reports every way the model breaks Core Data's CloudKit requirements.
+    ///
+    /// `initializeCloudKitSchema` answers a model it cannot translate with "A
+    /// Core Data error occurred." and nothing else, which is useless from a
+    /// terminal or a CI log. These are the documented requirements — every
+    /// attribute optional or given a default, every relationship optional and
+    /// with an inverse, no uniqueness constraints, nothing encrypted in an index,
+    /// and only CloudKit-compatible attribute types — so a refusal names the
+    /// offending field.
+    private static func validateForCloudKit(_ model: NSManagedObjectModel) -> [String] {
+        var problems: [String] = []
+        var notes: [String] = []
+        var typeCounts: [String: Int] = [:]
+
+        for entity in model.entities {
+            let entityName = entity.name ?? "unnamed entity"
+
+            if !entity.uniquenessConstraints.isEmpty {
+                problems.append("\(entityName): CloudKit has no uniqueness constraints.")
+            }
+
+            // Everything an index touches, so an encrypted attribute can be named.
+            var indexed: Set<String> = []
+            for index in entity.indexes {
+                for element in index.elements {
+                    if let property = element.property {
+                        indexed.insert(property.name)
+                    }
+                }
+            }
+
+            for (name, attribute) in entity.attributesByName {
+                let type = typeName(attribute.attributeType)
+                typeCounts[type, default: 0] += 1
+
+                if !attribute.isOptional, attribute.defaultValue == nil {
+                    problems.append("\(entityName).\(name): not optional and has no default value.")
+                }
+                if attribute.allowsCloudEncryption, indexed.contains(name) || attribute.isIndexed {
+                    problems.append(
+                        "\(entityName).\(name): encrypted, so CloudKit cannot index it — take it out of #Index."
+                    )
+                }
+                if !isCloudKitCompatible(attribute.attributeType) {
+                    problems.append("\(entityName).\(name): \(type) is not a CloudKit attribute type.")
+                }
+                if attribute.allowsCloudEncryption, !attribute.isOptional {
+                    notes.append("\(entityName).\(name) is encrypted and required")
+                }
+            }
+
+            for (name, relationship) in entity.relationshipsByName {
+                if !relationship.isOptional {
+                    problems.append("\(entityName).\(name): relationships must be optional for CloudKit.")
+                }
+                if relationship.inverseRelationship == nil {
+                    problems.append("\(entityName).\(name): relationships need an inverse.")
+                }
+                if relationship.deleteRule == .denyDeleteRule {
+                    problems.append("\(entityName).\(name): the deny delete rule is not supported by CloudKit.")
+                }
+            }
+        }
+
+        report("Model check: \(problems.count) violation(s).")
+        for problem in problems {
+            report("  violation: \(problem)")
+        }
+        if !notes.isEmpty {
+            report("  for review: \(notes.joined(separator: "; ")).")
+        }
+        let summary = typeCounts.keys.sorted()
+            .map { "\($0)=\(typeCounts[$0] ?? 0)" }
+            .joined(separator: " ")
+        report("  attribute types: \(summary)")
+        return problems
+    }
+
+    /// CloudKit's field types are a subset of Core Data's.
+    private static func isCloudKitCompatible(_ type: NSAttributeType) -> Bool {
+        switch type {
+        case .stringAttributeType, .integer16AttributeType, .integer32AttributeType,
+             .integer64AttributeType, .doubleAttributeType, .floatAttributeType,
+             .booleanAttributeType, .dateAttributeType, .binaryDataAttributeType,
+             .decimalAttributeType, .UUIDAttributeType, .URIAttributeType:
+            return true
+        default:
+            // `.transformableAttributeType`, `.objectIDAttributeType`,
+            // `.undefinedAttributeType`: nothing CloudKit can store.
+            return false
+        }
+    }
+
+    private static func typeName(_ type: NSAttributeType) -> String {
+        switch type {
+        case .stringAttributeType: return "string"
+        case .integer16AttributeType: return "int16"
+        case .integer32AttributeType: return "int32"
+        case .integer64AttributeType: return "int64"
+        case .doubleAttributeType: return "double"
+        case .floatAttributeType: return "float"
+        case .booleanAttributeType: return "boolean"
+        case .dateAttributeType: return "date"
+        case .binaryDataAttributeType: return "data"
+        case .decimalAttributeType: return "decimal"
+        case .UUIDAttributeType: return "uuid"
+        case .URIAttributeType: return "uri"
+        case .transformableAttributeType: return "transformable"
+        case .objectIDAttributeType: return "objectID"
+        default: return "unknown(\(type.rawValue))"
         }
     }
 
@@ -75,6 +222,11 @@ enum SchemaInitializer {
             exit(1)
         }
         let container = NSPersistentCloudKitContainer(name: "CairnSchemaInit", managedObjectModel: model)
+        var attributeCount = 0
+        for entity in model.entities {
+            attributeCount += entity.attributesByName.count
+        }
+        report("Model: \(model.entities.count) entities, \(attributeCount) attributes.")
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "CairnSchemaInit",
