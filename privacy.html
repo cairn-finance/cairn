@@ -13,7 +13,7 @@
 </header>
 <main>
   <h1>Privacy Policy</h1>
-  <p class="muted">Last updated: September 2026</p>
+  <p class="muted">Last updated: September 18, 2026</p>
 
   <p>Cairn is a personal finance app that runs on your device. <strong>The Cairn project operates no servers and collects no personal data.</strong></p>
 
@@ -26,10 +26,16 @@
       <strong>SimpleFIN.</strong> When you connect an institution, Cairn requests balances and transactions from the SimpleFIN server you choose (for example, the SimpleFIN Bridge or your bank's own server). That request goes directly from your device to that server, authorized by credentials you provide.
     </li>
     <li>
-      <strong>iCloud, only if you enable iCloud Sync.</strong> Your data is stored in your own private CloudKit database. Financial fields — amounts, balances, descriptions, notes, and names — use CloudKit encrypted fields, which are end-to-end encrypted with keys from your iCloud Keychain. Apple can see that records exist and when they changed, but not their financial content. If you choose "This Device Only," nothing is sent to iCloud at all.
+      <strong>Custom-currency descriptors.</strong> If a bank reports a custom currency such as miles or points, the SimpleFIN response names an HTTPS URL describing it, and Cairn fetches that URL once and caches it. That request goes to the host in the response, which therefore sees your device's IP address. It carries no financial data.
     </li>
     <li>
-      <strong>Apple Wallet (Apple Card, Apple Cash, Savings), only if you enable that import.</strong> If Cairn reads Apple Card, Apple Cash, or Apple Savings data, it does so on-device through Apple's FinanceKit framework. That data is stored with the rest of your Cairn data under the same rules as above and is never sent to Cairn or to Apple by the app.
+      <strong>iCloud, only if you enable iCloud Sync.</strong> Your data is stored in your own private CloudKit database. Financial fields (amounts, balances, descriptions, notes, and names) use CloudKit encrypted fields, which are end-to-end encrypted with keys from your iCloud Keychain. Apple operates that database and can see that records exist and when they changed, but not their financial content. If you choose "This Device Only," nothing is sent to iCloud at all.
+    </li>
+    <li>
+      <strong>Apple Wallet, on-device.</strong> If you connect Apple Wallet, Cairn reads Apple Card, Apple Cash, and Savings activity through Apple's FinanceKit framework on your device and mirrors it into the same local store as everything else. That data then follows the storage choice above: it stays on the device under "This Device Only," and joins your private iCloud database only if you turn iCloud Sync on — where, like the rest of your data, it reaches Apple's servers with the financial fields end-to-end encrypted.
+    </li>
+    <li>
+      <strong>On-device categorization.</strong> Categorization runs on your device. When Apple Intelligence is available it may use the system model to suggest a category for a merchant; that work happens locally, and transaction text is not sent to a server. Rule-based categorization and merchant memory never leave the device at all.
     </li>
     <li>
       <strong>No one else.</strong> There is no Cairn backend, and no data is sold or shared.
@@ -37,20 +43,20 @@
   </ul>
 
   <h2>Credentials</h2>
-  <p>Your SimpleFIN access URL is a bearer credential. It is stored only in the device Keychain. When iCloud Sync is on it syncs through iCloud Keychain, which is end-to-end encrypted. When iCloud Sync is off it is stored non-synchronizably and never leaves the device.</p>
+  <p>Your SimpleFIN Access URL is a bearer credential. It is stored only in the device Keychain. When iCloud Sync is on it syncs through iCloud Keychain, which is end-to-end encrypted. When iCloud Sync is off it is stored non-synchronizably with device-only protection and never leaves the device.</p>
+  <p>Note that turning iCloud Sync off stops <em>this</em> device from using the synced credential, but does not remove an existing copy from iCloud Keychain, because that copy is what your other devices sync with. Removing the connection deletes the credential where you remove it, along with the synced copy; a device-only copy on another device stays until you remove it there too.</p>
 
   <h2>Your control</h2>
   <ul>
     <li><strong>Export</strong> every transaction to CSV or JSON at any time.</li>
-    <li><strong>Delete All Data</strong> removes all local data and, if sync is enabled, your data in iCloud.</li>
-    <li>You can revoke Cairn's access at your SimpleFIN Bridge at any time.</li>
+    <li><strong>Delete All Data</strong> removes all local data and, if sync is enabled, your data in iCloud. You can also revoke Cairn's access at your SimpleFIN Bridge.</li>
   </ul>
 
   <h2>Children</h2>
   <p>Cairn is not directed at children and collects no data from anyone.</p>
 
   <h2>Changes</h2>
-  <p>Material changes to this policy will be noted in the repository's release history.</p>
+  <p>Material changes will be noted in the repository's release history.</p>
 
   <h2>Contact</h2>
   <p>Open an issue at <a href="https://github.com/sehejjain/cairn/issues">github.com/sehejjain/cairn/issues</a>.</p>
