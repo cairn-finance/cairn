@@ -163,4 +163,40 @@ struct PersistenceTests {
         #expect(transaction.effectiveCategory?.name == "Dining")
         #expect(transaction.isCategorizedByUser)
     }
+
+    @Test("A failed store open is surfaced, never replaced by an in-memory store")
+    func failedOpenIsSurfaced() {
+        struct DiskFull: LocalizedError {
+            var errorDescription: String? { "the disk is full" }
+        }
+        // The real `make` throws only after its cloud -> local fallback also
+        // failed, so this is the "even local failed" case. It must become a
+        // surfaced failure rather than a usable store.
+        let outcome = ModelContainerFactory.openForLaunch(requestedMode: .local) { _, _ in
+            throw DiskFull()
+        }
+        guard case let .failed(message) = outcome else {
+            Issue.record("expected .failed, got \(outcome)")
+            return
+        }
+        #expect(message == "the disk is full")
+    }
+
+    @Test("A successful open is passed through with its CloudKit fallback reason")
+    func successfulOpenPassesThrough() throws {
+        let local = try ModelContainerFactory.make(mode: .local, inMemory: true)
+        let outcome = ModelContainerFactory.openForLaunch(requestedMode: .cloud) { _, _ in
+            ModelContainerFactory.Result(
+                container: local.container,
+                mode: .local,
+                cloudFallbackReason: "no iCloud account"
+            )
+        }
+        guard case let .ready(_, mode, reason) = outcome else {
+            Issue.record("expected .ready, got \(outcome)")
+            return
+        }
+        #expect(mode == .local)
+        #expect(reason == "no iCloud account")
+    }
 }

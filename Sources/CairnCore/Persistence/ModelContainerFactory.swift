@@ -77,6 +77,45 @@ public struct ModelContainerFactory: Sendable {
         public let cloudFallbackReason: String?
     }
 
+    /// The outcome of opening the app's store at launch.
+    public enum LaunchOutcome: Sendable {
+        /// The store opened. `cloudFallbackReason` is non-nil when CloudKit was
+        /// requested but the store opened locally instead — that fallback uses
+        /// the same on-disk store and is reported, not hidden.
+        case ready(container: ModelContainer, mode: StoreMode, cloudFallbackReason: String?)
+        /// The requested store and its local fallback both failed. The app shows
+        /// this instead of substituting an empty in-memory store.
+        case failed(message: String)
+    }
+
+    /// Opens the store for launch, refusing a silent in-memory fallback.
+    ///
+    /// `make` already falls back from CloudKit to the same on-disk local store
+    /// and reports why. If it throws, even local failed: continuing with an
+    /// in-memory store would look like an empty app, discard whatever the person
+    /// adds, and run sync and categorization against nothing. So a failure is
+    /// surfaced for the app to show and retry.
+    ///
+    /// The `open` seam exists so tests can prove a thrown error becomes
+    /// `.failed`, never a usable store.
+    public static func openForLaunch(
+        requestedMode: StoreMode,
+        inMemory: Bool = false,
+        open: (StoreMode, Bool) throws -> Result = { try make(mode: $0, inMemory: $1) }
+    ) -> LaunchOutcome {
+        do {
+            let result = try open(requestedMode, inMemory)
+            return .ready(
+                container: result.container,
+                mode: result.mode,
+                cloudFallbackReason: result.cloudFallbackReason
+            )
+        } catch {
+            let message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+            return .failed(message: message)
+        }
+    }
+
     public enum FactoryError: Error, LocalizedError {
         case containerCreationFailed(String)
 

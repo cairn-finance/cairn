@@ -29,14 +29,21 @@ final class AppModel {
         case failed(String)
     }
 
-    @ObservationIgnored let container: ModelContainer
-    @ObservationIgnored let storeMode: StoreMode
-    @ObservationIgnored let cloudFallbackReason: String?
+    /// The SwiftData container. It is replaced only when a failed launch is
+    /// retried successfully; until then no store work runs against the
+    /// placeholder container created for the error screen.
+    @ObservationIgnored private(set) var container: ModelContainer
+    private(set) var storeMode: StoreMode
+    private(set) var cloudFallbackReason: String?
     @ObservationIgnored let requestedCloud: Bool
-    @ObservationIgnored let engine: SyncEngine
+    @ObservationIgnored private(set) var engine: SyncEngine
+    /// Non-nil when the persistent store could not be opened. While set, the app
+    /// shows the recovery screen and refuses to run sync, Wallet import,
+    /// categorization, or any background work.
+    private(set) var storeFailure: String?
     #if os(iOS)
     /// Reads eligible Apple Wallet data through FinanceKit. iPhone/iPad only.
-    @ObservationIgnored let walletEngine: WalletSyncEngine
+    @ObservationIgnored private(set) var walletEngine: WalletSyncEngine
     #endif
     @ObservationIgnored let client: SimpleFINClient
     @ObservationIgnored let credentials: any CredentialStore
@@ -156,38 +163,80 @@ final class AppModel {
         credentials = (inMemory || sampleMode) ? InMemoryCredentialStore() : KeychainCredentialStore()
         client = SimpleFINClient(session: SimpleFINClient.ephemeralSession())
 
-        let result: ModelContainerFactory.Result
-        do {
-            result = try ModelContainerFactory.make(
-                mode: cloud ? .cloud : .local,
-                inMemory: inMemory
-            )
-        } catch {
-            // Last-resort fallback so the app always launches with a working store.
-            do {
-                result = try ModelContainerFactory.make(mode: .local, inMemory: true)
-            } catch {
-                fatalError("Cairn could not open even an in-memory data store: \(error)")
+        // Cloud -> local is the one accepted fallback: `openForLaunch` uses the
+        // same on-disk store without CloudKit and reports why. If even local
+        // fails, it returns `.failed` rather than opening an empty store, so the
+        // person sees an error instead of a silently empty app.
+        switch ModelContainerFactory.openForLaunch(
+            requestedMode: cloud ? .cloud : .local,
+            inMemory: inMemory
+        ) {
+        case let .ready(openedContainer, mode, reason):
+            container = openedContainer
+            storeMode = mode
+            cloudFallbackReason = reason
+            storeFailure = nil
+        case let .failed(message):
+            // The error screen needs a container for SwiftUI to build its view
+            // tree, but this throwaway is never read from or written to: no
+            // bootstrap, sync, Wallet import, categorization, or background task
+            // runs while `storeFailure` is set. Only reopening the real store
+            // can clear it, and that never touches or deletes the on-disk store.
+            guard let placeholder = try? ModelContainerFactory.make(mode: .local, inMemory: true) else {
+                fatalError("Cairn could not create a placeholder store after a failed open: \(message)")
             }
+            container = placeholder.container
+            storeMode = placeholder.mode
+            cloudFallbackReason = nil
+            storeFailure = message
         }
 
-        container = result.container
-        storeMode = result.mode
-        cloudFallbackReason = result.cloudFallbackReason
-        engine = SyncEngine(modelContainer: result.container)
+        engine = SyncEngine(modelContainer: container)
         #if os(iOS)
-        walletEngine = WalletSyncEngine(modelContainer: result.container)
+        walletEngine = WalletSyncEngine(modelContainer: container)
         #endif
 
         PowerSource.prepare()
-        BackgroundCategorization.run = { [weak self] in
-            await self?.autoCategorize(scope: .background)
+        // A background pass must never run against a store that failed to open.
+        if storeFailure == nil {
+            BackgroundCategorization.run = { [weak self] in
+                await self?.autoCategorize(scope: .background)
+            }
+            Task { await bootstrap() }
+        } else {
+            BackgroundCategorization.run = nil
         }
+    }
 
-        Task { await bootstrap() }
+    /// Re-attempts opening the persistent store after a failed launch. A second
+    /// failure keeps the recovery screen up; success replaces the placeholder
+    /// and runs the normal startup. The on-disk store is only ever opened, never
+    /// written to or removed by this.
+    func retryStoreOpen() {
+        switch ModelContainerFactory.openForLaunch(requestedMode: requestedCloud ? .cloud : .local) {
+        case let .ready(openedContainer, mode, reason):
+            container = openedContainer
+            storeMode = mode
+            cloudFallbackReason = reason
+            engine = SyncEngine(modelContainer: openedContainer)
+            #if os(iOS)
+            walletEngine = WalletSyncEngine(modelContainer: openedContainer)
+            #endif
+            BackgroundCategorization.run = { [weak self] in
+                await self?.autoCategorize(scope: .background)
+            }
+            storeFailure = nil
+            Task { await bootstrap() }
+        case let .failed(message):
+            storeFailure = message
+        }
     }
 
     private func bootstrap() async {
+        // Nothing runs against a placeholder store: the recovery screen is up
+        // and every store path is skipped until a retry opens the real store.
+        guard storeFailure == nil else { return }
+
         #if DEBUG
         if isSampleMode {
             try? await engine.seedDefaultCategoriesIfNeeded()

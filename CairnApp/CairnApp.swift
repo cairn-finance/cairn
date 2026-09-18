@@ -28,16 +28,22 @@ struct CairnApp: App {
 
     var body: some Scene {
         WindowGroup {
-            LockGate {
-                RootView()
+            Group {
+                if model.storeFailure != nil {
+                    StoreUnavailableView()
+                } else {
+                    LockGate {
+                        RootView()
+                    }
+                    .modelContainer(model.container)
+                }
             }
             .environment(model)
-            .modelContainer(model.container)
             .onChange(of: scenePhase) { _, phase in
                 #if os(iOS)
-                // Hand the bulk of the backlog to a background task when the app
-                // leaves the foreground, waiting for a charger if asked.
-                if phase == .background {
+                // Never schedule a background pass against a store that failed
+                // to open.
+                if phase == .background, model.storeFailure == nil {
                     BackgroundCategorization.schedule(requiresPower: model.categorizeOnlyWhileCharging)
                 }
                 #endif
@@ -45,11 +51,17 @@ struct CairnApp: App {
         }
         #if os(macOS)
         Settings {
-            LockGate {
-                SettingsView()
+            Group {
+                if model.storeFailure != nil {
+                    StoreUnavailableView()
+                } else {
+                    LockGate {
+                        SettingsView()
+                    }
+                    .modelContainer(model.container)
+                }
             }
             .environment(model)
-            .modelContainer(model.container)
         }
         #endif
     }
