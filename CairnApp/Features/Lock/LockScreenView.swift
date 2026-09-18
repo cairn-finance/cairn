@@ -49,7 +49,7 @@ struct LockGate<Content: View>: View {
                 // Prompt only once the scene is actually frontmost. Asking
                 // during launch makes LAContext fail with `.notInteractive`,
                 // which would show a misleading "couldn't unlock" message.
-                Task { await model.lock.unlock() }
+                Task { await model.lock.unlockAutomatically() }
             default:
                 break
             }
@@ -58,7 +58,7 @@ struct LockGate<Content: View>: View {
             // Enabling the lock while the app is already open should prompt at
             // once rather than waiting for the next foreground.
             guard locked, scenePhase == .active else { return }
-            Task { await model.lock.unlock() }
+            Task { await model.lock.unlockAutomatically() }
         }
         #if os(macOS)
         // A Mac app goes inactive rather than to the background when the person
@@ -66,23 +66,50 @@ struct LockGate<Content: View>: View {
         // re-engage while the app is running. Locking on these instead of on
         // `.inactive` keeps the screen, the tab selection, and any unsaved text
         // intact across ordinary app switching.
+        //
+        // These all lock with `screenIsAway`, because the scene stays `.active`
+        // while the screen is locked: without that, the lock would immediately
+        // try to prompt and Touch ID would ask while nobody can answer.
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidSleepNotification)) { _ in
-            model.lock.lock()
+            model.lock.lock(screenIsAway: true)
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)) { _ in
-            model.lock.lock()
+            model.lock.lock(screenIsAway: true)
         }
         .onReceive(DistributedNotificationCenter.default().publisher(for: cairnScreenIsLockedNotification)) { _ in
-            model.lock.lock()
+            model.lock.lock(screenIsAway: true)
+        }
+        // And the way back: only now is there someone to answer a prompt.
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidWakeNotification)) { _ in
+            cairnScreenCameBack()
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification)) { _ in
+            cairnScreenCameBack()
+        }
+        .onReceive(DistributedNotificationCenter.default().publisher(for: cairnScreenIsUnlockedNotification)) { _ in
+            cairnScreenCameBack()
         }
         #endif
     }
+
+    #if os(macOS)
+    /// The screen, session, or lock screen is back: welcome an automatic prompt
+    /// again. The scene never left `.active` for any of these, so this is the only
+    /// chance to prompt.
+    private func cairnScreenCameBack() {
+        model.lock.screenCameBack()
+        guard scenePhase == .active else { return }
+        Task { await model.lock.unlockAutomatically() }
+    }
+    #endif
 }
 
 #if os(macOS)
-/// Posted by the system when the screen locks. It is a distributed notification
-/// rather than an `NSWorkspace` one, so it arrives on the distributed center.
+/// Posted by the system when the screen locks or unlocks. They are distributed
+/// notifications rather than `NSWorkspace` ones, so they arrive on the
+/// distributed center.
 private let cairnScreenIsLockedNotification = Notification.Name("com.apple.screenIsLocked")
+private let cairnScreenIsUnlockedNotification = Notification.Name("com.apple.screenIsUnlocked")
 #endif
 
 /// Covers a presented sheet while the app is locked.

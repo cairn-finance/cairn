@@ -62,6 +62,54 @@ struct AppLockTests {
         #expect(lock.isLocked)
     }
 
+    @Test("A lock that engaged while the screen was away waits for the screen")
+    func screenAwayDefersAutomaticUnlock() async {
+        let authenticator = FakeAuthenticator()
+        let lock = AppLockController(enabled: true, authenticator: authenticator)
+        await lock.unlockAutomatically()
+        #expect(!lock.isLocked)
+        let promptsBefore = authenticator.authenticateCount
+
+        // The screen locked: the scene is still `.active`, but nobody is there to
+        // answer, so an automatic attempt must not reach the prompt.
+        lock.lock(screenIsAway: true)
+        #expect(lock.isScreenAway)
+        await lock.unlockAutomatically()
+        #expect(lock.isLocked)
+        #expect(authenticator.authenticateCount == promptsBefore)
+        #expect(lock.lastError == nil)
+
+        // The screen is back, so the same call prompts now.
+        lock.screenCameBack()
+        #expect(!lock.isScreenAway)
+        await lock.unlockAutomatically()
+        #expect(!lock.isLocked)
+        #expect(authenticator.authenticateCount == promptsBefore + 1)
+    }
+
+    @Test("The lock screen's own button works even if a wake is missed")
+    func manualUnlockIsNeverDeferred() async {
+        let authenticator = FakeAuthenticator()
+        let lock = AppLockController(enabled: true, authenticator: authenticator)
+        lock.lock(screenIsAway: true)
+        await lock.unlock()
+        #expect(!lock.isLocked)
+    }
+
+    @Test("An ordinary lock prompts at once, and clears the screen-away state")
+    func ordinaryLockPromptsAtOnce() async {
+        let authenticator = FakeAuthenticator()
+        let lock = AppLockController(enabled: true, authenticator: authenticator)
+        await lock.unlock()
+        lock.lock(screenIsAway: true)
+        lock.screenCameBack()
+
+        lock.lock()
+        #expect(!lock.isScreenAway)
+        await lock.unlockAutomatically()
+        #expect(!lock.isLocked)
+    }
+
     @Test("An unlock that is not needed does nothing")
     func idleUnlockIsANoOp() async {
         let authenticator = FakeAuthenticator()

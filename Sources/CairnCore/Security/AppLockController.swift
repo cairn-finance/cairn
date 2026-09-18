@@ -22,6 +22,16 @@ public final class AppLockController {
     /// A message for a failed unlock. A deliberate cancellation leaves this nil.
     public private(set) var lastError: String?
 
+    /// True while the lock is waiting for the screen to come back. Set when the
+    /// lock engaged because the screen went away — display sleep, screen lock, or
+    /// a fast user switch — and cleared by ``screenCameBack()``.
+    ///
+    /// Nobody is there to answer a prompt in that state: asking would show it to
+    /// an empty room, where it expires and leaves a lock screen the person has to
+    /// tap anyway. The lock screen's own button is never gated on this, so a
+    /// missed wake notification can't strand anyone outside their data.
+    public private(set) var isScreenAway = false
+
     @ObservationIgnored private let authenticator: any DeviceAuthenticator
 
     public init(enabled: Bool, authenticator: any DeviceAuthenticator) {
@@ -54,10 +64,32 @@ public final class AppLockController {
     }
 
     /// Locks again, for when the app leaves the foreground.
-    public func lock() {
+    ///
+    /// - Parameter screenIsAway: `true` when the screen or session is going away
+    ///   rather than the person leaving the app. It suppresses automatic prompts
+    ///   until ``screenCameBack()``, so no Touch ID prompt lands on a locked
+    ///   screen where nobody can answer it.
+    public func lock(screenIsAway: Bool = false) {
         guard isEnabled, !isLocked else { return }
+        isScreenAway = screenIsAway
         isLocked = true
         lastError = nil
+    }
+
+    /// The screen or session is back, so an automatic prompt is welcome again.
+    public func screenCameBack() {
+        isScreenAway = false
+    }
+
+    /// Attempts an unlock on the app's own initiative: a foreground transition, a
+    /// wake, or a scene becoming active.
+    ///
+    /// Declines while the screen is away, because a prompt then is shown to an
+    /// empty room and expires into a lock screen to tap anyway. Use ``unlock()``
+    /// for the lock screen's own button.
+    public func unlockAutomatically() async {
+        guard !isScreenAway else { return }
+        await unlock()
     }
 
     /// Prompts for an unlock if one is needed. Safe to call on every foreground;
