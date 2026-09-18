@@ -85,3 +85,13 @@ durable store is the right home for it.
 - Whether the Wallet "Remove" affordance should exist on a Mac at all. Under
   design A it should not; under design B it is the natural place to turn the
   shared intent off.
+
+## Interim decision
+
+Until a synced preference (design B) exists, the Mac does not offer "Remove
+Apple Wallet data". The row and its "Updates on your iPhone" subtitle still
+appear, so the data is visible and explained, but a removal started on the Mac
+cannot stick while an iPhone is authorized and would discard notes, tags, and
+categories on the rows the iPhone re-imports. The action stays on iPhone and
+iPad, where a removal can be authoritative. Revisit when the shared preference
+is added.

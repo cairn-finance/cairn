@@ -208,6 +208,11 @@ struct SettingsView: View {
                     }
                     Spacer()
                 }
+                // A Mac's Wallet removal cannot stick while an iPhone is
+                // authorized — the iPhone re-imports the cards — so the action
+                // is only offered where FinanceKit can own the data. See
+                // docs/wallet-sync.md.
+                #if os(iOS)
                 .swipeActions {
                     Button("Remove", systemImage: "xmark.circle", role: .destructive) {
                         showingWalletDisconnect = true
@@ -218,6 +223,7 @@ struct SettingsView: View {
                         showingWalletDisconnect = true
                     }
                 }
+                #endif
             }
             Button {
                 showingConnect = true
