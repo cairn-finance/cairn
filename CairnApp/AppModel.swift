@@ -261,6 +261,9 @@ final class AppModel {
             // the synthetic ledger as a healthy, recently synced account.
             refreshRecurring()
             syncState = .success
+            // Still run the deterministic pass so repeat merchants in the
+            // synthetic ledger are categorized, as they would be in a real run.
+            Task { await autoCategorize() }
             return
         }
         #endif
