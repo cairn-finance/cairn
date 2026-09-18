@@ -40,6 +40,10 @@ final class AppModel {
     #endif
     @ObservationIgnored let client: SimpleFINClient
     @ObservationIgnored let credentials: any CredentialStore
+    /// Debug-only: true when the app was launched on the built-in synthetic
+    /// sample data. Such a run has no credential and no server, so its setup
+    /// never touches the network.
+    @ObservationIgnored let isSampleMode: Bool
     /// The "require unlock to open" state machine. UI reads `lock.isLocked`.
     @ObservationIgnored let lock: AppLockController
 
@@ -148,6 +152,7 @@ final class AppModel {
         #else
         let sampleMode = false
         #endif
+        isSampleMode = sampleMode
         credentials = (inMemory || sampleMode) ? InMemoryCredentialStore() : KeychainCredentialStore()
         client = SimpleFINClient(session: SimpleFINClient.ephemeralSession())
 
@@ -184,11 +189,17 @@ final class AppModel {
 
     private func bootstrap() async {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(SampleData.launchArgument) {
+        if isSampleMode {
             try? await engine.seedDefaultCategoriesIfNeeded()
             SampleData.populate(context: container.mainContext)
             UserDefaults.standard.set(true, forKey: Self.Keys.onboardingComplete)
             onboardingComplete = true
+            // The sample connection has no credential and no server, so running
+            // the network path would only report it as unable to sync. Present
+            // the synthetic ledger as a healthy, recently synced account.
+            refreshRecurring()
+            syncState = .success
+            return
         }
         #endif
 

@@ -273,6 +273,25 @@ enum SampleData {
             context.insert(transaction)
         }
 
+        // A recent paycheck, so the trailing-30-day net worth reads as modestly
+        // positive rather than spending-only. The repeating payroll fixtures
+        // above sit a month or more back, leaving the recent window without
+        // income; this is the same deposit a few days old.
+        let paycheck = LedgerTransaction(
+            bankTransactionID: "TXN-PAYCHECK-RECENT",
+            payeeDescription: "Payroll Deposit",
+            amountMinorUnits: 512_500
+        )
+        paycheck.account = checking
+        paycheck.accountIDIndex = checking.bankAccountID
+        paycheck.currencyExponent = 2
+        paycheck.postedDate = calendar.date(byAdding: .day, value: -5, to: now)
+        paycheck.createdAt = paycheck.effectiveDate
+        paycheck.modifiedAt = paycheck.createdAt
+        paycheck.normalizedMerchant = MerchantNormalizer.normalize("Payroll Deposit")
+        paycheck.userCategory = category("Income")
+        context.insert(paycheck)
+
         try? context.save()
     }
 

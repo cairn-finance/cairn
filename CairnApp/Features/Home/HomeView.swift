@@ -111,6 +111,7 @@ struct HomeView: View {
             Spacer()
             if let ids = model.syncState.missingCredentialIDs {
                 Button("Remove") { connectionsToRemove = ids }
+                    .buttonStyle(.plain)
                     .font(.footnote.weight(.semibold))
             }
             if model.syncState.hasDetails {
@@ -118,8 +119,9 @@ struct HomeView: View {
                     SyncDiagnosticsView()
                 } label: {
                     Text("Details")
-                        .font(.footnote.weight(.semibold))
                 }
+                .buttonStyle(.plain)
+                .font(.footnote.weight(.semibold))
             } else if model.remainingBudget < SyncEngine.dailyRequestLimit / 4 {
                 StatusPill(text: "\(model.remainingBudget) syncs left today", tint: CairnTheme.warning)
             }
