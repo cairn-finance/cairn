@@ -55,13 +55,21 @@ The order matters, because the last step cannot be undone:
 3. **Declare the whole schema at once, from a clean install.** Run a **Debug**
    build with the `-cairn-initialize-cloudkit-schema` launch argument, on a
    **fresh simulator or a clean install — never on a device that holds real
-   data**:
+   data**. The simplest way is Xcode: pick a simulator that holds nothing (or
+   create one), sign into iCloud in it under Settings, then **Edit Scheme → Run →
+   Arguments** and add `-cairn-initialize-cloudkit-schema` before running. Watch
+   the console for the initializer's own log lines.
+
+   To see the log from the command line instead, once that build is installed on
+   a booted simulator:
 
    ```sh
-   xcodebuild -project Cairn.xcodeproj -scheme Cairn -configuration Debug \
-     -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
-   # then launch once with the argument (Xcode: Edit Scheme → Run → Arguments)
+   xcrun simctl launch --console-pty booted <your bundle id> \
+     -cairn-initialize-cloudkit-schema
    ```
+
+   The first line names the container it is about to use — confirm it is the one
+   you created before anything else happens.
 
    The initializer builds its own `NSPersistentCloudKitContainer` over a
    throwaway store in the temporary directory, calls
