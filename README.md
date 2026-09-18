@@ -33,9 +33,9 @@ private iCloud database. There is no Cairn backend. Ever.
 
 ## Project status
 
-Cairn is in **public beta on TestFlight**, heading toward **1.0 on the App
-Store**. It is usable today for read-only tracking of real accounts; there are
-no budgets, reports, or exchange rates yet.
+A public TestFlight beta is **coming soon**, heading toward **1.0 on the App
+Store**. Cairn is already usable today for read-only tracking of real accounts;
+there are no budgets, reports, or exchange rates yet.
 
 ## Try it
 
@@ -47,7 +47,7 @@ no budgets, reports, or exchange rates yet.
   exports from your bank or another app.
 - Apple Wallet import (Apple Card, Apple Cash, Savings) works on iPhone and
   iPad. On the Mac, Wallet accounts appear through **iCloud Sync**.
-- **This is a beta.** Bank transactions can always be downloaded again from
+- **Beta caveat.** Bank transactions can always be downloaded again from
   SimpleFIN, and a saved connection can be reconnected without a new setup
   token. But notes, tags, categories, rules, manual accounts, and CSV imports
   live only in Cairn — turn on iCloud Sync, or export from **Settings → Your
