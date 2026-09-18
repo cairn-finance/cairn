@@ -16,15 +16,17 @@ private iCloud database. There is no Cairn backend. Ever.
 
 ## Screenshots
 
-| iPhone — Home | iPhone — Insights | iPhone — Subscriptions |
-| --- | --- | --- |
-| ![Cairn home screen on iPhone, showing net worth and account balances](docs/images/iphone-home.png) | ![Cairn Insights screen on iPhone, showing spending pace and category breakdown](docs/images/iphone-insights.png) | ![Cairn subscriptions screen on iPhone, showing detected recurring payments](docs/images/iphone-subscriptions.png) |
+<p align="center">
+  <img src="docs/images/iphone-home.png" alt="Cairn home screen on iPhone, showing net worth and account balances" width="220">
+  <img src="docs/images/iphone-insights.png" alt="Cairn Insights screen on iPhone, showing spending pace and category breakdown" width="220">
+  <img src="docs/images/iphone-subscriptions.png" alt="Cairn subscriptions screen on iPhone, showing detected recurring payments" width="220">
+</p>
 
-| Mac — Home |
-| --- |
-| ![Cairn home window on Mac, showing net worth and account balances](docs/images/mac-home.png) |
+<p align="center">
+  <img src="docs/images/mac-home.png" alt="Cairn home window on Mac, showing net worth and account balances" width="820">
+</p>
 
-## Status
+## Project status
 
 Cairn is in **public beta on TestFlight**, heading toward **1.0 on the App
 Store**. It is usable today for read-only tracking of real accounts; there are
