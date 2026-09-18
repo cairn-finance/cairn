@@ -75,6 +75,13 @@ final class AppModel {
     /// disabled and a second tap ignored.
     private(set) var reconnectingCredentialIDs: Set<UUID> = []
 
+    /// Watches for iCloud changes so an offer is withdrawn once the row that
+    /// references its credential arrives.
+    @ObservationIgnored private var remoteChangeTask: Task<Void, Never>?
+    /// Set once the first import has settled; until then a remote change must
+    /// not trigger a scan that could offer a credential still arriving.
+    @ObservationIgnored private var credentialsScanReady = false
+
     /// Automatic categorization progress, surfaced in Insights.
     enum CategorizationState: Equatable {
         case idle
@@ -259,8 +266,10 @@ final class AppModel {
         #endif
 
         // Seeding may briefly wait for the first CloudKit import, so run it
-        // alongside the initial sync instead of delaying it.
+        // alongside the initial sync instead of delaying it. The orphan scan
+        // needs the stricter import wait, so it runs alongside too.
         async let seeding: Void = seedDefaultCategoriesWhenReady()
+        async let recovery: Void = recoverOrphanedCredentialsWhenReady()
         await refreshBudget()
         migrateCredentials(synchronizable: useCloudKit)
         // A connection interrupted mid-connect, or delivered by iCloud before
@@ -270,10 +279,8 @@ final class AppModel {
             await syncAll(force: false)
         }
         await seeding
-        // Only now is a missing institution meaningful: with iCloud Sync on the
-        // rows can arrive a few seconds after launch, so offering before the
-        // first import settled would fight that sync.
-        scanForRecoverableCredentials()
+        observeRemoteStoreChanges()
+        await recovery
         // Kick off categorization without blocking launch; a large backlog can
         // take minutes on-device.
         refreshRecurring()
@@ -293,10 +300,18 @@ final class AppModel {
         _ = try? await engine.deduplicateCategories()
     }
 
-    /// Waits until CloudKit reports that its initial setup or import has ended,
-    /// or the timeout elapses. On a fresh account nothing may be imported, so
-    /// the timeout ensures seeding still happens.
-    private func waitForFirstCloudImport(timeout: Duration = .seconds(20)) async {
+    /// Waits until CloudKit reports that a matching event has ended, or the
+    /// timeout elapses. On a fresh account nothing may be imported, so the timeout
+    /// ensures callers still proceed.
+    ///
+    /// Category seeding accepts a `.setup` end, because it only needs the store
+    /// to have settled. The orphan scan passes `[.import]`: a `.setup` event
+    /// ends before any records arrive, so waiting on it would let a credential
+    /// look orphaned while its institution is still on the way.
+    private func waitForFirstCloudImport(
+        timeout: Duration = .seconds(20),
+        types: Set<NSPersistentCloudKitContainer.EventType> = [.import, .setup]
+    ) async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 for await note in NotificationCenter.default.notifications(
@@ -304,7 +319,7 @@ final class AppModel {
                 ) {
                     guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
                         as? NSPersistentCloudKitContainer.Event else { continue }
-                    if event.endDate != nil, event.type == .import || event.type == .setup {
+                    if event.endDate != nil, types.contains(event.type) {
                         return
                     }
                 }
@@ -314,6 +329,31 @@ final class AppModel {
             }
             await group.next()
             group.cancelAll()
+        }
+    }
+
+    /// Scans for orphaned credentials only once the first CloudKit import has
+    /// ended, so a row that is still arriving is never treated as missing.
+    private func recoverOrphanedCredentialsWhenReady() async {
+        if storeMode == .cloud {
+            await waitForFirstCloudImport(types: [.import])
+        }
+        credentialsScanReady = true
+        scanForRecoverableCredentials()
+    }
+
+    /// Re-runs the orphan scan whenever a remote change lands. A row delivered
+    /// by iCloud can reference a credential that was offered before it arrived,
+    /// so the offer is withdrawn as soon as that happens.
+    private func observeRemoteStoreChanges() {
+        remoteChangeTask?.cancel()
+        remoteChangeTask = Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(
+                named: .NSPersistentStoreRemoteChange
+            ) {
+                guard let self else { return }
+                self.scanForRecoverableCredentials()
+            }
         }
     }
 
@@ -460,6 +500,9 @@ final class AppModel {
     /// them. Runs only after the initial import has settled, so a row still
     /// arriving through iCloud is never mistaken for missing.
     private func scanForRecoverableCredentials() {
+        // A remote change can fire before the initial import has settled; a
+        // scan then would see a partial institution set.
+        guard credentialsScanReady else { return }
         let institutionIDs =
             (try? container.mainContext.fetch(FetchDescriptor<Institution>()))?.map(\.credentialID) ?? []
         let storedIDs = (try? credentials.allIDs()) ?? []
