@@ -165,6 +165,31 @@ public struct KeychainCredentialStore: CredentialStore {
         }
     }
 
+    public func allIDs() throws -> [UUID] {
+        // kSecAttrSynchronizableAny covers a synchronizable and a device-only
+        // copy with one query; both can exist at once, so collapse to one id.
+        var query = commonAttributes()
+        query[kSecReturnAttributes as String] = kCFBooleanTrue
+        query[kSecMatchLimit as String] = kSecMatchLimitAll
+        query[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            let items = (result as? [[String: Any]]) ?? []
+            let ids = items.compactMap { item -> UUID? in
+                guard let account = item[kSecAttrAccount as String] as? String else { return nil }
+                return UUID(uuidString: account)
+            }
+            return Array(Set(ids))
+        case errSecItemNotFound:
+            return []
+        default:
+            throw CredentialStoreError.unexpectedStatus(status)
+        }
+    }
+
     public func deleteAll() throws {
         var query = commonAttributes()
         query[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
@@ -254,6 +279,11 @@ public final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable
     public func accessibility(for id: UUID, synchronizable: Bool) throws -> CredentialAccessibility? {
         lock.lock(); defer { lock.unlock() }
         return items[id]?.copies[synchronizable]
+    }
+
+    public func allIDs() throws -> [UUID] {
+        lock.lock(); defer { lock.unlock() }
+        return Array(items.keys)
     }
 
     public func delete(id: UUID) throws {

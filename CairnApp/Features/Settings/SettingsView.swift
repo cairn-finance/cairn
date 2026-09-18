@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var showingConnect = false
     @State private var showingWalletDisconnect = false
     @State private var institutionToDisconnect: Institution?
+    @State private var credentialToForget: AppModel.RecoverableCredential?
 
     /// The most recent successful fetch across all banks.
     private var lastSuccessfulSync: Date? {
@@ -122,6 +123,23 @@ struct SettingsView: View {
             Text("This deletes the Wallet accounts and transactions Cairn imported. "
                 + "It can’t revoke access; change that in Settings › Privacy & Security › Financial Data.")
         }
+        .confirmationDialog(
+            "Forget the saved connection?",
+            isPresented: Binding(
+                get: { credentialToForget != nil },
+                set: { if !$0 { credentialToForget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Forget Connection", role: .destructive) {
+                if let credential = credentialToForget { model.forget(credential) }
+                credentialToForget = nil
+            }
+            Button("Cancel", role: .cancel) { credentialToForget = nil }
+        } message: {
+            Text("This removes the saved SimpleFIN connection from this device. "
+                + "Reconnecting it later will need a new setup token.")
+        }
     }
 
     // MARK: - Sync
@@ -200,6 +218,33 @@ struct SettingsView: View {
                 .contextMenu {
                     Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {
                         institutionToDisconnect = institution
+                    }
+                }
+            }
+            ForEach(model.recoverableCredentials) { credential in
+                HStack(spacing: 12) {
+                    SettingsIcon(systemImage: "arrow.triangle.2.circlepath", tint: CairnTheme.positive)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Saved SimpleFIN connection")
+                        Text("\(credential.host) · Reconnect without a new token")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Reconnect") {
+                        Task { await model.reconnect(credential) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .swipeActions {
+                    Button("Forget", systemImage: "trash", role: .destructive) {
+                        credentialToForget = credential
+                    }
+                }
+                .contextMenu {
+                    Button("Forget", systemImage: "trash", role: .destructive) {
+                        credentialToForget = credential
                     }
                 }
             }

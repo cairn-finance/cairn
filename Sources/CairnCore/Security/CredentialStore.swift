@@ -67,6 +67,11 @@ public protocol CredentialStore: Sendable {
     /// which of the two copies a lookup would return.
     func accessibility(for id: UUID, synchronizable: Bool) throws -> CredentialAccessibility?
 
+    /// Every credential id held, across both synchronizable and device-only
+    /// copies. A credential whose database row is gone can then be offered for
+    /// reconnection instead of forcing a new setup token.
+    func allIDs() throws -> [UUID]
+
     func delete(id: UUID) throws
 
     func deleteAll() throws

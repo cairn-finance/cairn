@@ -69,6 +69,9 @@ final class AppModel {
     var remainingBudget: Int = SyncEngine.dailyRequestLimit
     var banner: String?
 
+    /// Keychain credentials with no `Institution` row, offered for reconnection.
+    private(set) var recoverableCredentials: [RecoverableCredential] = []
+
     /// Automatic categorization progress, surfaced in Insights.
     enum CategorizationState: Equatable {
         case idle
@@ -264,6 +267,10 @@ final class AppModel {
             await syncAll(force: false)
         }
         await seeding
+        // Only now is a missing institution meaningful: with iCloud Sync on the
+        // rows can arrive a few seconds after launch, so offering before the
+        // first import settled would fight that sync.
+        scanForRecoverableCredentials()
         // Kick off categorization without blocking launch; a large backlog can
         // take minutes on-device.
         refreshRecurring()
@@ -328,24 +335,7 @@ final class AppModel {
             await cairnLog(.info, "Claimed access URL for \(accessURL.host ?? "unknown host").")
             let credentialID = UUID()
             try storeCredential(accessURL.absoluteString, id: credentialID)
-
-            var sfinURL = ""
-            if let scheme = accessURL.scheme, let host = accessURL.host {
-                sfinURL = "\(scheme)://\(host)"
-            }
-
-            let institution = Institution(
-                bankConnectionID: "",
-                // Named from the Access URL until the first fetch reports the
-                // bank's own name, so nothing ever shows a "Connecting…" ghost.
-                name: SyncEngine.fallbackName(for: accessURL),
-                credentialID: credentialID
-            )
-            institution.sfinURL = sfinURL
-            container.mainContext.insert(institution)
-            try container.mainContext.save()
-
-            await syncAll(force: true)
+            try await establishInstitution(accessURL: accessURL, credentialID: credentialID)
             return true
         } catch {
             let message: String
@@ -358,6 +348,112 @@ final class AppModel {
             syncState = .failed(message)
             await cairnLog(.error, "connectInstitution failed: \(message)")
             return false
+        }
+    }
+
+    /// Builds the `Institution` for an Access URL and runs the first sync.
+    ///
+    /// Shared by claiming a setup token and reconnecting a credential already in
+    /// the Keychain, so both follow exactly one path; only the claim step
+    /// differs.
+    private func establishInstitution(accessURL: URL, credentialID: UUID) async throws {
+        var sfinURL = ""
+        if let scheme = accessURL.scheme, let host = accessURL.host {
+            sfinURL = "\(scheme)://\(host)"
+        }
+
+        let institution = Institution(
+            bankConnectionID: "",
+            // Named from the Access URL until the first fetch reports the
+            // bank's own name, so nothing ever shows a "Connecting…" ghost.
+            name: SyncEngine.fallbackName(for: accessURL),
+            credentialID: credentialID
+        )
+        institution.sfinURL = sfinURL
+        container.mainContext.insert(institution)
+        try container.mainContext.save()
+
+        await syncAll(force: true)
+    }
+
+    // MARK: - Recovering an orphaned credential
+
+    /// A credential in the Keychain with no `Institution` row. It can be rebuilt
+    /// from its Access URL without a new SimpleFIN setup token.
+    struct RecoverableCredential: Identifiable, Equatable {
+        let id: UUID
+        /// The Access URL's host, the only part safe to show. The URL and its
+        /// credentials are never displayed.
+        let host: String
+    }
+
+    /// Reconnects an orphaned credential from its stored Access URL, reusing the
+    /// same institution path as a fresh connect and keeping the existing
+    /// credential id, so no second copy is stored.
+    @discardableResult
+    func reconnect(_ credential: RecoverableCredential) async -> Bool {
+        guard let secret = try? credentials.secret(for: credential.id),
+              let accessURL = URL(string: secret) else {
+            banner = "That saved SimpleFIN connection couldn’t be read. "
+                + "Connect again, or forget it with Not Now."
+            return false
+        }
+        syncState = .syncing
+        await cairnLog(.info, "Reconnecting saved credential for \(credential.host).")
+        do {
+            try await establishInstitution(accessURL: accessURL, credentialID: credential.id)
+            removeRecoverable(id: credential.id)
+            return true
+        } catch {
+            let message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+            syncState = .failed(message)
+            await cairnLog(.error, "Reconnect failed for \(credential.host): \(message)")
+            return false
+        }
+    }
+
+    /// Forgets an orphaned credential. Only called after the person confirms,
+    /// because reconnecting later needs a new setup token. Logs the host alone.
+    func forget(_ credential: RecoverableCredential) {
+        do {
+            try credentials.delete(id: credential.id)
+            Task { await cairnLog(.info, "Forgot saved credential for \(credential.host).") }
+        } catch {
+            banner = "Couldn’t remove the saved connection: \(error.localizedDescription)"
+        }
+        removeRecoverable(id: credential.id)
+    }
+
+    private func removeRecoverable(id: UUID) {
+        recoverableCredentials.removeAll { $0.id == id }
+    }
+
+    /// Finds Keychain credentials with no institution and offers to reconnect
+    /// them. Runs only after the initial import has settled, so a row still
+    /// arriving through iCloud is never mistaken for missing.
+    private func scanForRecoverableCredentials() {
+        let institutionIDs =
+            (try? container.mainContext.fetch(FetchDescriptor<Institution>()))?.map(\.credentialID) ?? []
+        let storedIDs = (try? credentials.allIDs()) ?? []
+        // The caller has already awaited the first import when the store is
+        // cloud-backed, so any institution that is coming has arrived.
+        switch CredentialRecovery.decide(
+            storedCredentialIDs: storedIDs,
+            institutionCredentialIDs: institutionIDs,
+            institutionsReady: true
+        ) {
+        case .none:
+            recoverableCredentials = []
+        case let .offer(ids):
+            recoverableCredentials = ids.compactMap { id in
+                guard let secret = try? credentials.secret(for: id),
+                      let url = URL(string: secret),
+                      let host = url.host, !host.isEmpty else { return nil }
+                return RecoverableCredential(id: id, host: host)
+            }
+        }
+        for credential in recoverableCredentials {
+            Task { await cairnLog(.info, "Found an orphaned SimpleFIN credential for \(credential.host).") }
         }
     }
 
@@ -871,6 +967,7 @@ final class AppModel {
 
         await DiagnosticsLog.shared.clear()
         recurringSeries = []
+        recoverableCredentials = []
         onboardingComplete = false
         remainingBudget = SyncEngine.dailyRequestLimit
         syncState = .idle

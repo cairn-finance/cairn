@@ -6,6 +6,7 @@ import CairnCore
 struct OnboardingView: View {
     @Environment(AppModel.self) private var model
     @State private var connection: AddConnectionSheet.ConnectionKind?
+    @State private var credentialToForget: AppModel.RecoverableCredential?
 
     var body: some View {
         ZStack {
@@ -16,6 +17,10 @@ struct OnboardingView: View {
                         .cairnAppear()
                     promises
                         .cairnAppear(delay: 0.1)
+                    if !model.recoverableCredentials.isEmpty {
+                        recoveryCard
+                            .cairnAppear(delay: 0.15)
+                    }
                     actions
                         .cairnAppear(delay: 0.2)
                 }
@@ -33,6 +38,80 @@ struct OnboardingView: View {
             }
             .cairnLockCover()
         }
+        .confirmationDialog(
+            "Forget the saved connection?",
+            isPresented: Binding(
+                get: { credentialToForget != nil },
+                set: { if !$0 { credentialToForget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Forget Connection", role: .destructive) {
+                if let credential = credentialToForget { model.forget(credential) }
+                credentialToForget = nil
+            }
+            Button("Cancel", role: .cancel) { credentialToForget = nil }
+        } message: {
+            Text("This removes the saved SimpleFIN connection from this device. "
+                + "Reconnecting it later will need a new setup token.")
+        }
+    }
+
+    /// Offered when the Keychain still holds a credential whose institution row
+    /// is gone — the delete-and-reinstall case — so a working Access URL need not
+    /// be thrown away for a new setup token.
+    private var recoveryCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(CairnTheme.inkGlow)
+                Text("Found a saved SimpleFIN connection")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            ForEach(model.recoverableCredentials) { credential in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("\(credential.host) is still in this device’s Keychain. "
+                        + "Reconnect it without creating a new setup token.")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.66))
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 10) {
+                        Button {
+                            Task { await model.reconnect(credential) }
+                        } label: {
+                            Text("Reconnect")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(CairnTheme.ink)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(CairnTheme.cream, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            credentialToForget = credential
+                        } label: {
+                            Text("Not Now")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.10), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .padding(20)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: CairnTheme.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: CairnTheme.cardRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        )
     }
 
     private var wordmark: some View {
