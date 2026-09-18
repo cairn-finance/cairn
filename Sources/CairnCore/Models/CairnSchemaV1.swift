@@ -269,10 +269,11 @@ public enum CairnSchemaV1: VersionedSchema {
         // Bank-owned: overwritten on every sync.
         @Attribute(.allowsCloudEncryption) public var payeeDescription: String = ""
         @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
-        /// Dates are encrypted like the rest of the content. CloudKit supports
-        /// `NSDate` in its encrypted payload, and it never queries or sorts by
-        /// these fields — sync uses change tokens, so only the local SQLite store
-        /// evaluates the `[\.postedDate]` index.
+        /// Dates are encrypted like the rest of the content: CloudKit supports
+        /// `NSDate` in its encrypted payload. `postedDate` is deliberately absent
+        /// from `#Index` — Core Data refuses a model where an encrypted attribute
+        /// is indexed, since CloudKit cannot query an encrypted field. The one
+        /// query that orders by date sorts in SQLite instead.
         @Attribute(.allowsCloudEncryption) public var postedDate: Date?
         @Attribute(.allowsCloudEncryption) public var transactedAt: Date?
         public var isPending: Bool = false
@@ -318,10 +319,11 @@ public enum CairnSchemaV1: VersionedSchema {
         /// Inverse declared on `Tag.transactions`.
         public var tags: [Tag]?
 
+        // `postedDate` is deliberately missing here: an encrypted attribute
+        // cannot be indexed. See the note on the field.
         #Index<LedgerTransaction>(
             [\.accountIDIndex],
-            [\.bankTransactionID],
-            [\.postedDate]
+            [\.bankTransactionID]
         )
 
         /// A stored, non-encrypted mirror of the owning account's bank id, used

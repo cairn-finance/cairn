@@ -76,6 +76,10 @@ forces local-only storage at runtime, and the test host always uses local storag
   `modifiedByDeviceID`, `isPending`, `isTransfer`, `isIgnored`,
   `hasAvailableBalance`, `displayOrder`, `credentialID`, `bankTransactionID`,
   `bankAccountID`, `bankConnectionID`, and `accountIDIndex`.
+  An encrypted attribute can never be indexed — Core Data refuses a model where
+  one is, since CloudKit cannot query an encrypted field — which is why
+  `accountIDIndex` exists as a plaintext mirror and why `postedDate` is absent
+  from `#Index` even though the insights list orders by it.
   Encryption status is irreversible once a schema reaches Production, which is
   why a new field's encryption attribute is treated as part of its type — see
   [`docs/releasing.md`](releasing.md#cloudkit-schema-promotions) and
