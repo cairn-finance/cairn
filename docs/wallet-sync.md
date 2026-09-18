@@ -92,6 +92,11 @@ Until a synced preference (design B) exists, the Mac does not offer "Remove
 Apple Wallet data". The row and its "Updates on your iPhone" subtitle still
 appear, so the data is visible and explained, but a removal started on the Mac
 cannot stick while an iPhone is authorized and would discard notes, tags, and
-categories on the rows the iPhone re-imports. The action stays on iPhone and
-iPad, where a removal can be authoritative. Revisit when the shared preference
-is added.
+categories on the rows the iPhone re-imports.
+
+The action still appears on iPhone and iPad, but that is a **known limitation
+rather than a guarantee**: when an iPhone is authorized, a removal started on an
+iPad cannot stick either — the iPhone re-imports the same cards as new rows,
+discarding notes, tags, and categories. Removal only sticks while no other
+authorized device re-imports the cards. Revisit when the shared preference (or
+the entity split) lands.
