@@ -4,7 +4,7 @@
 
 Please do not open a public issue for security problems. Instead, use GitHub's
 private vulnerability reporting on this repository (the preferred route), or
-email SECURITY_CONTACT_EMAIL.
+email sehejjain@icloud.com.
 
 Include:
 
