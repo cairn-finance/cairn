@@ -66,16 +66,18 @@ forces local-only storage at runtime, and the test host always uses local storag
 
 - **CloudKit constraints**: no `@Attribute(.unique)`, every scalar has a default,
   relationships are optional with explicit inverses.
-- **Encrypted fields**: anything that reveals financial detail uses
-  `@Attribute(.allowsCloudEncryption)` — amounts, descriptions, notes, dates,
-  account and category names, `normalizedMerchant` (a plaintext copy would give
-  away what encrypting `payeeDescription` protects), and identifying metadata
-  such as the institution's org URL, the account type, and the account's
-  custom-currency names. What stays plaintext is sync bookkeeping, flags, and
-  opaque identifiers, which reveal little on their own: `modifiedAt`,
-  `modifiedByDeviceID`, `isPending`, `isTransfer`, `isIgnored`,
-  `hasAvailableBalance`, `displayOrder`, `credentialID`, `bankTransactionID`,
-  `bankAccountID`, `bankConnectionID`, and `accountIDIndex`.
+- **Encrypted fields**: amounts, balances, names, descriptions, notes, merchant
+  names, and dates use `@Attribute(.allowsCloudEncryption)` — plus identifying
+  metadata such as the institution's org URL, the account type, and the
+  account's custom-currency names, and `normalizedMerchant` (a plaintext copy
+  would give away what encrypting `payeeDescription` protects). Structural
+  metadata is **not** encrypted: the relationship from a transaction to its
+  category, category icons (`symbolName`), status flags such as `isPending` and
+  `isTransfer`, and sync times. Also plaintext are sync bookkeeping and opaque
+  identifiers, which reveal little on their own: `modifiedAt`,
+  `modifiedByDeviceID`, `isIgnored`, `hasAvailableBalance`, `displayOrder`,
+  `credentialID`, `bankTransactionID`, `bankAccountID`, `bankConnectionID`, and
+  `accountIDIndex`.
   An encrypted attribute can never be indexed — Core Data refuses a model where
   one is, since CloudKit cannot query an encrypted field — which is why
   `accountIDIndex` exists as a plaintext mirror and why `postedDate` is absent
