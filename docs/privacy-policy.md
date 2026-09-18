@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026_
+_Last updated: September 18, 2026_
 
 Cairn is a personal finance app that runs on your device. **The Cairn project
 operates no servers and collects no personal data.**
@@ -30,9 +30,11 @@ your data.
   "This Device Only," nothing is sent to iCloud at all.
 - **Apple Wallet, on-device.** If you connect Apple Wallet, Cairn reads Apple
   Card, Apple Cash, and Savings activity through FinanceKit and mirrors it into
-  the same local store as everything else. That data follows the storage choice
-  above: it stays on the device under "This Device Only," and joins your private
-  iCloud database only if you turn iCloud Sync on.
+  the same local store as everything else. The FinanceKit read happens on your
+  device. That data then follows the storage choice above: it stays on the
+  device under "This Device Only," and joins your private iCloud database only
+  if you turn iCloud Sync on — where, like the rest of your data, it reaches
+  Apple's servers with the financial fields end-to-end encrypted.
 - **On-device categorization.** Categorization runs on your device. When Apple
   Intelligence is available it may use the system model to suggest a category for
   a merchant; that work happens locally, and transaction text is not sent to a
