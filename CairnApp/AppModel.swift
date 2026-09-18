@@ -319,10 +319,18 @@ final class AppModel {
     /// cannot revoke the system authorization; only Settings can, so it also
     /// remembers the choice and stops reading Wallet until the person connects
     /// again. Cross-platform so a Mac can clear rows it received through iCloud.
+    ///
+    /// See `docs/wallet-sync.md`: because Wallet rows live in the synced store
+    /// while FinanceKit authorization is per device, this deletion cannot stick
+    /// on its own — another authorized device imports the same cards again — and
+    /// the shape of the fix is still an open decision.
     func disconnectWallet() async {
         // Without this the next sync would re-import the same rows, because
         // FinanceKit access is still granted.
         walletSyncEnabled = false
+        // The memory describes rows this device just removed; left behind it
+        // would outlive them and scope a later removal against stale keys.
+        WalletAccountRetention.forget()
 
         let source = AccountSource.financeKit.rawValue
         let context = container.mainContext
