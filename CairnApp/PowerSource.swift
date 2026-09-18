@@ -6,6 +6,11 @@ import UIKit
 /// Reads the device's power situation so the on-device model can be paused when
 /// it would be wasteful. Kept in the app target because the reading is
 /// platform-specific; the decision itself lives in `CategorizationPower`.
+///
+/// `UIDevice` is main-actor-isolated, and every caller already runs there
+/// (`AppModel` and the app delegate), so the reads are declared main-actor too
+/// rather than crossing an isolation boundary to touch them.
+@MainActor
 enum PowerSource {
     #if os(iOS)
     static func prepare() {

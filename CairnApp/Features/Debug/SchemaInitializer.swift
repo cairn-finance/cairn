@@ -140,7 +140,10 @@ enum SchemaInitializer {
                 if !attribute.isOptional, attribute.defaultValue == nil {
                     problems.append("\(entityName).\(name): not optional and has no default value.")
                 }
-                if attribute.allowsCloudEncryption, indexed.contains(name) || attribute.isIndexed {
+                // `entity.indexes` is the modern home for every index, including
+                // those declared with `#Index`; the old per-attribute flag is
+                // deprecated and already covered by that set.
+                if attribute.allowsCloudEncryption, indexed.contains(name) {
                     problems.append(
                         "\(entityName).\(name): encrypted, so CloudKit cannot index it — take it out of #Index."
                     )
