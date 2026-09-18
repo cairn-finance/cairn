@@ -83,13 +83,12 @@ no budgets, reports, or exchange rates yet.
   text is handled by the system model locally and never sent to a server.
 - The SimpleFIN Access URL is a bearer credential and lives in the **Keychain**,
   never in the database or logs.
-- Every field that reveals financial detail is marked
-  `@Attribute(.allowsCloudEncryption)`: balance and amount minor units, account
-  and holding values, transaction descriptions, dates and normalized merchant
-  names, notes, institution/account/category/tag names, currency codes and
-  custom-currency labels, account type, and rule names, patterns, and amount
-  bounds. CloudKit encrypts those fields end-to-end, independent of Advanced
-  Data Protection.
+- Amounts, balances, names, descriptions, notes, merchant names, and dates are
+  marked `@Attribute(.allowsCloudEncryption)`, so CloudKit encrypts them
+  end-to-end with keys from your iCloud Keychain, independent of Advanced Data
+  Protection. Structural metadata is **not** encrypted — for example, which
+  category a transaction is linked to, category icons, status flags such as
+  pending or transfer, and sync timestamps.
 - Financial amounts are stored as integer minor units — exact, and never a float.
 
 See [`docs/threat-model.md`](docs/threat-model.md) and
