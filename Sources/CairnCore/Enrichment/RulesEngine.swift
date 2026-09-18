@@ -77,10 +77,13 @@ public enum RulesEngine {
 
     /// How long one regular-expression rule may take before it is abandoned.
     ///
-    /// Generous for a merchant pattern — which matches in microseconds — and
-    /// short enough that a pathological one cannot stall a pass over thousands of
-    /// transactions.
-    static let regexBudget: DispatchTimeInterval = .milliseconds(50)
+    /// Deliberately generous. The job is to tell "microseconds" from
+    /// "unbounded" — a merchant pattern matches in microseconds, and a pattern
+    /// that backtracks exponentially takes minutes — so the budget only has to be
+    /// longer than a scheduling artefact. A tighter one would disable a perfectly
+    /// good rule on a busy device, which is a worse failure than a two-second
+    /// pause in a background pass, and the pause happens at most once per pattern.
+    static let regexBudget: DispatchTimeInterval = .seconds(2)
 
     /// A merchant pattern has no business being longer than this.
     static let maxPatternLength = 200
@@ -204,7 +207,14 @@ public enum RulesEngine {
     /// cancelled, so the abandoned evaluation is left to finish on its own and
     /// the pattern is disabled for the rest of the process: it costs one
     /// overrun, not one per transaction.
-    private static func matchesRegex(_ pattern: String, description: String) -> Bool {
+    ///
+    /// The budget is a parameter so a test can prove the deadline fires without
+    /// waiting seconds for a real overrun.
+    static func matchesRegex(
+        _ pattern: String,
+        description: String,
+        budget: DispatchTimeInterval = regexBudget
+    ) -> Bool {
         guard let regex = RegexCache.shared.regex(for: pattern) else { return false }
 
         let pending = PendingRegexMatch(
@@ -213,7 +223,7 @@ public enum RulesEngine {
             range: NSRange(description.startIndex..<description.endIndex, in: description)
         )
         RegexCache.shared.queue.async { pending.run() }
-        guard let matched = pending.result(within: regexBudget) else {
+        guard let matched = pending.result(within: budget) else {
             RegexCache.shared.disable(pattern)
             return false
         }

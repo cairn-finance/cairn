@@ -48,30 +48,24 @@ struct RuleRegexSafetyTests {
     @Test("An overrun is abandoned, and the pattern is never evaluated twice")
     func overrunIsAbandonedAndDisabled() {
         // `(a+)+b` over a run of a's with no b is the textbook exponential case.
-        // The run is kept short on purpose: once the caller gives up, that
-        // abandoned evaluation has to finish on its own, and a long run would
-        // leave a thread burning CPU for the rest of the suite.
+        // The budget is passed in rather than waited for: the real one is two
+        // seconds on purpose, and a test that waited it out would slow every run
+        // and leave a thread burning CPU while other suites tried to run. The run
+        // is short so that abandoned evaluation finishes quickly too.
         let pattern = "(a+)+b"
-        let description = String(repeating: "a", count: 24)
-        let rule = payeeRule(pattern)
+        let description = String(repeating: "a", count: 20)
 
         let started = Date()
-        let matched = RulesEngine.matches(rule, amountMinorUnits: 0, description: description)
+        let matched = RulesEngine.matchesRegex(pattern, description: description, budget: .milliseconds(1))
         let elapsed = Date().timeIntervalSince(started)
 
         #expect(!matched)
-        #expect(elapsed < 2, "the caller must not wait for a pathological pattern")
-
-        // The deadline is what is being tested. If ICU happened to answer this
-        // one quickly there is nothing to abandon, and the rest is unobservable,
-        // so the assertion is conditional rather than fragile.
-        guard elapsed > 0.05 else { return }
-
+        #expect(elapsed < 1, "a pattern over its budget must not hold the caller")
         #expect(RulesEngine.disabledPatterns.contains(pattern))
 
         // Disabled means skipped: the next transaction pays nothing for it.
         let second = Date()
-        _ = RulesEngine.matches(rule, amountMinorUnits: 0, description: description)
+        _ = RulesEngine.matchesRegex(pattern, description: description, budget: .milliseconds(1))
         #expect(Date().timeIntervalSince(second) < 0.05)
     }
 
