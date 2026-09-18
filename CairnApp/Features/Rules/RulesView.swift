@@ -305,7 +305,12 @@ struct RuleEditorView: View {
 
     @ViewBuilder
     private var previewRow: some View {
-        if pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let problem = patternProblem {
+            Label(problem, systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Text("Enter some text to match.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -346,10 +351,21 @@ struct RuleEditorView: View {
         return true
     }
 
+    /// Why the draft pattern can't be used, or `nil` when it's fine. A regex that
+    /// can backtrack exponentially (nested quantifiers) would stall the
+    /// categorization pass, so it is refused here rather than disabled later.
+    private var patternProblem: String? {
+        guard matchKind == .regularExpression else { return nil }
+        let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return RulesEngine.patternProblem(trimmed)
+    }
+
     private var canSave: Bool {
         category != nil
             && !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && isAmountRangeValid
+            && patternProblem == nil
     }
 
     private var draftSnapshot: RuleSnapshot? {
