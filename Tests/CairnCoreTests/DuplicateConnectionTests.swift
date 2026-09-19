@@ -82,10 +82,12 @@ struct DuplicateConnectionTests {
         bankAccountID: String,
         institution: Institution,
         displayName: String? = nil,
+        balance: Int64 = 0,
         transactions: [(id: String, amount: Int64, note: String?)] = []
     ) -> Account {
         let account = Account(bankAccountID: bankAccountID, name: bankAccountID, currency: .usd)
         account.customDisplayName = displayName
+        account.balanceMinorUnits = balance
         account.institution = institution
         context.insert(account)
         for item in transactions {
@@ -327,18 +329,24 @@ struct DuplicateConnectionTests {
         #expect(accounts.first { $0.bankAccountID == "2" }?.institution?.bankConnectionID == "CON-2")
     }
 
-    @Test("An overlap with two credentials leaves the rows alone and reports it")
-    func ambiguousOverlapIsUntouched() async throws {
+    @Test("An overlap with two credentials resolves the sync to the survivor")
+    func ambiguousOverlapResolvesToSurvivor() async throws {
         let (container, engine) = try makeEngine()
         let context = container.mainContext
         let a = UUID()
         let b = UUID()
         insertHolder(in: context, credentialID: a)
-        let childA = insertConnection(in: context, credentialID: a, connectionID: "CON-1", orgID: "ORG-1")
+        let childA = insertConnection(
+            in: context, credentialID: a, connectionID: "CON-1", orgID: "ORG-1",
+            createdAt: Date(timeIntervalSince1970: 1_000)
+        )
         insertAccount(in: context, bankAccountID: "1", institution: childA)
         insertHolder(in: context, credentialID: b)
-        let childB = insertConnection(in: context, credentialID: b, connectionID: "CON-1", orgID: "ORG-1")
-        insertAccount(in: context, bankAccountID: "1", institution: childB)
+        let childB = insertConnection(
+            in: context, credentialID: b, connectionID: "CON-1", orgID: "ORG-1",
+            createdAt: Date(timeIntervalSince1970: 2_000)
+        )
+        insertAccount(in: context, bankAccountID: "1", institution: childB, balance: 100)
         try context.save()
 
         let incoming = [connection("CON-1", org: "ORG-1")]
@@ -348,20 +356,24 @@ struct DuplicateConnectionTests {
 
         let proposed = UUID()
         let probe = SyncEngine.ConnectionProbe(
-            accountSet: SimpleFINAccountSet(connections: incoming, accounts: [account("1", connection: "CON-1")]),
+            accountSet: SimpleFINAccountSet(
+                connections: incoming,
+                accounts: [account("1", connection: "CON-1", balance: 999)]
+            ),
             adoption: adoption,
             credentialID: proposed
         )
         let outcome = try await engine.applyClaim(probe, accessURL: accessURL(), now: .now)
         #expect(outcome.ambiguousConnections == 1)
 
-        // The two existing children and their accounts are untouched, and no
-        // third child was created for the overlapping connection.
+        // No third child was created, and the imported balance landed on the
+        // older survivor. The other row waits for the repair, untouched.
         let institutions = try context.fetch(FetchDescriptor<Institution>())
         let children = institutions.filter { !$0.bankConnectionID.isEmpty }
         #expect(children.count == 2)
         #expect(Set(children.map(\.credentialID)) == [a, b])
-        #expect(children.allSatisfy { $0.accounts?.count == 1 })
+        #expect(childA.accounts?.first?.balanceMinorUnits == 999)
+        #expect(childB.accounts?.first?.balanceMinorUnits == 100)
     }
 
     // MARK: - Repair
@@ -502,39 +514,118 @@ struct DuplicateConnectionTests {
         #expect(!second.didChange)
     }
 
-    @Test("Alternating syncs with two credentials no longer move accounts")
-    func alternatingSyncsStayPut() async throws {
+    @Test("Sync keeps importing to the survivor while an unsafe duplicate awaits a merge")
+    func syncKeepsImportingWhileDuplicateUnmerged() async throws {
         let (container, engine) = try makeEngine()
         let context = container.mainContext
         let a = UUID()
         let b = UUID()
         insertHolder(in: context, credentialID: a)
-        let childA = insertConnection(in: context, credentialID: a, connectionID: "CON-1", orgID: "ORG-1")
-        let storedAccount = insertAccount(in: context, bankAccountID: "1", institution: childA)
+        let childA = insertConnection(
+            in: context, credentialID: a, connectionID: "CON-1", orgID: "ORG-1",
+            createdAt: Date(timeIntervalSince1970: 10)
+        )
+        insertAccount(
+            in: context, bankAccountID: "1", institution: childA, displayName: "Alpha"
+        )
         insertHolder(in: context, credentialID: b)
-        insertConnection(in: context, credentialID: b, connectionID: "CON-1", orgID: "ORG-1")
+        let childB = insertConnection(
+            in: context, credentialID: b, connectionID: "CON-1", orgID: "ORG-1",
+            createdAt: Date(timeIntervalSince1970: 20)
+        )
+        insertAccount(
+            in: context, bankAccountID: "1", institution: childB, displayName: "Beta", balance: 100
+        )
         try context.save()
 
+        // The chosen names conflict, so the repair leaves both rows in place.
+        let repair = try await engine.repairDuplicateConnections()
+        #expect(repair.unsafeMerges == 1)
+        #expect(repair.retiredCredentials.isEmpty)
+
         let incoming = connection("CON-1", org: "ORG-1")
-        let set = SimpleFINAccountSet(
+        let first = SimpleFINAccountSet(
             connections: [incoming],
-            accounts: [account("1", connection: "CON-1")]
+            accounts: [account(
+                "1", connection: "CON-1", balance: 250,
+                transactions: [txn("T1"), txn("T2")]
+            )]
+        )
+        let second = SimpleFINAccountSet(
+            connections: [incoming],
+            accounts: [account(
+                "1", connection: "CON-1", balance: 300,
+                transactions: [txn("T1"), txn("T2"), txn("T3")]
+            )]
         )
 
-        for holderID in [a, b, a, b] {
-            let holder = try context.fetch(FetchDescriptor<Institution>())
-                .first { $0.credentialID == holderID && $0.bankConnectionID.isEmpty }
+        // Alternate which credential syncs, as two devices would.
+        for (holderID, set) in [(a, first), (b, first), (a, second), (b, second)] {
+            let holder = try #require(try context.fetch(FetchDescriptor<Institution>())
+                .first { $0.credentialID == holderID && $0.bankConnectionID.isEmpty })
             _ = try await engine.applyAccountSet(
                 set,
-                institutionID: try #require(holder).persistentModelID,
+                institutionID: holder.persistentModelID,
                 accessURL: accessURL(),
                 now: .now
             )
         }
 
-        let stored = try context.fetch(FetchDescriptor<Account>()).first
-        #expect(stored?.institution?.credentialID == a)
-        #expect(stored?.bankAccountID == storedAccount.bankAccountID)
+        // Every transaction kept importing, onto the survivor's account.
+        let transactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        #expect(Set(transactions.map(\.bankTransactionID)) == ["T1", "T2", "T3"])
+        #expect(transactions.allSatisfy { $0.account?.institution?.credentialID == a })
+        // Both account rows stayed put with their chosen names untouched; the
+        // imported balance landed on the survivor.
+        let accounts = try context.fetch(FetchDescriptor<Account>())
+        #expect(accounts.count == 2)
+        let survivorAccount = try #require(accounts.first { $0.institution?.credentialID == a })
+        let otherAccount = try #require(accounts.first { $0.institution?.credentialID == b })
+        #expect(survivorAccount.balanceMinorUnits == 300)
+        #expect(survivorAccount.customDisplayName == "Alpha")
+        #expect(otherAccount.balanceMinorUnits == 100)
+        #expect(otherAccount.customDisplayName == "Beta")
+    }
+
+    @Test("An indeterminate duplicate still imports to one deterministic row")
+    func syncImportsWhenSurvivorIsIndeterminate() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let credentialID = UUID()
+        insertHolder(in: context, credentialID: credentialID)
+        // Same credential and same creation date: ConnectionSurvivor refuses
+        // to choose, so the sync has to fall back instead of skipping.
+        insertConnection(
+            in: context, credentialID: credentialID, connectionID: "CON-1", orgID: "ORG-1",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        insertConnection(
+            in: context, credentialID: credentialID, connectionID: "CON-1", orgID: "ORG-1",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        try context.save()
+
+        let holder = try #require(try context.fetch(FetchDescriptor<Institution>())
+            .first { $0.isCredentialHolder })
+        _ = try await engine.applyAccountSet(
+            SimpleFINAccountSet(
+                connections: [connection("CON-1", org: "ORG-1")],
+                accounts: [account(
+                    "1", connection: "CON-1",
+                    transactions: [txn("T1"), txn("T2")]
+                )]
+            ),
+            institutionID: holder.persistentModelID,
+            accessURL: accessURL(),
+            now: .now
+        )
+
+        let transactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        #expect(transactions.count == 2)
+        let children = try context.fetch(FetchDescriptor<Institution>())
+            .filter { !$0.bankConnectionID.isEmpty }
+        let owners = children.filter { !($0.accounts ?? []).isEmpty }
+        #expect(owners.count == 1)
     }
 
     // MARK: - Removal

@@ -32,8 +32,8 @@ public struct SyncOutcome: Sendable, Equatable {
     public var pendingPromoted: Int = 0
     public var stalePendingRemoved: Int = 0
     public var serverErrors: [String] = []
-    /// Connections this pass found stored under more than one credential. Their
-    /// accounts are left alone until the repair merges the duplicate rows.
+    /// Connections this pass found stored under more than one credential. The
+    /// pass wrote them to the survivor and left the other rows for the repair.
     public var ambiguousConnections: Int = 0
     public var finishedAt: Date = .now
 
@@ -294,7 +294,7 @@ public actor SyncEngine {
 
         let match = try institutions(forConnections: accountSet.connections, owner: owner)
         let owners = match.resolved
-        let ambiguous = match.ambiguous
+        let duplicates = match.duplicates
 
         // Never leave a brand-new connection wearing its stand-in name.
         if Self.isPlaceholderName(owner.name, for: accessURL),
@@ -303,10 +303,8 @@ public actor SyncEngine {
         }
 
         // Attach per-connection metadata, clearing stale errors; then apply any
-        // errors to the connection they name (or the owner if unspecified). A
-        // connection stored under more than one credential is left untouched so
-        // the repair, not this sync, decides which row survives.
-        for connection in accountSet.connections where !ambiguous.contains(connection.id) {
+        // errors to the connection they name (or the owner if unspecified).
+        for connection in accountSet.connections {
             guard let target = owners[connection.id] else { continue }
             apply(connection, to: target)
             target.lastSyncError = nil
@@ -316,19 +314,19 @@ public actor SyncEngine {
             target.lastSyncError = error.message
         }
         outcome.serverErrors = accountSet.errors.map(\.message)
-        outcome.ambiguousConnections = ambiguous.count
-        if !ambiguous.isEmpty {
+        outcome.ambiguousConnections = duplicates.count
+        if !duplicates.isEmpty {
             await cairnLog(
                 .warning,
-                "Sync found \(ambiguous.count) connection(s) stored under more than one credential; "
-                    + "leaving their accounts for the repair pass."
+                "Sync found \(duplicates.count) connection(s) stored more than once; "
+                    + "writing to the survivor until the duplicate rows are merged."
             )
         }
 
         // Accounts synced before connections were split out may still sit on the
         // connection-less holder; move them onto their real connection. Accounts
         // already owned by another connection are left untouched.
-        for simpleAccount in accountSet.accounts where !ambiguous.contains(simpleAccount.connectionID) {
+        for simpleAccount in accountSet.accounts {
             let target = owners[simpleAccount.connectionID] ?? owner
             if let existing = try accountByBankID(simpleAccount.id),
                existing.institution == nil || existing.institution === owner {
@@ -338,7 +336,7 @@ public actor SyncEngine {
 
         let ruleSnapshots = try loadRuleSnapshots()
 
-        for simpleAccount in accountSet.accounts where !ambiguous.contains(simpleAccount.connectionID) {
+        for simpleAccount in accountSet.accounts {
             let target = owners[simpleAccount.connectionID] ?? owner
             let account = try upsertAccount(simpleAccount, institution: target, now: now, outcome: &outcome)
             try reconcileTransactions(
@@ -379,9 +377,9 @@ public actor SyncEngine {
     struct ConnectionMatch {
         /// Connections that resolved to exactly one institution.
         var resolved: [String: Institution] = [:]
-        /// Connections stored under more than one credential. Their accounts are
-        /// left alone until the repair merges the duplicates.
-        var ambiguous: Set<String> = []
+        /// Connections stored more than once. The pass wrote them to the
+        /// survivor; the repair later merges the other rows.
+        var duplicates: Set<String> = []
     }
 
     /// Finds or creates one `Institution` per connection returned by an Access
@@ -393,8 +391,8 @@ public actor SyncEngine {
     /// organization id — across *every* credential, not just the owner's. That
     /// is what stops a second claim from creating a parallel row for a
     /// connection already stored. A connection that matches more than one
-    /// institution is ambiguous: it is reported and left for the repair rather
-    /// than guessed at.
+    /// institution is resolved to the repair's survivor so the sync keeps
+    /// importing; the duplicate rows stay for the repair to merge.
     private func institutions(
         forConnections connections: [SimpleFINConnection],
         owner: Institution
@@ -417,11 +415,7 @@ public actor SyncEngine {
             ) else { continue }
 
             let existing = byIdentity[identity] ?? []
-            if existing.count == 1 {
-                match.resolved[connection.id] = existing[0]
-            } else if existing.count > 1 {
-                match.ambiguous.insert(connection.id)
-            } else {
+            if existing.isEmpty {
                 let created = Institution(
                     bankConnectionID: connection.id,
                     name: connection.name,
@@ -430,9 +424,40 @@ public actor SyncEngine {
                 modelContext.insert(created)
                 byIdentity[identity, default: []].append(created)
                 match.resolved[connection.id] = created
+            } else {
+                guard let target = Self.syncTarget(among: existing, owner: owner) else { continue }
+                match.resolved[connection.id] = target
+                if existing.count > 1 {
+                    match.duplicates.insert(connection.id)
+                }
             }
         }
         return match
+    }
+
+    /// The row a sync writes to when one connection is stored more than once:
+    /// the repair's survivor when it can be chosen, otherwise the syncing
+    /// credential's own row, and failing that the first row in a stable order.
+    /// Only an empty list yields `nil`, so a duplicate connection keeps
+    /// importing instead of being skipped.
+    static func syncTarget(among members: [Institution], owner: Institution) -> Institution? {
+        guard !members.isEmpty else { return nil }
+        if let survivor = survivingInstitution(members) { return survivor }
+        if let owned = members.first(where: { $0.credentialID == owner.credentialID }) { return owned }
+        return members.enumerated().min { lhs, rhs in
+            if lhs.element.createdAt != rhs.element.createdAt {
+                return lhs.element.createdAt < rhs.element.createdAt
+            }
+            if lhs.element.credentialID != rhs.element.credentialID {
+                return lhs.element.credentialID.uuidString < rhs.element.credentialID.uuidString
+            }
+            if lhs.element.name != rhs.element.name { return lhs.element.name < rhs.element.name }
+            if lhs.element.sfinURL != rhs.element.sfinURL { return lhs.element.sfinURL < rhs.element.sfinURL }
+            if (lhs.element.orgURL ?? "") != (rhs.element.orgURL ?? "") {
+                return (lhs.element.orgURL ?? "") < (rhs.element.orgURL ?? "")
+            }
+            return lhs.offset < rhs.offset
+        }?.element
     }
 
     // MARK: - Claiming and reconnecting a connection
