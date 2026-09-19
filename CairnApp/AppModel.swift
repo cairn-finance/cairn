@@ -379,8 +379,18 @@ final class AppModel {
             let outcome = try await engine.repairDuplicateConnections()
             guard outcome.didChange || !outcome.retiredCredentials.isEmpty else { return }
 
-            for (retired, retirement) in outcome.retiredCredentials {
-                await reKeyCredential(from: retired, retirement: retirement)
+            let results = CredentialReKey.reKey(
+                retirements: outcome.retiredCredentials,
+                store: credentials,
+                synchronizable: useCloudKit,
+                dryRun: Self.skipCredentialReKey
+            )
+            for result in results {
+                if let failure = result.failure {
+                    await cairnLog(.warning, failure)
+                } else {
+                    await cairnLog(.info, result.message)
+                }
             }
             await cairnLog(
                 .info,
@@ -394,25 +404,16 @@ final class AppModel {
         }
     }
 
-    /// Re-stores a merged-away credential's secret under the survivor before
-    /// deleting the old item, so a failed write can never lose the only copy.
-    /// When the survivor already holds a secret, the copy whose credential
-    /// fetched most recently wins.
-    private func reKeyCredential(from old: UUID, retirement: SyncEngine.CredentialRetirement) async {
-        do {
-            let moved = try CredentialReKey.move(
-                store: credentials,
-                from: old,
-                to: retirement.survivorCredentialID,
-                synchronizable: useCloudKit,
-                retiredLastSuccessfulFetch: retirement.retiredLastSuccessfulFetch,
-                survivorLastSuccessfulFetch: retirement.survivorLastSuccessfulFetch
-            )
-            guard moved else { return }
-            await cairnLog(.info, "Re-keyed a merged SimpleFIN credential on this device.")
-        } catch {
-            await cairnLog(.warning, "Could not re-key a merged SimpleFIN credential on this device; leaving the old copy.")
-        }
+    /// Debug-only: `-cairn-skip-credential-rekey` runs the duplicate repair but
+    /// only logs which local Keychain copy a re-key would keep, so a repair can
+    /// be exercised on a copied store without touching its credentials. Always
+    /// `false` in Release.
+    private static var skipCredentialReKey: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-cairn-skip-credential-rekey")
+        #else
+        false
+        #endif
     }
 
     // MARK: - Onboarding

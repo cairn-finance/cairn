@@ -814,6 +814,69 @@ struct DuplicateConnectionTests {
         #expect(try store.secret(for: new) == "https://survivor.example/simplefin")
         #expect(try store.secret(for: old) == nil)
     }
+
+    @Test("The re-key preview names the copy it would keep without a store")
+    func reKeyPreviewReasons() {
+        let retired = CredentialReKey.preview(
+            retiredLastSuccessfulFetch: Date(timeIntervalSince1970: 200),
+            survivorLastSuccessfulFetch: Date(timeIntervalSince1970: 100)
+        )
+        #expect(retired.kept == .retired)
+        #expect(retired.reason == "the retired credential fetched more recently")
+
+        let survivor = CredentialReKey.preview(
+            retiredLastSuccessfulFetch: Date(timeIntervalSince1970: 100),
+            survivorLastSuccessfulFetch: Date(timeIntervalSince1970: 200)
+        )
+        #expect(survivor.kept == .survivor)
+
+        let neither = CredentialReKey.preview(
+            retiredLastSuccessfulFetch: nil,
+            survivorLastSuccessfulFetch: nil
+        )
+        #expect(neither.kept == .survivor)
+        #expect(neither.reason == "neither credential has fetched")
+    }
+
+    @Test("Skipping the credential re-key leaves the credential store unchanged")
+    func skipReKeyLeavesStoreUnchanged() async throws {
+        let (container, engine) = try makeEngine()
+        let seed = try seedDuplicates(in: container.mainContext)
+
+        // Run the real repair, then the skip path the launch argument takes.
+        let outcome = try await engine.repairDuplicateConnections()
+        #expect(outcome.retiredCredentials[seed.credentialB] != nil)
+        #expect(outcome.retiredCredentials[seed.credentialB]?.retiredLastSuccessfulFetch
+            == Date(timeIntervalSince1970: 200))
+
+        // Both copies exist, as they would on the device being tested.
+        let backing = InMemoryCredentialStore()
+        try backing.store("https://retired.example/simplefin", id: seed.credentialB, synchronizable: false)
+        try backing.store("https://survivor.example/simplefin", id: seed.credentialA, synchronizable: false)
+        let store = AccessRecordingStore(backing: backing)
+
+        let results = CredentialReKey.reKey(
+            retirements: outcome.retiredCredentials,
+            store: store,
+            synchronizable: false,
+            dryRun: true
+        )
+
+        #expect(results.count == 1)
+        let result = try #require(results.first)
+        #expect(result.failure == nil)
+        // The retired credential fetched more recently, so its secret is the one
+        // that would be kept, named by a short opaque id.
+        #expect(result.message.contains("would keep the retired secret"))
+        #expect(result.message.contains(CredentialReKey.shortID(seed.credentialB)))
+
+        // The skip path must not read, write, or delete anything.
+        #expect(store.reads.isEmpty)
+        #expect(store.writes.isEmpty)
+        #expect(store.deletes.isEmpty)
+        #expect(try backing.secret(for: seed.credentialB) == "https://retired.example/simplefin")
+        #expect(try backing.secret(for: seed.credentialA) == "https://survivor.example/simplefin")
+    }
 }
 
 /// A credential store whose write always fails, so a re-key can prove it leaves
@@ -844,6 +907,47 @@ private final class WriteFailingStore: CredentialStore, @unchecked Sendable {
     }
 
     func delete(id: UUID) throws {
+        try backing.delete(id: id)
+    }
+
+    func deleteAll() throws {
+        try backing.deleteAll()
+    }
+}
+
+/// Records every credential-store call, so the skip path can prove it neither
+/// reads nor mutates the store.
+private final class AccessRecordingStore: CredentialStore, @unchecked Sendable {
+    private let backing: InMemoryCredentialStore
+    private(set) var reads: [UUID] = []
+    private(set) var writes: [UUID] = []
+    private(set) var deletes: [UUID] = []
+
+    init(backing: InMemoryCredentialStore) {
+        self.backing = backing
+    }
+
+    func store(_ secret: String, id: UUID, synchronizable: Bool) throws {
+        writes.append(id)
+        try backing.store(secret, id: id, synchronizable: synchronizable)
+    }
+
+    func secret(for id: UUID) throws -> String? {
+        reads.append(id)
+        return try backing.secret(for: id)
+    }
+
+    func accessibility(for id: UUID, synchronizable: Bool) throws -> CredentialAccessibility? {
+        reads.append(id)
+        return try backing.accessibility(for: id, synchronizable: synchronizable)
+    }
+
+    func allIDs() throws -> [UUID] {
+        try backing.allIDs()
+    }
+
+    func delete(id: UUID) throws {
+        deletes.append(id)
         try backing.delete(id: id)
     }
 
