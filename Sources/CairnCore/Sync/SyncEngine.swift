@@ -462,7 +462,6 @@ public actor SyncEngine {
         now: Date,
         calendar: Calendar = .current
     ) async throws -> ConnectionProbe {
-        let stored = try storedConnections()
         let candidates = Self.candidateStartDates(lastSyncDate: nil, now: now, calendar: calendar)
         var lastError: any Error = SimpleFINError.httpStatus(-1)
 
@@ -481,7 +480,10 @@ public actor SyncEngine {
                     continue
                 }
 
-                let adoption = ConnectionMatcher.decide(incoming: accountSet.connections, stored: stored)
+                let adoption = ConnectionMatcher.decide(
+                    incoming: accountSet.connections,
+                    stored: try storedConnections()
+                )
                 let credentialID: UUID
                 switch adoption {
                 case let .adopt(existing):
@@ -542,7 +544,7 @@ public actor SyncEngine {
     }
 
     /// Every stored connection, across all credentials.
-    private func storedConnections() throws -> [ConnectionMatcher.StoredConnection] {
+    func storedConnections() throws -> [ConnectionMatcher.StoredConnection] {
         try modelContext.fetch(FetchDescriptor<Institution>()).compactMap { institution in
             guard let identity = ConnectionIdentity.of(
                 connectionID: institution.bankConnectionID,
