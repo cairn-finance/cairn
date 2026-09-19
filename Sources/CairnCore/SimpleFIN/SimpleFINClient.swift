@@ -139,17 +139,25 @@ public actor SimpleFINClient {
     /// - Parameters:
     ///   - startDate: Restricts transactions to those posted on or after this
     ///     date, enabling incremental sync.
+    ///   - endDate: Restricts transactions to those posted on or before this
+    ///     date. A backfill window sets both ends so pages do not overlap.
     ///   - includePending: Include not-yet-posted transactions when supported.
     public func fetchAccounts(
         accessURL: URL,
         startDate: Date? = nil,
+        endDate: Date? = nil,
         includePending: Bool = true
     ) async throws -> SimpleFINAccountSet {
         guard accessURL.scheme?.lowercased() == "https" else {
             throw SimpleFINError.insecureURL
         }
 
-        let (credentials, requestURL) = Self.accountsRequestURL(accessURL: accessURL, startDate: startDate, includePending: includePending)
+        let (credentials, requestURL) = Self.accountsRequestURL(
+            accessURL: accessURL,
+            startDate: startDate,
+            endDate: endDate,
+            includePending: includePending
+        )
 
         var request = URLRequest(url: requestURL)
         request.httpMethod = "GET"
@@ -310,6 +318,7 @@ public actor SimpleFINClient {
     static func accountsRequestURL(
         accessURL: URL,
         startDate: Date?,
+        endDate: Date? = nil,
         includePending: Bool
     ) -> (credentials: String?, url: URL) {
         var components = URLComponents(url: accessURL, resolvingAgainstBaseURL: false)
@@ -338,6 +347,10 @@ public actor SimpleFINClient {
         if let startDate {
             let epoch = Int(startDate.timeIntervalSince1970)
             queryItems.append(URLQueryItem(name: "start-date", value: String(epoch)))
+        }
+        if let endDate {
+            let epoch = Int(endDate.timeIntervalSince1970)
+            queryItems.append(URLQueryItem(name: "end-date", value: String(epoch)))
         }
         queryComponents?.queryItems = queryItems
 

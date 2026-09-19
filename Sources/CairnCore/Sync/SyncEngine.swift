@@ -45,6 +45,23 @@ public struct SyncOutcome: Sendable, Equatable {
     }
 }
 
+/// A summary of one historical backfill pass, surfaced to the UI and logs.
+public struct BackfillOutcome: Sendable, Equatable {
+    public var pagesFetched: Int = 0
+    public var transactionsInserted: Int = 0
+    public var transactionsUpdated: Int = 0
+    /// A window came back with no transactions, so there is no older history.
+    public var reachedFloor: Bool = false
+    /// The page cap was spent; another pass should continue from here.
+    public var hitPageLimit: Bool = false
+    /// The daily request budget for this credential ran out mid-pass.
+    public var budgetExhausted: Bool = false
+    /// Set when a page failed; the backfill stops and can retry next time.
+    public var failure: String?
+
+    public init() {}
+}
+
 /// Whether a sync should run right now.
 public enum SyncDecision: Sendable, Equatable {
     case proceed
@@ -66,6 +83,9 @@ public actor SyncEngine {
     /// Hard ceiling for any requested range, so an incremental sync after a long
     /// gap is clamped instead of being rejected.
     public static let maximumRequestDays = 89
+    /// A backfill page. The beta bridge recommends keeping a request under 45
+    /// days and may cap longer ones later, so pages stay inside that.
+    public static let backfillPageDays = 45
     public static let syncOverlapDays = 7
     public static let stalePendingThreshold = 2
 
@@ -220,12 +240,16 @@ public actor SyncEngine {
                     includePending: true
                 )
 
-                // If the server rejects the range, try a shorter window before
-                // giving up, so the app self-heals if the limit differs.
-                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }), !isLast {
-                    await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
-                    lastError = SimpleFINError.serverReported(accountSet.errors)
-                    continue
+                // A range note that arrives with rows is a warning, not a
+                // rejection: keep the data. Only fall back to a shorter window
+                // when the server refused the range and returned nothing.
+                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }) {
+                    if !isLast, !Self.hasTransactions(accountSet) {
+                        await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
+                        lastError = SimpleFINError.serverReported(accountSet.errors)
+                        continue
+                    }
+                    await cairnLog(.warning, "Range note: \(rangeMessage).")
                 }
 
                 return try await applyAccountSet(
@@ -290,7 +314,12 @@ public actor SyncEngine {
         }
 
         var outcome = SyncOutcome()
-        let hadServerErrors = !accountSet.errors.isEmpty
+        // The bridge can return every requested row *and* an errlist warning
+        // that the range is longer than it recommends. That is not a failure:
+        // only errors that are not range notes block the cursor and show a
+        // banner.
+        let realErrors = accountSet.errors.filter { !Self.isRangeLimitError($0.message) }
+        let hadServerErrors = !realErrors.isEmpty
 
         let match = try institutions(forConnections: accountSet.connections, owner: owner)
         let owners = match.resolved
@@ -309,11 +338,11 @@ public actor SyncEngine {
             apply(connection, to: target)
             target.lastSyncError = nil
         }
-        for error in accountSet.errors {
+        for error in realErrors {
             let target = error.connectionID.flatMap { owners[$0] } ?? owner
             target.lastSyncError = error.message
         }
-        outcome.serverErrors = accountSet.errors.map(\.message)
+        outcome.serverErrors = realErrors.map(\.message)
         outcome.ambiguousConnections = duplicates.count
 
         // Accounts synced before connections were split out may still sit on the
@@ -374,6 +403,156 @@ public actor SyncEngine {
                 + "updated=\(outcome.transactionsUpdated) serverErrors=\(outcome.serverErrors.count)"
         )
         return outcome
+    }
+
+    // MARK: - Historical backfill
+
+    /// Fetches older transactions one 89-day window at a time, walking back
+    /// from the oldest row already stored until a window comes back empty or
+    /// the page or budget cap is reached.
+    ///
+    /// This never touches balances, connection metadata, pending aging, or the
+    /// sync cursor: each page only adds transactions, so a historical window
+    /// cannot resurrect a stale balance or age out a live pending charge. The
+    /// caller decides whether to try again; `reachedFloor` means there is
+    /// nothing older to fetch.
+    public func backfillHistory(
+        institutionID: PersistentIdentifier,
+        accessURL: URL,
+        fetch: @Sendable (URL, Date, Date) async throws -> SimpleFINAccountSet,
+        maxPages: Int,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) async -> BackfillOutcome {
+        var outcome = BackfillOutcome()
+        guard maxPages > 0 else { return outcome }
+        guard let owner = liveModel(Institution.self, institutionID) else {
+            outcome.failure = "connection is no longer saved"
+            return outcome
+        }
+        let credentialID = owner.credentialID
+
+        // Start at the oldest row already stored so a short primary window and
+        // a later backfill leave no gap between them. With nothing stored, start
+        // before the primary window.
+        let primaryStart = calendar.date(byAdding: .day, value: -Self.initialBackfillDays, to: now) ?? now
+        var cursor = (try? oldestTransactionDate(credentialID: credentialID)) ?? primaryStart
+        if cursor > now { cursor = now }
+
+        for _ in 0..<maxPages {
+            guard let holder = liveModel(Institution.self, institutionID) else {
+                outcome.failure = "connection is no longer saved"
+                return outcome
+            }
+            rollRequestCounterIfNeeded(holder, now: now, calendar: calendar)
+            guard holder.dailyRequestCount < Self.dailyRequestLimit else {
+                outcome.budgetExhausted = true
+                break
+            }
+            guard let start = calendar.date(byAdding: .day, value: -Self.backfillPageDays, to: cursor) else {
+                break
+            }
+            holder.dailyRequestCount += 1
+
+            do {
+                let accountSet = try await fetch(accessURL, start, cursor)
+                outcome.pagesFetched += 1
+
+                // A range note that comes with rows is a warning: the bridge
+                // returned the data and may cap the range later, so keep it.
+                let hardError = accountSet.errors.first { !Self.isRangeLimitError($0.message) }
+                if let hardError {
+                    outcome.failure = hardError.message
+                    break
+                }
+                if let warning = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }) {
+                    await cairnLog(.warning, "Backfill range note: \(warning.message)")
+                }
+
+                let transactions = accountSet.accounts.reduce(0) { $0 + $1.transactions.count }
+                if transactions == 0 {
+                    outcome.reachedFloor = true
+                    break
+                }
+                guard liveModel(Institution.self, institutionID) != nil else {
+                    outcome.failure = "connection is no longer saved"
+                    return outcome
+                }
+                try applyHistoricalAccountSet(
+                    accountSet,
+                    institutionID: institutionID,
+                    now: now,
+                    calendar: calendar,
+                    outcome: &outcome
+                )
+                cursor = start
+            } catch {
+                outcome.failure = Self.describe(error)
+                break
+            }
+        }
+
+        if outcome.failure == nil, !outcome.reachedFloor, outcome.pagesFetched >= maxPages {
+            outcome.hitPageLimit = true
+        }
+        // Persist the request-counter increments even when a page held no rows
+        // and nothing else needed saving.
+        if outcome.pagesFetched > 0 {
+            try? modelContext.save()
+        }
+        return outcome
+    }
+
+    /// Adds only the transactions from a backfill window. Accounts already
+    /// exist from the primary sync; a window never creates or edits one, so it
+    /// cannot change a balance or a name.
+    private func applyHistoricalAccountSet(
+        _ accountSet: SimpleFINAccountSet,
+        institutionID: PersistentIdentifier,
+        now: Date,
+        calendar: Calendar,
+        outcome: inout BackfillOutcome
+    ) throws {
+        guard liveModel(Institution.self, institutionID) != nil else {
+            throw SimpleFINError.institutionGone
+        }
+        let rules = try loadRuleSnapshots()
+        var pageOutcome = SyncOutcome()
+        for simpleAccount in accountSet.accounts where !simpleAccount.transactions.isEmpty {
+            guard let account = try accountByBankID(simpleAccount.id) else { continue }
+            try reconcileTransactions(
+                simpleAccount.transactions,
+                account: account,
+                rules: rules,
+                now: now,
+                calendar: calendar,
+                agesOutPending: false,
+                promotesPending: false,
+                outcome: &pageOutcome
+            )
+        }
+        if pageOutcome.hadChanges {
+            try modelContext.save()
+        }
+        outcome.transactionsInserted += pageOutcome.transactionsInserted
+        outcome.transactionsUpdated += pageOutcome.transactionsUpdated
+    }
+
+    /// The earliest effective date among a credential's stored transactions.
+    func oldestTransactionDate(credentialID: UUID) throws -> Date? {
+        let siblings = try siblingInstitutions(credentialID: credentialID)
+        let bankIDs = Set((siblings.flatMap { $0.accounts ?? [] }).map(\.bankAccountID))
+        guard !bankIDs.isEmpty else { return nil }
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        return transactions
+            .filter {
+                bankIDs.contains($0.accountIDIndex)
+                    || ($0.account.map { bankIDs.contains($0.bankAccountID) } ?? false)
+            }
+            // Only posted rows mark history; a pending row has no posted date
+            // and its creation date says nothing about how far back data goes.
+            .compactMap(\.postedDate)
+            .min()
     }
 
     /// The result of matching a fetch's connections against the store.
@@ -501,11 +680,13 @@ public actor SyncEngine {
                     startDate: startDate,
                     includePending: true
                 )
-                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }),
-                   !isLast {
-                    await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
-                    lastError = SimpleFINError.serverReported(accountSet.errors)
-                    continue
+                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }) {
+                    if !isLast, !Self.hasTransactions(accountSet) {
+                        await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
+                        lastError = SimpleFINError.serverReported(accountSet.errors)
+                        continue
+                    }
+                    await cairnLog(.warning, "Range note: \(rangeMessage).")
                 }
 
                 let adoption = ConnectionMatcher.decide(
@@ -1120,6 +1301,12 @@ public actor SyncEngine {
             || lowered.contains("exceeds limit")
     }
 
+    /// Whether a fetched set carries any transactions. A range note that comes
+    /// with rows is a warning, not a rejection.
+    static func hasTransactions(_ accountSet: SimpleFINAccountSet) -> Bool {
+        accountSet.accounts.contains { !$0.transactions.isEmpty }
+    }
+
     static func isRangeLimitError(_ error: any Error) -> Bool {
         if let simpleError = error as? SimpleFINError,
            case let .serverReported(errors) = simpleError {
@@ -1264,10 +1451,14 @@ public actor SyncEngine {
         rules: [RuleSnapshot],
         now: Date,
         calendar: Calendar,
+        agesOutPending: Bool = true,
+        promotesPending: Bool = true,
         outcome: inout SyncOutcome
     ) throws {
         guard !incoming.isEmpty else {
-            try ageOutPending(seenIDs: [], account: account)
+            if agesOutPending {
+                try ageOutPending(seenIDs: [], account: account)
+            }
             return
         }
 
@@ -1336,8 +1527,12 @@ public actor SyncEngine {
             }
         }
 
-        try promotePending(newlyPostedIDs: newlyPostedIDs, byID: byID, now: now)
-        try ageOutPending(seenIDs: incomingPendingIDs, account: account, existing: existing)
+        if promotesPending {
+            try promotePending(newlyPostedIDs: newlyPostedIDs, byID: byID, now: now)
+        }
+        if agesOutPending {
+            try ageOutPending(seenIDs: incomingPendingIDs, account: account, existing: existing)
+        }
     }
 
     /// Links a pending charge to a posted charge the bank just reported under a

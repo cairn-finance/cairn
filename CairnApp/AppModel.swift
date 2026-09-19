@@ -778,6 +778,11 @@ final class AppModel {
                             + "serverErrors=\(outcome.serverErrors.count)"
                     )
                     failures.append(contentsOf: outcome.serverErrors.map { "\(name): \($0)" })
+                    await backfillIfNeeded(
+                        institution: institution,
+                        accessURL: accessURL,
+                        name: name
+                    )
                 }
             } catch SimpleFINError.institutionGone {
                 // The duplicate repair merged this row away between picking it
@@ -829,6 +834,60 @@ final class AppModel {
         // Categorize in the background so the sync UI finishes immediately.
         Task { await autoCategorize() }
     }
+
+    /// Fetches older transactions for a credential until the institution's
+    /// history runs out. Runs once per credential per device, two 89-day pages
+    /// per pass, and keeps the daily request budget in mind.
+    private func backfillIfNeeded(
+        institution: Institution,
+        accessURL: URL,
+        name: String
+    ) async {
+        let credentialID = institution.credentialID
+        let key = Self.backfillCompleteKey(credentialID)
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let client = self.client
+        let outcome = await engine.backfillHistory(
+            institutionID: institution.persistentModelID,
+            accessURL: accessURL,
+            fetch: { url, start, end in
+                try await client.fetchAccounts(
+                    accessURL: url,
+                    startDate: start,
+                    endDate: end,
+                    includePending: false
+                )
+            },
+            maxPages: Self.backfillPagesPerPass
+        )
+
+        if outcome.reachedFloor {
+            UserDefaults.standard.set(true, forKey: key)
+        }
+        if outcome.pagesFetched > 0 {
+            await cairnLog(
+                .info,
+                "\(name): backfill pages=\(outcome.pagesFetched) "
+                    + "inserted=\(outcome.transactionsInserted) updated=\(outcome.transactionsUpdated) "
+                    + "floor=\(outcome.reachedFloor)"
+            )
+        }
+        if let failure = outcome.failure {
+            await cairnLog(.warning, "\(name): backfill stopped: \(failure)")
+        }
+    }
+
+    /// Whether one credential's history has already been walked back to its
+    /// floor on this device. Device-local: a reinstall repeats the walk once,
+    /// which is harmless because the rows are deduplicated.
+    private static func backfillCompleteKey(_ credentialID: UUID) -> String {
+        "cairn.backfillComplete.\(credentialID.uuidString)"
+    }
+
+    /// How many older pages one sync pass may fetch for a credential. Two pages
+    /// plus the primary sync stays far inside the 24-requests-per-day budget.
+    private static let backfillPagesPerPass = 2
 
     /// The notice shown when one or more saved connections have no credential on
     /// this device. A cloud-backed store may still deliver it through iCloud
