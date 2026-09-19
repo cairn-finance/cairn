@@ -106,9 +106,9 @@ entry="$(mktemp)"
   echo "## [$next] - $today"
   echo
   if git rev-parse -q --verify "refs/tags/$latest_tag" >/dev/null; then
-    git log --no-merges --pretty='- %s (%h)' "$latest_tag..HEAD"
+    git log --no-merges --pretty='- %s' "$latest_tag..HEAD"
   else
-    git log --no-merges --pretty='- %s (%h)' HEAD
+    git log --no-merges --pretty='- %s' HEAD
   fi
   echo
 } > "$entry"

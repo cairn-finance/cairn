@@ -4,74 +4,128 @@ All notable changes to Cairn are documented here. This project follows
 [Semantic Versioning](https://semver.org) and
 [Keep a Changelog](https://keepachangelog.com).
 
+## [Unreleased]
+
+### Added
+
+- A public README, issue and pull request templates, a security policy, and
+  refreshed privacy and support pages.
+- CI checks (tests and the schema hash) and a tag-driven release process that
+  builds and uploads to TestFlight.
+
+### Changed
+
+- Sync now uses a new CloudKit container, so data synced by earlier builds
+  won't show up through it.
+- Cloud sync now defaults to off on new installs; onboarding asks before
+  anything is stored in iCloud.
+- Removing Wallet data is offered on iPhone and iPad only.
+- Documentation, Info.plist, and the background task now match the app.
+
+### Fixed
+
+- A saved SimpleFIN connection can be reconnected after a reinstall.
+- A store that fails to open shows an error instead of an empty app.
+- CSV import and export work in the sandboxed Mac app.
+- Export failures are reported instead of failing silently.
+- Institution and counterparty names match on word boundaries, so purchases
+  are no longer misread as transfers.
+- Bill payments (autopay, bill pay, e-payment) count as card payments only
+  when a card is named, and no longer disappear from spending.
+- Card payments stay out of spending.
+- Wallet sync removes only accounts this device has seen, and a transient
+  empty result never deletes anything.
+- Delete All Data removes holdings, the diagnostics log, recurring series,
+  and the app-lock preference, and reports store failures.
+- Categorization re-resolves rows after model calls, so a sync or delete
+  cannot trap on a removed row.
+- Keychain copies are judged individually, and switching sync modes no longer
+  leaves a stale device-only credential behind.
+- The lock covers presented sheets and the app switcher, and re-engages on
+  macOS when the screen locks.
+- Regex rules run under a deadline, custom-currency lookups are cached and
+  capped, and money sums clamp instead of trapping.
+
+### Security
+
+- CloudKit now encrypts every field that reveals financial detail, including
+  merchant names, rule amount bounds, institution org fields, sync errors,
+  currency codes, and custom-currency names.
+- The setup token no longer reaches the diagnostics log, and device-only
+  credentials use ThisDeviceOnly.
+
 ## [0.3.0] - 2026-09-16
 
-- Add rules and tags management to the app (4c67f6c)
-- Avoid a local name shadowing the series helper (4ffee2b)
-- Detect subscriptions and other regular payments on-device (78bedea)
-- Let deterministic hints outrank a fuzzy merchant match (8842360)
-- Match both legs of a transfer across accounts (dd3f757)
-- Record why a model pass was paused even before it starts (5fafedd)
-- Gate the model pass on power and run the bulk in the background (ac4d404)
-- Batch categorization per merchant and stop retrying settled rows (185efdb)
-- Overwrite stale model labels and treat brokerage activity as transfers (961c750)
-- Add card/loan payment categories and fix credit classification (17d43b4)
-- Fix on-device categorization stranding uncategorized rows (aa70fab)
-- Bump GitHub Actions to their Node 24 majors (7d6da9d)
+### Added
+
+- Recurring payments: subscriptions and regular charges are detected
+  on-device and listed on a Recurring screen.
+- Rules and tags: create, edit, reorder, enable, and delete rules with a live
+  match preview, start a rule from a transaction, and assign tags with a tag
+  filter.
+- Card and loan payment categories, and on-device classification that knows
+  whether money is in or out, so credits no longer land in spending
+  categories.
+
+### Changed
+
+- Categorization asks the on-device model once per merchant, remembers its
+  decisions, and pauses on thermal pressure or Low Power Mode; larger
+  backlogs finish through a background task.
+
+### Fixed
+
+- Uncategorized rows are retried instead of being stranded, and stale model
+  labels are overwritten once.
+- Both legs of a transfer are matched across accounts.
+- Deterministic hints outrank a fuzzy merchant match, so payroll income is no
+  longer pulled into a spending category.
+- Brokerage buys, sells, and reinvestments count as money movement, not
+  spending.
 
 ## [0.2.0] - 2026-09-15
 
-- Require device unlock to open Cairn (17fd5b7)
-- Hide the SimpleFIN credential holder from the bank list (0d1fc5c)
-- Name new connections from their Access URL, not "Connecting…" (a92bc6e)
-- Identity Apple Wallet accounts clearly on Mac (1efefac)
-- Stop hammering the on-device model when it is throttled (8f8eeb7)
-- Add Apple Wallet as a second data source via FinanceKit (492de1b)
-- Make a missing credential an actionable notice (c94f9cf)
-- Make sync status honest and every chart scrubbable (e97b3b4)
-- Improve fee, income, transfer, and category handling (0e87ae5)
+### Added
+
+- Apple Wallet as a second data source: Apple Card, Apple Cash, and Savings
+  connect through FinanceKit on iPhone and iPad.
+- An app lock that requires Face ID, Touch ID, or the device passcode on
+  launch and when the app leaves the foreground.
+
+### Changed
+
+- New SimpleFIN connections are named from their Access URL instead of
+  "Connecting…".
+
+### Fixed
+
+- A missing credential is an actionable notice instead of a sync failure.
+- Charts scrub to a vertical rule with the date and value, and sync status
+  reflects what actually happened.
+- On-device categorization backs off when the model is throttled instead of
+  hammering it.
+- Fees require a debit and an explicit charge word; payroll credits and
+  transfers are classified correctly.
 
 ## [0.1.0] - 2026-09-15
 
-- Address release workflow review (e2959c5)
-- Add tag-driven release automation (490f254)
-- Revert "Log sync diagnostics to the Xcode console" (91f2e7e)
-- Log sync diagnostics to the Xcode console (aa89f53)
-- Detect investment accounts and show their positions (9e4b4c7)
-- Show Investments as a pushed screen, not a tab (569fe15)
-- Add an Investments screen for last-synced values (263152a)
-- Split SimpleFIN connections into separate institutions (de2a9f1)
-- Tidy Settings and expand sample data (76f7e2b)
-- Refresh onboarding and the import sheets (7f35aba)
-- Refresh account detail and Net Worth (53cb6cd)
-- Refresh the shared rows and Activity screen (98e9562)
-- Refine the design system and rebuild the app shell (1668876)
-- Introduce a calm design system and teal brand (96d60e5)
-- Project month end from the current run rate (0342928)
-- Teach the classifier to spot money movement and real fees (688b2da)
-- Ship the Peak app icon (a1cf5fd)
-- Replace icon concepts with abstract marks (6eae7cd)
-- Add generated app icon concepts (d99c8a8)
-- Improve Insights UX with pace view and drill-down (6b5cab5)
-- Show the effective category in the transaction detail picker, including automatic ones. (c594f18)
-- Add a sync diagnostics log, self-healing range-window retry, and automatic on-device categorization, with Apple Intelligence used only for what rules and history can't place. (1df3609)
-- Clamp SimpleFIN requests to the 90-day limit, surface errlist on HTTP errors, and stop institutions sticking on Connecting. (af155cb)
-- Add Insights to the app shell and make status banners transient and non-blocking. (b779450)
-- Group transactions by month with spending headers, category and account filters, and note/tag search. (26849fe)
-- Add an Insights screen with month-over-month spending, category breakdown, and 6-month trend charts. (ae08517)
-- Wire re-categorization into sync: rules, merchant memory, and optional Apple Intelligence. (9de1a10)
-- Test insights math, merchant memory, and the layered category suggester. (1f35b27)
-- Add on-device merchant-memory categorization with optional Apple Intelligence classification. (1f70e4e)
-- Add an insights calculator for month-over-month income, spending, and category breakdowns. (9a94f2e)
-- Test merchant normalization, CSV parsing, Apple Card import, debit/credit columns, and duplicate skipping. (0ca40c7)
-- Add manual accounts and a CSV import flow with preview, format presets, and a sign toggle. (480c932)
-- Import CSV rows with duplicate detection, recompute manual balances, and store normalized merchants during sync. (6ee2b57)
-- Add merchant normalization, tolerant CSV parsing with Apple Card and Savings presets, and manual-account schema fields. (dbb1d68)
-- Add Swift Testing coverage for money, matching, balance history, rules, export, persistence, and CloudKit schema requirements. (a56ec95)
-- Add SwiftUI app: onboarding, accounts, transactions, net worth, settings, app model, and design system. (15e0ac1)
-- Add sync engine with per-bank budget and pending-to-posted matching, balance history, rules engine, and CSV/JSON export. (c344398)
-- Add SimpleFIN claim and account-fetch client, typed models, error mapping, and untrusted-text sanitizer. (18c4dc1)
-- Store SimpleFIN credentials in the Keychain with optional iCloud sync, non-destructive writes, and a test double. (43f566f)
-- Add exact minor-unit money, CloudKit-compatible SwiftData schema with encrypted fields, container factory, and cloud availability gate. (8a67d58)
-- Document architecture, threat model, privacy policy, troubleshooting, and contributing; refresh README for v0.1. (a6572d7)
-- Add XcodeGen project, Swift package, CloudKit entitlements, signing xcconfig defaults, SwiftLint config, CI, and NOTICE. (eb00e58)
+### Added
+
+- Exact money in integer minor units.
+- A CloudKit-compatible SwiftData schema with encrypted fields.
+- SimpleFIN credentials in the Keychain with optional iCloud sync, a claim
+  and account-fetch client, and a sync engine with per-bank budget,
+  pending-to-posted matching, balance history, rules, and CSV/JSON export.
+- A SwiftUI app with onboarding, accounts, transactions, net worth, settings,
+  and a shared design system.
+- CSV import with Apple Card and Savings presets, and manual accounts.
+- Insights: month-over-month income, spending, and category breakdowns.
+- On-device merchant-memory categorization with optional Apple Intelligence.
+- An Investments screen with last-synced positions, pushed from a Home
+  summary card, and one institution per SimpleFIN connection.
+- The Peak app icon.
+
+### Fixed
+
+- Month-end projections run from the current pace instead of the trailing
+  average.
