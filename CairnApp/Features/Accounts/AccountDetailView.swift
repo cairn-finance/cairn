@@ -522,7 +522,7 @@ struct TransactionDetailView: View {
                         transaction.isTransfer = $0
                         transaction.isTransferUserSet = true
                         touch()
-                        model.refreshRecurring()
+                        Task { await model.refreshRecurring() }
                     }
                 )) {
                     IconRow(
@@ -539,7 +539,7 @@ struct TransactionDetailView: View {
 
                 Toggle(isOn: Binding(
                     get: { transaction.isIgnored },
-                    set: { transaction.isIgnored = $0; touch(); model.refreshRecurring() }
+                    set: { transaction.isIgnored = $0; touch(); Task { await model.refreshRecurring() } }
                 )) {
                     IconRow("Ignore", subtitle: "Hide from insights and totals entirely.", systemImage: "eye.slash", tint: .gray)
                 }

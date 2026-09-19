@@ -74,7 +74,7 @@ struct RecurringView: View {
         }
         .cairnCanvas()
         .navigationTitle("Recurring")
-        .task { model.refreshRecurring() }
+        .task { await model.refreshRecurring() }
     }
 
     // MARK: - Hero

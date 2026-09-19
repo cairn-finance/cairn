@@ -315,13 +315,6 @@ public actor SyncEngine {
         }
         outcome.serverErrors = accountSet.errors.map(\.message)
         outcome.ambiguousConnections = duplicates.count
-        if !duplicates.isEmpty {
-            await cairnLog(
-                .warning,
-                "Sync found \(duplicates.count) connection(s) stored more than once; "
-                    + "writing to the survivor until the duplicate rows are merged."
-            )
-        }
 
         // Accounts synced before connections were split out may still sit on the
         // connection-less holder; move them onto their real connection. Accounts
@@ -365,6 +358,16 @@ public actor SyncEngine {
 
         try modelContext.save()
         outcome.finishedAt = now
+        // Log only after the save: the earlier `await` used to sit between the
+        // row lookups and the writes, and the repair runs on this same actor, so
+        // a suspension there could delete a row this pass was about to write.
+        if !duplicates.isEmpty {
+            await cairnLog(
+                .warning,
+                "Sync found \(duplicates.count) connection(s) stored more than once; "
+                    + "wrote to the survivor until the duplicate rows are merged."
+            )
+        }
         await cairnLog(
             .info,
             "Sync ok: accounts=\(accountSet.accounts.count) inserted=\(outcome.transactionsInserted) "
@@ -2043,6 +2046,21 @@ public actor SyncEngine {
     /// Total transactions still needing a category.
     public func uncategorizedCount() throws -> Int {
         try categorizationCounts().total
+    }
+
+    /// Detects recurring payments from the store, on the writer's context.
+    ///
+    /// The mapping reads `LedgerTransaction` relationships, so it must not run
+    /// against the main context: a repair or sync can delete a row between that
+    /// context's fetch and the mapping, and SwiftData traps on the invalidated
+    /// instance. Running here serializes the read with those writers, so the
+    /// rows are always the ones the store still holds.
+    public func recurringSeries(
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) throws -> [RecurringSeries] {
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        return RecurringDetector.detect(transactions: transactions, now: now, calendar: calendar)
     }
 
     /// Runs the on-device Apple Intelligence model over a bounded set of

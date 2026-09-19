@@ -504,6 +504,24 @@ struct DuplicateConnectionTests {
         #expect(!institutions.contains { $0.credentialID == seed.credentialB })
     }
 
+    @Test("Recurring detection reads the store after a repair, not a stale main copy")
+    func recurringDetectionSurvivesRepair() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        _ = try seedDuplicates(in: context)
+        // Hold rows on the main context, the way a view or a refresh does.
+        let held = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        #expect(held.count == 4)
+
+        // The repair deletes two of those rows out from under the main context.
+        _ = try await engine.repairDuplicateConnections()
+
+        // Detection must run on the writer's context, so it never maps one of
+        // the invalidated copies. This call would trap before the fix.
+        let series = try await engine.recurringSeries()
+        #expect(series.isEmpty)
+    }
+
     @Test("Running the repair twice changes nothing the second time")
     func repairIsIdempotent() async throws {
         let (container, engine) = try makeEngine()

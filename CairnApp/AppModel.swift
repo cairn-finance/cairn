@@ -261,7 +261,7 @@ final class AppModel {
             // The sample connection has no credential and no server, so running
             // the network path would only report it as unable to sync. Present
             // the synthetic ledger as a healthy, recently synced account.
-            refreshRecurring()
+            await refreshRecurring()
             syncState = .success
             // Still run the deterministic pass so repeat merchants in the
             // synthetic ledger are categorized, as they would be in a real run.
@@ -288,7 +288,7 @@ final class AppModel {
         await recovery
         // Kick off categorization without blocking launch; a large backlog can
         // take minutes on-device.
-        refreshRecurring()
+        await refreshRecurring()
         Task { await autoCategorize() }
     }
 
@@ -990,7 +990,7 @@ final class AppModel {
         }
 
         await refreshCategorizationCounts()
-        refreshRecurring()
+        await refreshRecurring()
         await cairnLog(
             .info,
             "Auto-categorize(\(scope == .background ? "background" : "foreground")): "
@@ -1038,7 +1038,7 @@ final class AppModel {
         do {
             let outcome = try await engine.applyRules()
             await refreshCategorizationCounts()
-            refreshRecurring()
+            await refreshRecurring()
             return outcome
         } catch {
             await cairnLog(.warning, "Couldn't apply rules: \(error.localizedDescription)")
@@ -1054,9 +1054,13 @@ final class AppModel {
     /// Recomputes detected subscriptions and regular payments entirely
     /// on-device. Cheap enough to run after a sync or a flag change; it only
     /// groups transactions already in the local store.
-    func refreshRecurring() {
-        let transactions = (try? container.mainContext.fetch(FetchDescriptor<LedgerTransaction>())) ?? []
-        recurringSeries = RecurringDetector.detect(transactions: transactions)
+    ///
+    /// Runs on the engine's context rather than the main context: the detector
+    /// reads transaction relationships, and a repair or sync running in the
+    /// background can delete a duplicate row mid-pass. Mapping a stale
+    /// main-context copy would trap in SwiftData.
+    func refreshRecurring() async {
+        recurringSeries = (try? await engine.recurringSeries()) ?? []
     }
 
     /// Called right after the person changes a transaction's category, so the
@@ -1072,7 +1076,7 @@ final class AppModel {
                 )
             }
             await refreshCategorizationCounts()
-            refreshRecurring()
+            await refreshRecurring()
         }
     }
 
