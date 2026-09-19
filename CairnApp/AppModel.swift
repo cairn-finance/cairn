@@ -718,6 +718,7 @@ final class AppModel {
         var failures: [String] = []
         var missingCredentialIDs: [UUID] = []
         var missingCredentialNames: [String] = []
+        var skipped = 0
         var reportedBudget = false
         var reportedThrottle = false
 
@@ -758,6 +759,7 @@ final class AppModel {
                         await cairnLog(.warning, "\(name): \(reason); skipping.")
                         missingCredentialIDs.append(institution.credentialID)
                         missingCredentialNames.append(name)
+                        skipped += 1
                         continue
                     }
                     let outcome = try await engine.performSync(
@@ -774,6 +776,12 @@ final class AppModel {
                     )
                     failures.append(contentsOf: outcome.serverErrors.map { "\(name): \($0)" })
                 }
+            } catch SimpleFINError.institutionGone {
+                // The duplicate repair merged this row away between picking it
+                // and fetching. Nothing is wrong with the connection, so this
+                // is a skip rather than a failure to show.
+                await cairnLog(.info, "\(name): skipped; the saved connection was merged or removed by another pass.")
+                skipped += 1
             } catch {
                 let reason = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
                 await cairnLog(.error, "\(name): \(reason)")
@@ -786,7 +794,7 @@ final class AppModel {
         }
 
         await refreshBudget()
-        await cairnLog(.info, "syncAll finished: failures=\(failures.count) skipped=\(missingCredentialIDs.count)")
+        await cairnLog(.info, "syncAll finished: failures=\(failures.count) skipped=\(skipped)")
 
         // A credential whose connections are also held by another credential is
         // about to be merged by the repair, so it must not be offered for

@@ -135,7 +135,7 @@ public actor SyncEngine {
         calendar: Calendar = .current
     ) throws -> SyncDecision {
         guard let institution = liveModel(Institution.self, institutionID) else {
-            throw SimpleFINError.transport("This institution is no longer in the local database.")
+            throw SimpleFINError.institutionGone
         }
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
         let settings = try loadOrCreateSettings()
@@ -186,7 +186,7 @@ public actor SyncEngine {
         calendar: Calendar = .current
     ) async throws -> SyncOutcome {
         guard let institution = liveModel(Institution.self, institutionID) else {
-            throw SimpleFINError.transport("This institution is no longer in the local database.")
+            throw SimpleFINError.institutionGone
         }
 
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
@@ -209,7 +209,7 @@ public actor SyncEngine {
             // Re-resolve: a previous iteration's network call may have outlived
             // the row, and writing to a deleted model traps.
             guard let live = liveModel(Institution.self, institutionID) else {
-                throw SimpleFINError.transport("This institution is no longer in the local database.")
+                throw SimpleFINError.institutionGone
             }
             live.dailyRequestCount += 1
 
@@ -286,7 +286,7 @@ public actor SyncEngine {
         calendar: Calendar = .current
     ) async throws -> SyncOutcome {
         guard let owner = liveModel(Institution.self, institutionID) else {
-            throw SimpleFINError.transport("This institution is no longer in the local database.")
+            throw SimpleFINError.institutionGone
         }
 
         var outcome = SyncOutcome()
