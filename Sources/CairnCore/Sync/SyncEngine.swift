@@ -45,6 +45,23 @@ public struct SyncOutcome: Sendable, Equatable {
     }
 }
 
+/// A summary of one historical backfill pass, surfaced to the UI and logs.
+public struct BackfillOutcome: Sendable, Equatable {
+    public var pagesFetched: Int = 0
+    public var transactionsInserted: Int = 0
+    public var transactionsUpdated: Int = 0
+    /// A window came back with no transactions, so there is no older history.
+    public var reachedFloor: Bool = false
+    /// The page cap was spent; another pass should continue from here.
+    public var hitPageLimit: Bool = false
+    /// The daily request budget for this credential ran out mid-pass.
+    public var budgetExhausted: Bool = false
+    /// Set when a page failed; the backfill stops and can retry next time.
+    public var failure: String?
+
+    public init() {}
+}
+
 /// Whether a sync should run right now.
 public enum SyncDecision: Sendable, Equatable {
     case proceed
@@ -374,6 +391,148 @@ public actor SyncEngine {
                 + "updated=\(outcome.transactionsUpdated) serverErrors=\(outcome.serverErrors.count)"
         )
         return outcome
+    }
+
+    // MARK: - Historical backfill
+
+    /// Fetches older transactions one 89-day window at a time, walking back
+    /// from the oldest row already stored until a window comes back empty or
+    /// the page or budget cap is reached.
+    ///
+    /// This never touches balances, connection metadata, pending aging, or the
+    /// sync cursor: each page only adds transactions, so a historical window
+    /// cannot resurrect a stale balance or age out a live pending charge. The
+    /// caller decides whether to try again; `reachedFloor` means there is
+    /// nothing older to fetch.
+    public func backfillHistory(
+        institutionID: PersistentIdentifier,
+        accessURL: URL,
+        fetch: @Sendable (URL, Date, Date) async throws -> SimpleFINAccountSet,
+        maxPages: Int,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) async -> BackfillOutcome {
+        var outcome = BackfillOutcome()
+        guard maxPages > 0 else { return outcome }
+        guard let owner = liveModel(Institution.self, institutionID) else {
+            outcome.failure = "connection is no longer saved"
+            return outcome
+        }
+        let credentialID = owner.credentialID
+
+        // Start at the oldest row already stored so a short primary window and
+        // a later backfill leave no gap between them. With nothing stored, start
+        // before the primary window.
+        let primaryStart = calendar.date(byAdding: .day, value: -Self.initialBackfillDays, to: now) ?? now
+        var cursor = (try? oldestTransactionDate(credentialID: credentialID)) ?? primaryStart
+        if cursor > now { cursor = now }
+
+        for _ in 0..<maxPages {
+            guard let holder = liveModel(Institution.self, institutionID) else {
+                outcome.failure = "connection is no longer saved"
+                return outcome
+            }
+            rollRequestCounterIfNeeded(holder, now: now, calendar: calendar)
+            guard holder.dailyRequestCount < Self.dailyRequestLimit else {
+                outcome.budgetExhausted = true
+                break
+            }
+            guard let start = calendar.date(byAdding: .day, value: -Self.maximumRequestDays, to: cursor) else {
+                break
+            }
+            holder.dailyRequestCount += 1
+
+            do {
+                let accountSet = try await fetch(accessURL, start, cursor)
+                outcome.pagesFetched += 1
+                if !accountSet.errors.isEmpty {
+                    outcome.failure = accountSet.errors.first?.message ?? "the server reported an error"
+                    break
+                }
+                let transactions = accountSet.accounts.reduce(0) { $0 + $1.transactions.count }
+                if transactions == 0 {
+                    outcome.reachedFloor = true
+                    break
+                }
+                guard liveModel(Institution.self, institutionID) != nil else {
+                    outcome.failure = "connection is no longer saved"
+                    return outcome
+                }
+                try applyHistoricalAccountSet(
+                    accountSet,
+                    institutionID: institutionID,
+                    now: now,
+                    calendar: calendar,
+                    outcome: &outcome
+                )
+                cursor = start
+            } catch {
+                outcome.failure = Self.describe(error)
+                break
+            }
+        }
+
+        if outcome.failure == nil, !outcome.reachedFloor, outcome.pagesFetched >= maxPages {
+            outcome.hitPageLimit = true
+        }
+        // Persist the request-counter increments even when a page held no rows
+        // and nothing else needed saving.
+        if outcome.pagesFetched > 0 {
+            try? modelContext.save()
+        }
+        return outcome
+    }
+
+    /// Adds only the transactions from a backfill window. Accounts already
+    /// exist from the primary sync; a window never creates or edits one, so it
+    /// cannot change a balance or a name.
+    private func applyHistoricalAccountSet(
+        _ accountSet: SimpleFINAccountSet,
+        institutionID: PersistentIdentifier,
+        now: Date,
+        calendar: Calendar,
+        outcome: inout BackfillOutcome
+    ) throws {
+        guard liveModel(Institution.self, institutionID) != nil else {
+            throw SimpleFINError.institutionGone
+        }
+        let rules = try loadRuleSnapshots()
+        var pageOutcome = SyncOutcome()
+        for simpleAccount in accountSet.accounts where !simpleAccount.transactions.isEmpty {
+            guard let account = try accountByBankID(simpleAccount.id) else { continue }
+            try reconcileTransactions(
+                simpleAccount.transactions,
+                account: account,
+                rules: rules,
+                now: now,
+                calendar: calendar,
+                agesOutPending: false,
+                promotesPending: false,
+                outcome: &pageOutcome
+            )
+        }
+        if pageOutcome.hadChanges {
+            try modelContext.save()
+        }
+        outcome.transactionsInserted += pageOutcome.transactionsInserted
+        outcome.transactionsUpdated += pageOutcome.transactionsUpdated
+    }
+
+    /// The earliest effective date among a credential's stored transactions.
+    func oldestTransactionDate(credentialID: UUID) throws -> Date? {
+        let siblings = try siblingInstitutions(credentialID: credentialID)
+        let bankIDs = Set((siblings.flatMap { $0.accounts ?? [] }).map(\.bankAccountID))
+        guard !bankIDs.isEmpty else { return nil }
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        return transactions
+            .filter {
+                bankIDs.contains($0.accountIDIndex)
+                    || ($0.account.map { bankIDs.contains($0.bankAccountID) } ?? false)
+            }
+            // Only posted rows mark history; a pending row has no posted date
+            // and its creation date says nothing about how far back data goes.
+            .compactMap(\.postedDate)
+            .min()
     }
 
     /// The result of matching a fetch's connections against the store.
@@ -1264,10 +1423,14 @@ public actor SyncEngine {
         rules: [RuleSnapshot],
         now: Date,
         calendar: Calendar,
+        agesOutPending: Bool = true,
+        promotesPending: Bool = true,
         outcome: inout SyncOutcome
     ) throws {
         guard !incoming.isEmpty else {
-            try ageOutPending(seenIDs: [], account: account)
+            if agesOutPending {
+                try ageOutPending(seenIDs: [], account: account)
+            }
             return
         }
 
@@ -1336,8 +1499,12 @@ public actor SyncEngine {
             }
         }
 
-        try promotePending(newlyPostedIDs: newlyPostedIDs, byID: byID, now: now)
-        try ageOutPending(seenIDs: incomingPendingIDs, account: account, existing: existing)
+        if promotesPending {
+            try promotePending(newlyPostedIDs: newlyPostedIDs, byID: byID, now: now)
+        }
+        if agesOutPending {
+            try ageOutPending(seenIDs: incomingPendingIDs, account: account, existing: existing)
+        }
     }
 
     /// Links a pending charge to a posted charge the bank just reported under a

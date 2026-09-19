@@ -89,10 +89,12 @@ struct SimpleFINProtocolTests {
     @Test("Builds the accounts URL with credentials out of the URL")
     func accountsRequestURL() throws {
         let access = try #require(URL(string: "https://user:pass@bridge.example.com/simplefin"))
-        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = Date(timeIntervalSince1970: 1_700_500_000)
         let (credentials, url) = SimpleFINClient.accountsRequestURL(
             accessURL: access,
-            startDate: date,
+            startDate: start,
+            endDate: end,
             includePending: true
         )
 
@@ -105,6 +107,16 @@ struct SimpleFINProtocolTests {
         #expect(query.contains { $0.name == "version" && $0.value == "2" })
         #expect(query.contains { $0.name == "pending" && $0.value == "1" })
         #expect(query.contains { $0.name == "start-date" && $0.value == "1700000000" })
+        #expect(query.contains { $0.name == "end-date" && $0.value == "1700500000" })
+
+        // A plain sync omits end-date.
+        let (_, windowless) = SimpleFINClient.accountsRequestURL(
+            accessURL: access,
+            startDate: start,
+            includePending: false
+        )
+        let plainQuery = try #require(URLComponents(url: windowless, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(!plainQuery.contains { $0.name == "end-date" })
     }
 
     @Test("Decodes a setup token, tolerating whitespace and padding")

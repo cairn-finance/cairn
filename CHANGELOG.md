@@ -12,6 +12,8 @@ All notable changes to Cairn are documented here. This project follows
   refreshed privacy and support pages.
 - CI checks (tests and the schema hash) and a tag-driven release process that
   builds and uploads to TestFlight.
+- Older transaction history is backfilled in 89-day pages, so a connection shows
+  as much history as the institution exposes, not just the most recent window.
 
 ### Changed
 
