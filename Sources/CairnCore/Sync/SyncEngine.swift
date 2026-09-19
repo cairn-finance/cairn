@@ -83,6 +83,9 @@ public actor SyncEngine {
     /// Hard ceiling for any requested range, so an incremental sync after a long
     /// gap is clamped instead of being rejected.
     public static let maximumRequestDays = 89
+    /// A backfill page. The beta bridge recommends keeping a request under 45
+    /// days and may cap longer ones later, so pages stay inside that.
+    public static let backfillPageDays = 45
     public static let syncOverlapDays = 7
     public static let stalePendingThreshold = 2
 
@@ -237,12 +240,16 @@ public actor SyncEngine {
                     includePending: true
                 )
 
-                // If the server rejects the range, try a shorter window before
-                // giving up, so the app self-heals if the limit differs.
-                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }), !isLast {
-                    await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
-                    lastError = SimpleFINError.serverReported(accountSet.errors)
-                    continue
+                // A range note that arrives with rows is a warning, not a
+                // rejection: keep the data. Only fall back to a shorter window
+                // when the server refused the range and returned nothing.
+                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }) {
+                    if !isLast, !Self.hasTransactions(accountSet) {
+                        await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
+                        lastError = SimpleFINError.serverReported(accountSet.errors)
+                        continue
+                    }
+                    await cairnLog(.warning, "Range note: \(rangeMessage).")
                 }
 
                 return try await applyAccountSet(
@@ -307,7 +314,12 @@ public actor SyncEngine {
         }
 
         var outcome = SyncOutcome()
-        let hadServerErrors = !accountSet.errors.isEmpty
+        // The bridge can return every requested row *and* an errlist warning
+        // that the range is longer than it recommends. That is not a failure:
+        // only errors that are not range notes block the cursor and show a
+        // banner.
+        let realErrors = accountSet.errors.filter { !Self.isRangeLimitError($0.message) }
+        let hadServerErrors = !realErrors.isEmpty
 
         let match = try institutions(forConnections: accountSet.connections, owner: owner)
         let owners = match.resolved
@@ -326,11 +338,11 @@ public actor SyncEngine {
             apply(connection, to: target)
             target.lastSyncError = nil
         }
-        for error in accountSet.errors {
+        for error in realErrors {
             let target = error.connectionID.flatMap { owners[$0] } ?? owner
             target.lastSyncError = error.message
         }
-        outcome.serverErrors = accountSet.errors.map(\.message)
+        outcome.serverErrors = realErrors.map(\.message)
         outcome.ambiguousConnections = duplicates.count
 
         // Accounts synced before connections were split out may still sit on the
@@ -437,7 +449,7 @@ public actor SyncEngine {
                 outcome.budgetExhausted = true
                 break
             }
-            guard let start = calendar.date(byAdding: .day, value: -Self.maximumRequestDays, to: cursor) else {
+            guard let start = calendar.date(byAdding: .day, value: -Self.backfillPageDays, to: cursor) else {
                 break
             }
             holder.dailyRequestCount += 1
@@ -445,10 +457,18 @@ public actor SyncEngine {
             do {
                 let accountSet = try await fetch(accessURL, start, cursor)
                 outcome.pagesFetched += 1
-                if !accountSet.errors.isEmpty {
-                    outcome.failure = accountSet.errors.first?.message ?? "the server reported an error"
+
+                // A range note that comes with rows is a warning: the bridge
+                // returned the data and may cap the range later, so keep it.
+                let hardError = accountSet.errors.first { !Self.isRangeLimitError($0.message) }
+                if let hardError {
+                    outcome.failure = hardError.message
                     break
                 }
+                if let warning = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }) {
+                    await cairnLog(.warning, "Backfill range note: \(warning.message)")
+                }
+
                 let transactions = accountSet.accounts.reduce(0) { $0 + $1.transactions.count }
                 if transactions == 0 {
                     outcome.reachedFloor = true
@@ -660,11 +680,13 @@ public actor SyncEngine {
                     startDate: startDate,
                     includePending: true
                 )
-                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }),
-                   !isLast {
-                    await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
-                    lastError = SimpleFINError.serverReported(accountSet.errors)
-                    continue
+                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }) {
+                    if !isLast, !Self.hasTransactions(accountSet) {
+                        await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
+                        lastError = SimpleFINError.serverReported(accountSet.errors)
+                        continue
+                    }
+                    await cairnLog(.warning, "Range note: \(rangeMessage).")
                 }
 
                 let adoption = ConnectionMatcher.decide(
@@ -1277,6 +1299,12 @@ public actor SyncEngine {
         return lowered.contains("date range")
             || lowered.contains("90 day")
             || lowered.contains("exceeds limit")
+    }
+
+    /// Whether a fetched set carries any transactions. A range note that comes
+    /// with rows is a warning, not a rejection.
+    static func hasTransactions(_ accountSet: SimpleFINAccountSet) -> Bool {
+        accountSet.accounts.contains { !$0.transactions.isEmpty }
     }
 
     static func isRangeLimitError(_ error: any Error) -> Bool {

@@ -47,7 +47,8 @@ struct TransactionBackfillTests {
 
     private func accountSet(
         _ transactions: [SimpleFINTransaction],
-        balance: Int64 = 1
+        balance: Int64 = 1,
+        errors: [SimpleFINServerError] = []
     ) -> SimpleFINAccountSet {
         SimpleFINAccountSet(
             connections: [connection("CON-1", org: "ORG-1")],
@@ -61,7 +62,14 @@ struct TransactionBackfillTests {
                     transactions: transactions
                 )
             ],
-            errors: []
+            errors: errors
+        )
+    }
+
+    private func rangeWarning() -> SimpleFINServerError {
+        SimpleFINServerError(
+            code: "range",
+            message: "Requested date range exceeds recommended range of 45 days. In the future, this may be capped."
         )
     }
 
@@ -155,10 +163,10 @@ struct TransactionBackfillTests {
         #expect(try context.fetch(FetchDescriptor<LedgerTransaction>())
             .contains { $0.bankTransactionID == "T-OLD" })
 
-        // Page one ends at the oldest stored row and reaches 89 days back.
+        // Page one ends at the oldest stored row and reaches one page back.
         #expect(stub.calls.count == 2)
         #expect(abs(stub.calls[0].end.timeIntervalSince(now) + 10 * 86_400) < 1)
-        #expect(abs(stub.calls[0].start.timeIntervalSince(now) + 99 * 86_400) < 1)
+        #expect(abs(stub.calls[0].start.timeIntervalSince(now) + 55 * 86_400) < 1)
         // Page two picks up exactly where page one ended.
         #expect(abs(stub.calls[1].end.timeIntervalSince(stub.calls[0].start)) < 1)
     }
@@ -188,8 +196,8 @@ struct TransactionBackfillTests {
             if end > now.addingTimeInterval(-30 * 86_400) {
                 return self.accountSet([self.posted("T-OLD1", daysAgo: 40, now: now)], balance: 1)
             }
-            if end > now.addingTimeInterval(-110 * 86_400) {
-                return self.accountSet([self.posted("T-OLD2", daysAgo: 130, now: now)], balance: 1)
+            if end > now.addingTimeInterval(-70 * 86_400) {
+                return self.accountSet([self.posted("T-OLD2", daysAgo: 80, now: now)], balance: 1)
             }
             return self.accountSet([])
         }
@@ -245,6 +253,114 @@ struct TransactionBackfillTests {
         #expect(outcome.pagesFetched == 2)
         #expect(!outcome.reachedFloor)
         #expect(outcome.hitPageLimit)
+    }
+
+    @Test("A range warning that comes with rows is applied, not treated as a failure")
+    func backfillAppliesRangeWarning() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let credentialID = UUID()
+        insertHolder(in: context, credentialID: credentialID)
+        let child = insertConnection(in: context, credentialID: credentialID, connectionID: "CON-1", orgID: "ORG-1")
+        let account = insertAccount(in: context, bankAccountID: "1", institution: child, balance: 500)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        insertPosted(in: context, id: "T-NEW", daysAgo: 10, account: account, now: now)
+        try context.save()
+
+        let stub = StubFetch { _, end in
+            if end > now.addingTimeInterval(-20 * 86_400) {
+                return self.accountSet(
+                    [self.posted("T-OLD", daysAgo: 40, now: now)],
+                    errors: [self.rangeWarning()]
+                )
+            }
+            return self.accountSet([])
+        }
+
+        let outcome = await engine.backfillHistory(
+            institutionID: try holder(in: context).persistentModelID,
+            accessURL: accessURL(),
+            fetch: { url, start, end in try await stub.fetch(url, start, end) },
+            maxPages: 5,
+            now: now,
+            calendar: calendar()
+        )
+        #expect(outcome.failure == nil)
+        #expect(outcome.transactionsInserted == 1)
+        #expect(outcome.reachedFloor)
+        #expect(try context.fetch(FetchDescriptor<LedgerTransaction>())
+            .contains { $0.bankTransactionID == "T-OLD" })
+    }
+
+    @Test("A real server error still stops the backfill")
+    func backfillStopsOnRealError() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let credentialID = UUID()
+        insertHolder(in: context, credentialID: credentialID)
+        let child = insertConnection(in: context, credentialID: credentialID, connectionID: "CON-1", orgID: "ORG-1")
+        let account = insertAccount(in: context, bankAccountID: "1", institution: child, balance: 500)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        insertPosted(in: context, id: "T-NEW", daysAgo: 10, account: account, now: now)
+        try context.save()
+
+        let stub = StubFetch { _, _ in
+            self.accountSet(
+                [],
+                errors: [SimpleFINServerError(code: "err", message: "the bank is unavailable")]
+            )
+        }
+
+        let outcome = await engine.backfillHistory(
+            institutionID: try holder(in: context).persistentModelID,
+            accessURL: accessURL(),
+            fetch: { url, start, end in try await stub.fetch(url, start, end) },
+            maxPages: 5,
+            now: now,
+            calendar: calendar()
+        )
+        #expect(outcome.failure == "the bank is unavailable")
+        #expect(!outcome.reachedFloor)
+        #expect(outcome.transactionsInserted == 0)
+    }
+
+    @Test("A normal sync does not surface a range warning as a failure")
+    func syncTreatsRangeWarningAsNote() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let credentialID = UUID()
+        insertHolder(in: context, credentialID: credentialID)
+        let child = insertConnection(in: context, credentialID: credentialID, connectionID: "CON-1", orgID: "ORG-1")
+        insertAccount(in: context, bankAccountID: "1", institution: child, balance: 500)
+        try context.save()
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let set = SimpleFINAccountSet(
+            connections: [connection("CON-1", org: "ORG-1")],
+            accounts: [
+                SimpleFINAccount(
+                    id: "1",
+                    name: "Checking",
+                    connectionID: "CON-1",
+                    currency: .usd,
+                    balanceMinorUnits: 500,
+                    transactions: [posted("T-OLD", daysAgo: 40, now: now)]
+                )
+            ],
+            errors: [rangeWarning()]
+        )
+
+        let outcome = try await engine.applyAccountSet(
+            set,
+            institutionID: try holder(in: context).persistentModelID,
+            accessURL: accessURL(),
+            now: now,
+            calendar: calendar()
+        )
+        #expect(outcome.serverErrors.isEmpty)
+        #expect(try holder(in: context).lastSyncError == nil)
+        #expect(try context.fetch(FetchDescriptor<LedgerTransaction>())
+            .contains { $0.bankTransactionID == "T-OLD" })
     }
 }
 
