@@ -59,7 +59,7 @@ public enum ConnectionMatcher {
         incoming: [SimpleFINConnection],
         stored: [StoredConnection]
     ) -> ConnectionAdoption {
-        let credentials = credentialsByIdentity(stored)
+        let storedIdentities = stored.map(\.identity)
 
         var matched: Set<UUID> = []
         for connection in incoming {
@@ -67,8 +67,9 @@ public enum ConnectionMatcher {
                 connectionID: connection.id,
                 organizationID: connection.organizationID
             ) else { continue }
-            if let byCredential = credentials[identity] {
-                matched.formUnion(byCredential)
+            let matches = Set(matchingIdentities(identity, stored: storedIdentities))
+            for row in stored where matches.contains(row.identity) {
+                matched.insert(row.credentialID)
             }
         }
 
@@ -77,6 +78,25 @@ public enum ConnectionMatcher {
             return .adopt(credentialID: only)
         }
         return .ambiguous(credentialIDs: matched.sorted { $0.uuidString < $1.uuidString })
+    }
+
+    /// The stored identities an incoming connection matches. An exact identity
+    /// match wins; otherwise a stored row whose organization id is empty
+    /// matches on the connection id alone, but only when it is the only stored
+    /// row with that connection id. A row saved before the organization id was
+    /// recorded has no other way to match, and guessing among several rows with
+    /// the same connection id would attach the data to the wrong bank.
+    public static func matchingIdentities(
+        _ incoming: ConnectionIdentity,
+        stored: [ConnectionIdentity]
+    ) -> [ConnectionIdentity] {
+        let exact = stored.filter { $0 == incoming }
+        if !exact.isEmpty { return exact }
+        let sameConnectionID = stored.filter { $0.connectionID == incoming.connectionID }
+        guard sameConnectionID.count == 1,
+              let only = sameConnectionID.first,
+              only.organizationID.isEmpty else { return [] }
+        return [only]
     }
 
     /// Credentials whose connections are also held by another credential, so a

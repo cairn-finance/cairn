@@ -151,6 +151,28 @@ struct DuplicateConnectionTests {
         )
     }
 
+    @Test("A stored row without an organization id matches on the connection id alone")
+    func orglessStoredConnectionMatches() {
+        let credentialID = UUID()
+        let legacy = ConnectionMatcher.StoredConnection(
+            identity: ConnectionIdentity(connectionID: "CON-1", organizationID: ""),
+            credentialID: credentialID
+        )
+        let incoming = SimpleFINConnection(id: "CON-1", name: "Bank", organizationID: "ORG-1")
+        #expect(
+            ConnectionMatcher.decide(incoming: [incoming], stored: [legacy])
+                == .adopt(credentialID: credentialID)
+        )
+
+        // A second row with that connection id makes the fallback unsafe, so
+        // the claim is treated as new rather than attached to the wrong bank.
+        let other = ConnectionMatcher.StoredConnection(
+            identity: ConnectionIdentity(connectionID: "CON-1", organizationID: "ORG-2"),
+            credentialID: UUID()
+        )
+        #expect(ConnectionMatcher.decide(incoming: [incoming], stored: [legacy, other]) == .fresh)
+    }
+
     @Test("The survivor rule is deterministic and refuses to guess on a tie")
     func survivorRule() {
         let early = ConnectionSurvivor.Candidate(
@@ -327,6 +349,37 @@ struct DuplicateConnectionTests {
         let accounts = try context.fetch(FetchDescriptor<Account>())
         #expect(accounts.first { $0.bankAccountID == "1" }?.institution?.bankConnectionID == "CON-1")
         #expect(accounts.first { $0.bankAccountID == "2" }?.institution?.bankConnectionID == "CON-2")
+    }
+
+    @Test("A stored connection that never got an organization id is healed on sync")
+    func orglessConnectionIsHealedOnSync() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let credentialID = UUID()
+        insertHolder(in: context, credentialID: credentialID)
+        insertConnection(in: context, credentialID: credentialID, connectionID: "CON-1", orgID: "")
+        try context.save()
+
+        let holder = try #require(try context.fetch(FetchDescriptor<Institution>())
+            .first(where: \.isCredentialHolder))
+        _ = try await engine.applyAccountSet(
+            SimpleFINAccountSet(
+                connections: [connection("CON-1", org: "ORG-1")],
+                accounts: [account(
+                    "1", connection: "CON-1", balance: 500,
+                    transactions: [txn("T1")]
+                )]
+            ),
+            institutionID: holder.persistentModelID,
+            accessURL: accessURL(),
+            now: .now
+        )
+
+        let children = try context.fetch(FetchDescriptor<Institution>())
+            .filter { !$0.bankConnectionID.isEmpty }
+        #expect(children.count == 1)
+        #expect(children.first?.orgID == "ORG-1")
+        #expect(try context.fetch(FetchDescriptor<LedgerTransaction>()).count == 1)
     }
 
     @Test("An overlap with two credentials resolves the sync to the survivor")

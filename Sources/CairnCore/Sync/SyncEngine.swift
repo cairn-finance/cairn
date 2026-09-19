@@ -398,14 +398,14 @@ public actor SyncEngine {
         owner: Institution
     ) throws -> ConnectionMatch {
         let all = try modelContext.fetch(FetchDescriptor<Institution>())
-        var byIdentity: [ConnectionIdentity: [Institution]] = [:]
-        for institution in all {
+        let stored = all.compactMap { institution -> (identity: ConnectionIdentity, institution: Institution)? in
             guard let identity = ConnectionIdentity.of(
                 connectionID: institution.bankConnectionID,
                 organizationID: institution.orgID
-            ) else { continue }
-            byIdentity[identity, default: []].append(institution)
+            ) else { return nil }
+            return (identity, institution)
         }
+        let storedIdentities = stored.map(\.identity)
 
         var match = ConnectionMatch()
         for connection in connections {
@@ -414,7 +414,8 @@ public actor SyncEngine {
                 organizationID: connection.organizationID
             ) else { continue }
 
-            let existing = byIdentity[identity] ?? []
+            let matches = Set(ConnectionMatcher.matchingIdentities(identity, stored: storedIdentities))
+            let existing = stored.filter { matches.contains($0.identity) }.map(\.institution)
             if existing.isEmpty {
                 let created = Institution(
                     bankConnectionID: connection.id,
@@ -422,7 +423,6 @@ public actor SyncEngine {
                     credentialID: owner.credentialID
                 )
                 modelContext.insert(created)
-                byIdentity[identity, default: []].append(created)
                 match.resolved[connection.id] = created
             } else {
                 guard let target = Self.syncTarget(among: existing, owner: owner) else { continue }
