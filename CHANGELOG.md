@@ -25,6 +25,9 @@ All notable changes to Cairn are documented here. This project follows
 ### Fixed
 
 - A saved SimpleFIN connection can be reconnected after a reinstall.
+- A bank saved twice as separate SimpleFIN connections is merged into one, so
+  new transactions keep importing to the surviving connection and the working
+  Access URL is kept.
 - A store that fails to open shows an error instead of an empty app.
 - CSV import and export work in the sandboxed Mac app.
 - Export failures are reported instead of failing silently.

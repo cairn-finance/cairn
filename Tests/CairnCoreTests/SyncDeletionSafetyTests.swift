@@ -66,8 +66,9 @@ struct SyncDeletionSafetyTests {
         try context.save()
 
         // The next pass has to notice the row is gone. Touching the stale object
-        // would trap the process rather than throw.
-        await #expect(throws: (any Error).self) {
+        // would trap the process rather than throw. The error is a distinct
+        // "gone" case so the app counts it as a skip, not a failure banner.
+        await #expect(throws: SimpleFINError.institutionGone) {
             _ = try await engine.applyAccountSet(
                 set,
                 institutionID: institutionID,
@@ -75,7 +76,7 @@ struct SyncDeletionSafetyTests {
                 now: .now
             )
         }
-        await #expect(throws: (any Error).self) {
+        await #expect(throws: SimpleFINError.institutionGone) {
             _ = try await engine.decideSync(institutionID: institutionID, force: true, now: .now)
         }
 

@@ -32,6 +32,9 @@ public struct SyncOutcome: Sendable, Equatable {
     public var pendingPromoted: Int = 0
     public var stalePendingRemoved: Int = 0
     public var serverErrors: [String] = []
+    /// Connections this pass found stored under more than one credential. The
+    /// pass wrote them to the survivor and left the other rows for the repair.
+    public var ambiguousConnections: Int = 0
     public var finishedAt: Date = .now
 
     public init() {}
@@ -132,7 +135,7 @@ public actor SyncEngine {
         calendar: Calendar = .current
     ) throws -> SyncDecision {
         guard let institution = liveModel(Institution.self, institutionID) else {
-            throw SimpleFINError.transport("This institution is no longer in the local database.")
+            throw SimpleFINError.institutionGone
         }
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
         let settings = try loadOrCreateSettings()
@@ -183,7 +186,7 @@ public actor SyncEngine {
         calendar: Calendar = .current
     ) async throws -> SyncOutcome {
         guard let institution = liveModel(Institution.self, institutionID) else {
-            throw SimpleFINError.transport("This institution is no longer in the local database.")
+            throw SimpleFINError.institutionGone
         }
 
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
@@ -206,7 +209,7 @@ public actor SyncEngine {
             // Re-resolve: a previous iteration's network call may have outlived
             // the row, and writing to a deleted model traps.
             guard let live = liveModel(Institution.self, institutionID) else {
-                throw SimpleFINError.transport("This institution is no longer in the local database.")
+                throw SimpleFINError.institutionGone
             }
             live.dailyRequestCount += 1
 
@@ -283,13 +286,15 @@ public actor SyncEngine {
         calendar: Calendar = .current
     ) async throws -> SyncOutcome {
         guard let owner = liveModel(Institution.self, institutionID) else {
-            throw SimpleFINError.transport("This institution is no longer in the local database.")
+            throw SimpleFINError.institutionGone
         }
 
         var outcome = SyncOutcome()
         let hadServerErrors = !accountSet.errors.isEmpty
 
-        let owners = try institutions(forConnections: accountSet.connections, owner: owner)
+        let match = try institutions(forConnections: accountSet.connections, owner: owner)
+        let owners = match.resolved
+        let duplicates = match.duplicates
 
         // Never leave a brand-new connection wearing its stand-in name.
         if Self.isPlaceholderName(owner.name, for: accessURL),
@@ -309,6 +314,7 @@ public actor SyncEngine {
             target.lastSyncError = error.message
         }
         outcome.serverErrors = accountSet.errors.map(\.message)
+        outcome.ambiguousConnections = duplicates.count
 
         // Accounts synced before connections were split out may still sit on the
         // connection-less holder; move them onto their real connection. Accounts
@@ -352,6 +358,16 @@ public actor SyncEngine {
 
         try modelContext.save()
         outcome.finishedAt = now
+        // Log only after the save: the earlier `await` used to sit between the
+        // row lookups and the writes, and the repair runs on this same actor, so
+        // a suspension there could delete a row this pass was about to write.
+        if !duplicates.isEmpty {
+            await cairnLog(
+                .warning,
+                "Sync found \(duplicates.count) connection(s) stored more than once; "
+                    + "wrote to the survivor until the duplicate rows are merged."
+            )
+        }
         await cairnLog(
             .info,
             "Sync ok: accounts=\(accountSet.accounts.count) inserted=\(outcome.transactionsInserted) "
@@ -360,37 +376,655 @@ public actor SyncEngine {
         return outcome
     }
 
+    /// The result of matching a fetch's connections against the store.
+    struct ConnectionMatch {
+        /// Connections that resolved to exactly one institution.
+        var resolved: [String: Institution] = [:]
+        /// Connections stored more than once. The pass wrote them to the
+        /// survivor; the repair later merges the other rows.
+        var duplicates: Set<String> = []
+    }
+
     /// Finds or creates one `Institution` per connection returned by an Access
     /// URL. Each connection gets a child institution that shares the owner's
     /// `credentialID`; the owner itself stays connection-less and acts as the
     /// credential holder (and is hidden in the UI once it has children).
+    ///
+    /// A connection is matched by its identity — connection id plus
+    /// organization id — across *every* credential, not just the owner's. That
+    /// is what stops a second claim from creating a parallel row for a
+    /// connection already stored. A connection that matches more than one
+    /// institution is resolved to the repair's survivor so the sync keeps
+    /// importing; the duplicate rows stay for the repair to merge.
     private func institutions(
         forConnections connections: [SimpleFINConnection],
         owner: Institution
-    ) throws -> [String: Institution] {
-        let credentialID = owner.credentialID
-        let siblings = try siblingInstitutions(credentialID: credentialID)
-        var byConnection: [String: Institution] = [:]
-        for sibling in siblings where !sibling.bankConnectionID.isEmpty {
-            byConnection[sibling.bankConnectionID] = sibling
+    ) throws -> ConnectionMatch {
+        let all = try modelContext.fetch(FetchDescriptor<Institution>())
+        let stored = all.compactMap { institution -> (identity: ConnectionIdentity, institution: Institution)? in
+            guard let identity = ConnectionIdentity.of(
+                connectionID: institution.bankConnectionID,
+                organizationID: institution.orgID
+            ) else { return nil }
+            return (identity, institution)
         }
+        let storedIdentities = stored.map(\.identity)
 
-        var result: [String: Institution] = [:]
+        var match = ConnectionMatch()
         for connection in connections {
-            if let existing = byConnection[connection.id] {
-                result[connection.id] = existing
-            } else {
+            guard let identity = ConnectionIdentity.of(
+                connectionID: connection.id,
+                organizationID: connection.organizationID
+            ) else { continue }
+
+            let matches = Set(ConnectionMatcher.matchingIdentities(identity, stored: storedIdentities))
+            let existing = stored.filter { matches.contains($0.identity) }.map(\.institution)
+            if existing.isEmpty {
                 let created = Institution(
                     bankConnectionID: connection.id,
                     name: connection.name,
-                    credentialID: credentialID
+                    credentialID: owner.credentialID
                 )
                 modelContext.insert(created)
-                byConnection[connection.id] = created
-                result[connection.id] = created
+                match.resolved[connection.id] = created
+            } else {
+                guard let target = Self.syncTarget(among: existing, owner: owner) else { continue }
+                match.resolved[connection.id] = target
+                if existing.count > 1 {
+                    match.duplicates.insert(connection.id)
+                }
             }
         }
+        return match
+    }
+
+    /// The row a sync writes to when one connection is stored more than once:
+    /// the repair's survivor when it can be chosen, otherwise the syncing
+    /// credential's own row, and failing that the first row in a stable order.
+    /// Only an empty list yields `nil`, so a duplicate connection keeps
+    /// importing instead of being skipped.
+    static func syncTarget(among members: [Institution], owner: Institution) -> Institution? {
+        guard !members.isEmpty else { return nil }
+        if let survivor = survivingInstitution(members) { return survivor }
+        if let owned = members.first(where: { $0.credentialID == owner.credentialID }) { return owned }
+        return members.enumerated().min { lhs, rhs in
+            if lhs.element.createdAt != rhs.element.createdAt {
+                return lhs.element.createdAt < rhs.element.createdAt
+            }
+            if lhs.element.credentialID != rhs.element.credentialID {
+                return lhs.element.credentialID.uuidString < rhs.element.credentialID.uuidString
+            }
+            if lhs.element.name != rhs.element.name { return lhs.element.name < rhs.element.name }
+            if lhs.element.sfinURL != rhs.element.sfinURL { return lhs.element.sfinURL < rhs.element.sfinURL }
+            if (lhs.element.orgURL ?? "") != (rhs.element.orgURL ?? "") {
+                return (lhs.element.orgURL ?? "") < (rhs.element.orgURL ?? "")
+            }
+            return lhs.offset < rhs.offset
+        }?.element
+    }
+
+    // MARK: - Claiming and reconnecting a connection
+
+    /// A fetched account set plus the decision about which credential it belongs
+    /// to. Produced by `probeConnection`, before anything is written, so the
+    /// caller can store the Keychain secret under the chosen credential id and
+    /// only then apply the data.
+    public struct ConnectionProbe: Sendable {
+        public let accountSet: SimpleFINAccountSet
+        public let adoption: ConnectionAdoption
+        /// The credential to store the Access URL under: the adopted one, or the
+        /// proposed one when this is a fresh or ambiguous claim.
+        public let credentialID: UUID
+    }
+
+    /// Fetches a newly claimed Access URL's account set and decides whether it
+    /// belongs to a credential already stored.
+    ///
+    /// Nothing is persisted here. The fetch is the same first request a sync
+    /// would make, so a claim costs no extra request, and a Keychain write can
+    /// still refuse the connection without leaving half-built rows behind.
+    public func probeConnection(
+        accessURL: URL,
+        proposedCredentialID: UUID,
+        client: SimpleFINClient,
+        now: Date,
+        calendar: Calendar = .current
+    ) async throws -> ConnectionProbe {
+        let candidates = Self.candidateStartDates(lastSyncDate: nil, now: now, calendar: calendar)
+        var lastError: any Error = SimpleFINError.httpStatus(-1)
+
+        for (index, startDate) in candidates.enumerated() {
+            let isLast = index == candidates.count - 1
+            do {
+                let accountSet = try await client.fetchAccounts(
+                    accessURL: accessURL,
+                    startDate: startDate,
+                    includePending: true
+                )
+                if let rangeMessage = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }),
+                   !isLast {
+                    await cairnLog(.warning, "Range rejected: \(rangeMessage). Retrying with a shorter window.")
+                    lastError = SimpleFINError.serverReported(accountSet.errors)
+                    continue
+                }
+
+                let adoption = ConnectionMatcher.decide(
+                    incoming: accountSet.connections,
+                    stored: try storedConnections()
+                )
+                let credentialID: UUID
+                switch adoption {
+                case let .adopt(existing):
+                    credentialID = existing
+                case .fresh, .ambiguous:
+                    credentialID = proposedCredentialID
+                }
+                return ConnectionProbe(accountSet: accountSet, adoption: adoption, credentialID: credentialID)
+            } catch {
+                if Self.isRangeLimitError(error), !isLast {
+                    lastError = error
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError
+    }
+
+    /// Applies a probe's account set under the credential it resolved to,
+    /// creating a holder only when one does not already exist. This is the one
+    /// path a new claim and a reconnect both take.
+    @discardableResult
+    public func applyClaim(
+        _ probe: ConnectionProbe,
+        accessURL: URL,
+        now: Date,
+        calendar: Calendar = .current
+    ) async throws -> SyncOutcome {
+        let holder: Institution
+        let siblings = try siblingInstitutions(credentialID: probe.credentialID)
+        if let existing = siblings.first(where: { $0.bankConnectionID.isEmpty }) {
+            holder = existing
+        } else {
+            let created = Institution(
+                bankConnectionID: "",
+                name: SyncEngine.fallbackName(for: accessURL),
+                credentialID: probe.credentialID
+            )
+            if let scheme = accessURL.scheme, let host = accessURL.host {
+                created.sfinURL = "\(scheme)://\(host)"
+            }
+            modelContext.insert(created)
+            try modelContext.save()
+            holder = created
+        }
+
+        rollRequestCounterIfNeeded(holder, now: now, calendar: calendar)
+        holder.dailyRequestCount += 1
+
+        return try await applyAccountSet(
+            probe.accountSet,
+            institutionID: holder.persistentModelID,
+            accessURL: accessURL,
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    /// Every stored connection, across all credentials.
+    func storedConnections() throws -> [ConnectionMatcher.StoredConnection] {
+        try modelContext.fetch(FetchDescriptor<Institution>()).compactMap { institution in
+            guard let identity = ConnectionIdentity.of(
+                connectionID: institution.bankConnectionID,
+                organizationID: institution.orgID
+            ) else { return nil }
+            return ConnectionMatcher.StoredConnection(
+                identity: identity,
+                credentialID: institution.credentialID
+            )
+        }
+    }
+
+    /// The credential ids whose connections are also held by another credential.
+    public func redundantCredentialIDs() throws -> Set<UUID> {
+        ConnectionMatcher.redundantCredentialIDs(stored: try storedConnections())
+    }
+
+    // MARK: - Repairing duplicate connections
+
+    /// One credential the repair merged away, and what decides which local
+    /// Keychain copy to keep when both copies exist.
+    public struct CredentialRetirement: Sendable, Equatable {
+        /// The credential the Access URL should move to.
+        public let survivorCredentialID: UUID
+        /// The most recent `lastSuccessfulFetch` among the retired credential's
+        /// institutions, captured before the merge, or `nil` when it never
+        /// completed a fetch.
+        public let retiredLastSuccessfulFetch: Date?
+        /// The same for the survivor's institutions, captured before the merge.
+        public let survivorLastSuccessfulFetch: Date?
+
+        public init(
+            survivorCredentialID: UUID,
+            retiredLastSuccessfulFetch: Date? = nil,
+            survivorLastSuccessfulFetch: Date? = nil
+        ) {
+            self.survivorCredentialID = survivorCredentialID
+            self.retiredLastSuccessfulFetch = retiredLastSuccessfulFetch
+            self.survivorLastSuccessfulFetch = survivorLastSuccessfulFetch
+        }
+    }
+
+    /// What one repair pass did, for logging and for deciding which Keychain
+    /// items to re-key.
+    public struct ConnectionRepairOutcome: Sendable, Equatable {
+        public var duplicateGroups: Int = 0
+        public var movedAccounts: Int = 0
+        public var mergedAccounts: Int = 0
+        public var deletedInstitutions: Int = 0
+        public var unsafeMerges: Int = 0
+        public var indeterminateGroups: Int = 0
+        /// Credential merged away -> what its Access URL should move to. Only
+        /// credentials with no remaining institution appear here.
+        public var retiredCredentials: [UUID: CredentialRetirement] = [:]
+
+        public init() {}
+
+        public var didChange: Bool {
+            movedAccounts > 0 || mergedAccounts > 0 || deletedInstitutions > 0
+                || !retiredCredentials.isEmpty
+        }
+    }
+
+    /// Collapses every connection stored more than once onto one institution.
+    ///
+    /// Idempotent and safe to run on every launch and after remote changes. The
+    /// survivor is chosen from stored values only (`ConnectionSurvivor`), so two
+    /// devices converge. Accounts, transactions, snapshots, and holdings follow
+    /// the surviving row; a row is deleted only once it owns no accounts. A
+    /// merge that would discard a user choice is skipped and left for the person.
+    @discardableResult
+    public func repairDuplicateConnections(now: Date = .now) async throws -> ConnectionRepairOutcome {
+        var outcome = ConnectionRepairOutcome()
+        let all = try modelContext.fetch(FetchDescriptor<Institution>())
+
+        var groups: [ConnectionIdentity: [Institution]] = [:]
+        for institution in all {
+            guard let identity = ConnectionIdentity.of(
+                connectionID: institution.bankConnectionID,
+                organizationID: institution.orgID
+            ) else { continue }
+            groups[identity, default: []].append(institution)
+        }
+
+        // Credential merged away -> the survivors its connections landed on.
+        var retirementTargets: [UUID: Set<UUID>] = [:]
+        var changed = false
+
+        // Read each credential's freshest successful fetch before anything is
+        // merged away; the re-key needs it to keep the working Keychain copy.
+        let fetchesByCredential = Self.mostRecentFetches(in: all)
+
+        for members in groups.values where members.count > 1 {
+            outcome.duplicateGroups += 1
+            guard let survivor = Self.survivingInstitution(members) else {
+                outcome.indeterminateGroups += 1
+                continue
+            }
+            let duplicates = members.filter { $0.persistentModelID != survivor.persistentModelID }
+
+            for duplicate in duplicates {
+                adoptMetadata(from: duplicate, into: survivor, changed: &changed)
+
+                var keptAccounts = 0
+                for account in duplicate.accounts ?? [] where !account.isDeleted {
+                    switch try moveAccount(account, to: survivor) {
+                    case .moved:
+                        outcome.movedAccounts += 1
+                        changed = true
+                    case .merged:
+                        outcome.mergedAccounts += 1
+                        changed = true
+                    case .unsafe:
+                        keptAccounts += 1
+                        outcome.unsafeMerges += 1
+                    }
+                }
+
+                if keptAccounts == 0 {
+                    modelContext.delete(duplicate)
+                    outcome.deletedInstitutions += 1
+                    changed = true
+                }
+                if duplicate.credentialID != survivor.credentialID {
+                    retirementTargets[duplicate.credentialID, default: []].insert(survivor.credentialID)
+                }
+            }
+        }
+
+        // A holder whose connections all merged away and that owns no accounts
+        // has nothing left to name, so it goes with them.
+        let retiring = Set(retirementTargets.keys)
+        if !retiring.isEmpty {
+            let current = try modelContext.fetch(FetchDescriptor<Institution>())
+            for institution in current where institution.isCredentialHolder
+                && retiring.contains(institution.credentialID) {
+                let hasConnectionSibling = current.contains {
+                    $0.credentialID == institution.credentialID
+                        && $0.persistentModelID != institution.persistentModelID
+                }
+                let accounts = (institution.accounts ?? []).filter { !$0.isDeleted }
+                if !hasConnectionSibling && accounts.isEmpty {
+                    modelContext.delete(institution)
+                    outcome.deletedInstitutions += 1
+                    changed = true
+                }
+            }
+        }
+
+        if changed {
+            try modelContext.save()
+        }
+
+        // Only a credential with no remaining row is truly merged away; a
+        // credential that still owns another connection keeps its secret.
+        let after = try modelContext.fetch(FetchDescriptor<Institution>())
+        let referenced = Set(after.map(\.credentialID))
+        for (retired, targets) in retirementTargets where !referenced.contains(retired) {
+            if let survivor = targets.min(by: { $0.uuidString < $1.uuidString }) {
+                outcome.retiredCredentials[retired] = CredentialRetirement(
+                    survivorCredentialID: survivor,
+                    retiredLastSuccessfulFetch: fetchesByCredential[retired],
+                    survivorLastSuccessfulFetch: fetchesByCredential[survivor]
+                )
+            }
+        }
+
+        if outcome.duplicateGroups > 0 {
+            await cairnLog(
+                .info,
+                "Repaired duplicate SimpleFIN connections: groups=\(outcome.duplicateGroups) "
+                    + "moved=\(outcome.movedAccounts) merged=\(outcome.mergedAccounts) "
+                    + "deleted=\(outcome.deletedInstitutions) retired=\(outcome.retiredCredentials.count) "
+                    + "unsafe=\(outcome.unsafeMerges) indeterminate=\(outcome.indeterminateGroups)"
+            )
+        }
+        return outcome
+    }
+
+    /// Deletes the institutions for these credentials without discarding an
+    /// account that another credential still reaches.
+    ///
+    /// For each connection being removed, if the same identity survives under a
+    /// remaining credential, its accounts are moved (or merged) there first. An
+    /// institution is deleted only once it owns no accounts, so a connection
+    /// another credential still needs cannot take its data down with it.
+    public func removeConnections(credentialIDs: Set<UUID>) throws -> ConnectionRemovalOutcome {
+        var outcome = ConnectionRemovalOutcome()
+        guard !credentialIDs.isEmpty else { return outcome }
+
+        let all = try modelContext.fetch(FetchDescriptor<Institution>())
+        let removed = all.filter { credentialIDs.contains($0.credentialID) }
+        let survivors = all.filter { !credentialIDs.contains($0.credentialID) }
+
+        var survivorsByIdentity: [ConnectionIdentity: [Institution]] = [:]
+        for institution in survivors {
+            guard let identity = ConnectionIdentity.of(
+                connectionID: institution.bankConnectionID,
+                organizationID: institution.orgID
+            ) else { continue }
+            survivorsByIdentity[identity, default: []].append(institution)
+        }
+
+        var changed = false
+        for institution in removed {
+            var keptAccounts = 0
+            if let identity = ConnectionIdentity.of(
+                connectionID: institution.bankConnectionID,
+                organizationID: institution.orgID
+            ), let targets = survivorsByIdentity[identity], !targets.isEmpty,
+               let survivor = Self.survivingInstitution(targets) {
+                for account in institution.accounts ?? [] where !account.isDeleted {
+                    switch try moveAccount(account, to: survivor) {
+                    case .moved:
+                        outcome.movedAccounts += 1
+                        changed = true
+                    case .merged:
+                        outcome.mergedAccounts += 1
+                        changed = true
+                    case .unsafe:
+                        // Another credential needs this account but the rows
+                        // cannot be merged without losing a user choice, so the
+                        // row (and its credential) stays.
+                        keptAccounts += 1
+                        outcome.retainedInstitutions += 1
+                    }
+                }
+            }
+
+            if keptAccounts == 0 {
+                modelContext.delete(institution)
+                outcome.removedInstitutions += 1
+                changed = true
+            }
+        }
+
+        if changed {
+            try modelContext.save()
+        }
+
+        let remaining = try modelContext.fetch(FetchDescriptor<Institution>())
+        let referenced = Set(remaining.map(\.credentialID))
+        outcome.retiredCredentialIDs = credentialIDs.filter { !referenced.contains($0) }
+
+        return outcome
+    }
+
+    /// What a removal did, so the caller can delete only the keychain items that
+    /// no longer have an institution.
+    public struct ConnectionRemovalOutcome: Sendable, Equatable {
+        public var removedInstitutions: Int = 0
+        public var movedAccounts: Int = 0
+        public var mergedAccounts: Int = 0
+        public var retainedInstitutions: Int = 0
+        public var retiredCredentialIDs: [UUID] = []
+
+        public init() {}
+    }
+
+    // MARK: - Account moving
+
+    /// How moving one account onto a surviving institution ended.
+    private enum AccountMove {
+        case moved
+        case merged
+        case unsafe
+    }
+
+    /// The deterministic survivor among several institutions for one connection.
+    static func survivingInstitution(_ members: [Institution]) -> Institution? {
+        let candidates = members.map {
+            ConnectionSurvivor.Candidate(credentialID: $0.credentialID, createdAt: $0.createdAt)
+        }
+        guard let index = ConnectionSurvivor.choose(candidates) else { return nil }
+        return members[index]
+    }
+
+    /// Each credential's most recent successful fetch, read before a merge
+    /// deletes the merged-away rows.
+    static func mostRecentFetches(in institutions: [Institution]) -> [UUID: Date] {
+        var result: [UUID: Date] = [:]
+        for institution in institutions {
+            guard let fetch = institution.lastSuccessfulFetch else { continue }
+            result[institution.credentialID] = max(result[institution.credentialID] ?? .distantPast, fetch)
+        }
         return result
+    }
+
+    /// Fills gaps in the survivor from a duplicate without overwriting anything
+    /// the survivor already knows. Names and URLs are bank-owned data, not
+    /// credentials, so adopting a missing one is safe.
+    private func adoptMetadata(from duplicate: Institution, into survivor: Institution, changed: inout Bool) {
+        if (survivor.name.isEmpty || survivor.name == "Connecting…"), !duplicate.name.isEmpty {
+            survivor.name = duplicate.name
+            changed = true
+        }
+        if survivor.orgURL == nil, let url = duplicate.orgURL {
+            survivor.orgURL = url
+            changed = true
+        }
+        if survivor.sfinURL.isEmpty, !duplicate.sfinURL.isEmpty {
+            survivor.sfinURL = duplicate.sfinURL
+            changed = true
+        }
+        if survivor.lastSyncError == nil, let error = duplicate.lastSyncError {
+            survivor.lastSyncError = error
+            changed = true
+        }
+    }
+
+    /// Moves one account to `survivor`, merging it when a row for the same bank
+    /// account is already there. Never deletes user data: an unsafe merge is
+    /// reported so the caller keeps the row.
+    private func moveAccount(_ account: Account, to survivor: Institution) throws -> AccountMove {
+        if let existing = (survivor.accounts ?? []).first(where: {
+            !$0.isDeleted && $0.bankAccountID == account.bankAccountID
+        }) {
+            guard canMerge(account, into: existing) else { return .unsafe }
+            mergeAccount(account, into: existing)
+            modelContext.delete(account)
+            return .merged
+        }
+        account.institution = survivor
+        return .moved
+    }
+
+    /// Whether two account rows for the same bank account can be merged without
+    /// discarding a user choice. A conflict in a note or chosen category on the
+    /// same bank transaction, or between a manual account's own settings, makes
+    /// the merge unsafe.
+    private func canMerge(_ duplicate: Account, into survivor: Account) -> Bool {
+        if duplicate.sourceRaw != survivor.sourceRaw { return false }
+
+        if let incoming = duplicate.customDisplayName, !incoming.isEmpty,
+           let existing = survivor.customDisplayName, !existing.isEmpty,
+           incoming != existing {
+            return false
+        }
+        if duplicate.accountTypeRaw != survivor.accountTypeRaw,
+           duplicate.accountTypeRaw != AccountType.other.rawValue,
+           survivor.accountTypeRaw != AccountType.other.rawValue {
+            return false
+        }
+        if (duplicate.isManual || survivor.isManual)
+            && duplicate.startingBalanceMinorUnits != survivor.startingBalanceMinorUnits {
+            return false
+        }
+
+        let survivorTransactions = Dictionary(
+            (survivor.transactions ?? []).filter { !$0.isDeleted }.map { (RowKey($0), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for transaction in duplicate.transactions ?? [] where !transaction.isDeleted {
+            guard let existing = survivorTransactions[RowKey(transaction)] else { continue }
+            if let incoming = transaction.note, let current = existing.note, incoming != current {
+                return false
+            }
+            if let incoming = transaction.userCategory?.uuid,
+               let current = existing.userCategory?.uuid, incoming != current {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Merges a duplicate account into the survivor: user-owned settings are
+    /// combined, same-bank transactions are de-duplicated by their persisted
+    /// keys with the user's edits preserved, and derived rows follow.
+    private func mergeAccount(_ duplicate: Account, into survivor: Account) {
+        if (survivor.customDisplayName ?? "").isEmpty,
+           let name = duplicate.customDisplayName, !name.isEmpty {
+            survivor.customDisplayName = name
+        }
+        if survivor.name.isEmpty, !duplicate.name.isEmpty { survivor.name = duplicate.name }
+        // Combine the flags so neither device's choice is silently dropped.
+        survivor.isHidden = survivor.isHidden || duplicate.isHidden
+        survivor.includeInNetWorth = survivor.includeInNetWorth && duplicate.includeInNetWorth
+        if survivor.accountTypeRaw == AccountType.other.rawValue,
+           duplicate.accountTypeRaw != AccountType.other.rawValue {
+            survivor.accountTypeRaw = duplicate.accountTypeRaw
+        }
+        // Keep the fresher bank-owned balance.
+        if let incoming = duplicate.lastSyncedAt,
+           survivor.lastSyncedAt == nil || incoming > survivor.lastSyncedAt! {
+            survivor.balanceMinorUnits = duplicate.balanceMinorUnits
+            survivor.availableBalanceMinorUnits = duplicate.availableBalanceMinorUnits
+            survivor.hasAvailableBalance = duplicate.hasAvailableBalance
+            survivor.balanceDate = duplicate.balanceDate
+            survivor.lastSyncedAt = incoming
+        }
+
+        let survivorTransactions = Dictionary(
+            (survivor.transactions ?? []).filter { !$0.isDeleted }.map { (RowKey($0), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for transaction in duplicate.transactions ?? [] where !transaction.isDeleted {
+            if let existing = survivorTransactions[RowKey(transaction)] {
+                mergeUserFields(from: transaction, into: existing)
+                modelContext.delete(transaction)
+            } else {
+                transaction.account = survivor
+            }
+        }
+
+        for holding in duplicate.holdings ?? [] where !holding.isDeleted {
+            if (survivor.holdings ?? []).contains(where: {
+                !$0.isDeleted && $0.holdingID == holding.holdingID
+            }) {
+                // Derived data: the next sync refreshes the survivor's row.
+                modelContext.delete(holding)
+            } else {
+                holding.account = survivor
+            }
+        }
+
+        let survivorDays = Set((survivor.snapshots ?? []).filter { !$0.isDeleted }.map(\.day))
+        for snapshot in duplicate.snapshots ?? [] where !snapshot.isDeleted {
+            if survivorDays.contains(snapshot.day) {
+                modelContext.delete(snapshot)
+            } else {
+                snapshot.account = survivor
+            }
+        }
+    }
+
+    /// Combines user-owned transaction fields without dropping either side.
+    private func mergeUserFields(from source: LedgerTransaction, into target: LedgerTransaction) {
+        if target.note == nil { target.note = source.note }
+        if target.userCategory == nil { target.userCategory = source.userCategory }
+        target.isTransfer = target.isTransfer || source.isTransfer
+        target.isTransferUserSet = target.isTransferUserSet || source.isTransferUserSet
+        target.isIgnored = target.isIgnored || source.isIgnored
+        if let reviewed = source.reviewedAt,
+           target.reviewedAt == nil || reviewed > target.reviewedAt! {
+            target.reviewedAt = reviewed
+        }
+        if let tags = source.tags, !tags.isEmpty {
+            var merged = target.tags ?? []
+            let names = Set(merged.map(\.name))
+            for tag in tags where !names.contains(tag.name) {
+                merged.append(tag)
+            }
+            target.tags = merged
+        }
+        if target.autoCategory == nil, let category = source.autoCategory {
+            target.autoCategory = category
+            target.autoCategorySource = source.autoCategorySource
+            target.autoConfidence = source.autoConfidence
+        }
+        if target.autoCategorizeAttemptedAt == nil {
+            target.autoCategorizeAttemptedAt = source.autoCategorizeAttemptedAt
+        }
     }
 
     /// One account by its connection-scoped SimpleFIN id, if it exists.
@@ -1412,6 +2046,21 @@ public actor SyncEngine {
     /// Total transactions still needing a category.
     public func uncategorizedCount() throws -> Int {
         try categorizationCounts().total
+    }
+
+    /// Detects recurring payments from the store, on the writer's context.
+    ///
+    /// The mapping reads `LedgerTransaction` relationships, so it must not run
+    /// against the main context: a repair or sync can delete a row between that
+    /// context's fetch and the mapping, and SwiftData traps on the invalidated
+    /// instance. Running here serializes the read with those writers, so the
+    /// rows are always the ones the store still holds.
+    public func recurringSeries(
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) throws -> [RecurringSeries] {
+        let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+        return RecurringDetector.detect(transactions: transactions, now: now, calendar: calendar)
     }
 
     /// Runs the on-device Apple Intelligence model over a bounded set of

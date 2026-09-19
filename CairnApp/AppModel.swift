@@ -81,6 +81,8 @@ final class AppModel {
     /// Set once the first import has settled; until then a remote change must
     /// not trigger a scan that could offer a credential still arriving.
     @ObservationIgnored private var credentialsScanReady = false
+    /// Coalesces repair passes: a remote change can arrive while one is running.
+    @ObservationIgnored private var isRepairingConnections = false
 
     /// Automatic categorization progress, surfaced in Insights.
     enum CategorizationState: Equatable {
@@ -259,7 +261,7 @@ final class AppModel {
             // The sample connection has no credential and no server, so running
             // the network path would only report it as unable to sync. Present
             // the synthetic ledger as a healthy, recently synced account.
-            refreshRecurring()
+            await refreshRecurring()
             syncState = .success
             // Still run the deterministic pass so repeat merchants in the
             // synthetic ledger are categorized, as they would be in a real run.
@@ -286,7 +288,7 @@ final class AppModel {
         await recovery
         // Kick off categorization without blocking launch; a large backlog can
         // take minutes on-device.
-        refreshRecurring()
+        await refreshRecurring()
         Task { await autoCategorize() }
     }
 
@@ -336,18 +338,22 @@ final class AppModel {
     }
 
     /// Scans for orphaned credentials only once the first CloudKit import has
-    /// ended, so a row that is still arriving is never treated as missing.
+    /// ended, so a row that is still arriving is never treated as missing. The
+    /// duplicate-connection repair takes the same gate: it must see the settled
+    /// institution set before it merges anything.
     private func recoverOrphanedCredentialsWhenReady() async {
         if storeMode == .cloud {
             await waitForFirstCloudImport(types: [.import])
         }
         credentialsScanReady = true
+        await repairConnections()
         scanForRecoverableCredentials()
     }
 
-    /// Re-runs the orphan scan whenever a remote change lands. A row delivered
-    /// by iCloud can reference a credential that was offered before it arrived,
-    /// so the offer is withdrawn as soon as that happens.
+    /// Re-runs the orphan scan and the duplicate repair whenever a remote change
+    /// lands. A row delivered by iCloud can reference a credential that was
+    /// offered before it arrived, or add a duplicate the local device has not
+    /// merged yet, so both are re-checked as soon as the store changes.
     private func observeRemoteStoreChanges() {
         remoteChangeTask?.cancel()
         remoteChangeTask = Task { [weak self] in
@@ -355,9 +361,59 @@ final class AppModel {
                 named: .NSPersistentStoreRemoteChange
             ) {
                 guard let self else { return }
+                await self.repairConnections()
                 self.scanForRecoverableCredentials()
             }
         }
+    }
+
+    /// Merges duplicate connections, then re-keys the Access URL of any
+    /// credential that merged away onto the survivor, so a device that held only
+    /// the retired copy keeps access.
+    private func repairConnections() async {
+        guard storeFailure == nil, !isRepairingConnections else { return }
+        isRepairingConnections = true
+        defer { isRepairingConnections = false }
+
+        do {
+            let outcome = try await engine.repairDuplicateConnections()
+            guard outcome.didChange || !outcome.retiredCredentials.isEmpty else { return }
+
+            let results = CredentialReKey.reKey(
+                retirements: outcome.retiredCredentials,
+                store: credentials,
+                synchronizable: useCloudKit,
+                dryRun: Self.skipCredentialReKey
+            )
+            for result in results {
+                if let failure = result.failure {
+                    await cairnLog(.warning, failure)
+                } else {
+                    await cairnLog(.info, result.message)
+                }
+            }
+            await cairnLog(
+                .info,
+                "Connection repair: groups=\(outcome.duplicateGroups) "
+                    + "accounts moved=\(outcome.movedAccounts) merged=\(outcome.mergedAccounts) "
+                    + "retired=\(outcome.retiredCredentials.count) unsafe=\(outcome.unsafeMerges)"
+            )
+            await refreshBudget()
+        } catch {
+            await cairnLog(.warning, "Connection repair failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Debug-only: `-cairn-skip-credential-rekey` runs the duplicate repair but
+    /// only logs which local Keychain copy a re-key would keep, so a repair can
+    /// be exercised on a copied store without touching its credentials. Always
+    /// `false` in Release.
+    private static var skipCredentialReKey: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-cairn-skip-credential-rekey")
+        #else
+        false
+        #endif
     }
 
     // MARK: - Onboarding
@@ -379,9 +435,15 @@ final class AppModel {
         do {
             let accessURL = try await client.claim(token: token)
             await cairnLog(.info, "Claimed access URL for \(accessURL.host ?? "unknown host").")
-            let credentialID = UUID()
-            try storeCredential(accessURL.absoluteString, id: credentialID)
-            try await establishInstitution(accessURL: accessURL, credentialID: credentialID)
+            let adoption = try await establishConnection(
+                accessURL: accessURL,
+                proposedCredentialID: UUID()
+            )
+            if case .ambiguous = adoption {
+                banner = "This SimpleFIN account’s connections match more than one saved connection. "
+                    + "Cairn left them as they are, so you’ll keep seeing both until it combines the "
+                    + "duplicates automatically."
+            }
             return true
         } catch {
             let message: String
@@ -397,29 +459,33 @@ final class AppModel {
         }
     }
 
-    /// Builds the `Institution` for an Access URL and runs the first sync.
+    /// The one path a fresh claim and a reconnect both take: fetch once, decide
+    /// whether this Access URL belongs to a credential already stored, store the
+    /// secret under the chosen credential id, then apply the fetched data.
     ///
-    /// Shared by claiming a setup token and reconnecting a credential already in
-    /// the Keychain, so both follow exactly one path; only the claim step
-    /// differs.
-    private func establishInstitution(accessURL: URL, credentialID: UUID) async throws {
-        var sfinURL = ""
-        if let scheme = accessURL.scheme, let host = accessURL.host {
-            sfinURL = "\(scheme)://\(host)"
-        }
-
-        let institution = Institution(
-            bankConnectionID: "",
-            // Named from the Access URL until the first fetch reports the
-            // bank's own name, so nothing ever shows a "Connecting…" ghost.
-            name: SyncEngine.fallbackName(for: accessURL),
-            credentialID: credentialID
+    /// `retiringCredentialID` is the orphaned credential a reconnect is
+    /// rebuilding; it is deleted only after the new write and the apply succeed.
+    @discardableResult
+    private func establishConnection(
+        accessURL: URL,
+        proposedCredentialID: UUID,
+        retiringCredentialID: UUID? = nil
+    ) async throws -> ConnectionAdoption {
+        let probe = try await engine.probeConnection(
+            accessURL: accessURL,
+            proposedCredentialID: proposedCredentialID,
+            client: client,
+            now: Date()
         )
-        institution.sfinURL = sfinURL
-        container.mainContext.insert(institution)
-        try container.mainContext.save()
-
-        await syncAll(force: true)
+        // Store only once the probe has proved the token works. A setup token is
+        // single-use, so a Keychain failure here leaves nothing to clean up and
+        // the caller can ask for a new token.
+        try storeCredential(accessURL.absoluteString, id: probe.credentialID)
+        _ = try await engine.applyClaim(probe, accessURL: accessURL, now: Date())
+        if let retiringCredentialID, retiringCredentialID != probe.credentialID {
+            try? credentials.delete(id: retiringCredentialID)
+        }
+        return probe.adoption
     }
 
     // MARK: - Recovering an orphaned credential
@@ -453,25 +519,23 @@ final class AppModel {
         await cairnLog(.info, "Reconnecting saved credential for \(credential.host).")
 
         // A row may have arrived while this was pending — iCloud delivered it,
-        // or another pass created it. Re-check after the await and drop the
-        // offer rather than inserting a second institution for one credential.
+        // or another pass created it. The same matching a new claim uses then
+        // adopts it instead of inserting a second institution for one
+        // credential, so the re-check that used to guard this is no longer
+        // needed.
         let id = credential.id
-        let existing = (try? container.mainContext.fetch(
-            FetchDescriptor<Institution>(predicate: #Predicate { $0.credentialID == id })
-        )) ?? []
-        guard CredentialRecovery.shouldRebuild(
-            credentialID: id,
-            institutionCredentialIDs: existing.map(\.credentialID)
-        ) else {
-            removeRecoverable(id: id)
-            return false
-        }
-
-        // Only now that the reconnect will proceed: a dropped offer above must
-        // leave the sync state alone rather than stuck on "Syncing…".
         syncState = .syncing
         do {
-            try await establishInstitution(accessURL: accessURL, credentialID: id)
+            let adoption = try await establishConnection(
+                accessURL: accessURL,
+                proposedCredentialID: id,
+                retiringCredentialID: id
+            )
+            if case .ambiguous = adoption {
+                banner = "This saved connection’s banks match more than one saved connection. "
+                    + "Cairn left them as they are, so you’ll keep seeing both until it combines the "
+                    + "duplicates automatically."
+            }
             removeRecoverable(id: id)
             // Reconnecting from onboarding has to leave that screen; from
             // Settings the app is already past it.
@@ -657,6 +721,7 @@ final class AppModel {
         var failures: [String] = []
         var missingCredentialIDs: [UUID] = []
         var missingCredentialNames: [String] = []
+        var skipped = 0
         var reportedBudget = false
         var reportedThrottle = false
 
@@ -697,6 +762,7 @@ final class AppModel {
                         await cairnLog(.warning, "\(name): \(reason); skipping.")
                         missingCredentialIDs.append(institution.credentialID)
                         missingCredentialNames.append(name)
+                        skipped += 1
                         continue
                     }
                     let outcome = try await engine.performSync(
@@ -713,6 +779,12 @@ final class AppModel {
                     )
                     failures.append(contentsOf: outcome.serverErrors.map { "\(name): \($0)" })
                 }
+            } catch SimpleFINError.institutionGone {
+                // The duplicate repair merged this row away between picking it
+                // and fetching. Nothing is wrong with the connection, so this
+                // is a skip rather than a failure to show.
+                await cairnLog(.info, "\(name): skipped; the saved connection was merged or removed by another pass.")
+                skipped += 1
             } catch {
                 let reason = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
                 await cairnLog(.error, "\(name): \(reason)")
@@ -725,7 +797,23 @@ final class AppModel {
         }
 
         await refreshBudget()
-        await cairnLog(.info, "syncAll finished: failures=\(failures.count) skipped=\(missingCredentialIDs.count)")
+        await cairnLog(.info, "syncAll finished: failures=\(failures.count) skipped=\(skipped)")
+
+        // A credential whose connections are also held by another credential is
+        // about to be merged by the repair, so it must not be offered for
+        // Reconnect or Remove: doing either would fight the merge.
+        let redundant = (try? await engine.redundantCredentialIDs()) ?? []
+        if !redundant.isEmpty, !missingCredentialIDs.isEmpty {
+            var keptIDs: [UUID] = []
+            var keptNames: [String] = []
+            for (index, id) in missingCredentialIDs.enumerated() where !redundant.contains(id) {
+                keptIDs.append(id)
+                if index < missingCredentialNames.count { keptNames.append(missingCredentialNames[index]) }
+            }
+            missingCredentialIDs = keptIDs
+            missingCredentialNames = keptNames
+        }
+
         if let first = failures.first {
             syncState = .failed(first)
         } else if !missingCredentialIDs.isEmpty {
@@ -780,16 +868,25 @@ final class AppModel {
     /// Removes every saved connection that shares one of these credentials,
     /// along with the credentials themselves. Used by the disconnect action and
     /// by the notice for connections whose credential never arrived.
+    ///
+    /// A connection another credential still reaches has its accounts moved
+    /// there first, so a removal never takes data that a surviving connection
+    /// needs. Only credentials with no institution left have their Keychain item
+    /// deleted.
     func removeConnections(credentialIDs: [UUID]) async {
-        let context = container.mainContext
-        for credentialID in credentialIDs {
-            let siblings = (try? context.fetch(
-                FetchDescriptor<Institution>(predicate: #Predicate { $0.credentialID == credentialID })
-            )) ?? []
-            try? credentials.delete(id: credentialID)
-            siblings.forEach(context.delete)
+        do {
+            let outcome = try await engine.removeConnections(credentialIDs: Set(credentialIDs))
+            for credentialID in outcome.retiredCredentialIDs {
+                try? credentials.delete(id: credentialID)
+            }
+            if outcome.retainedInstitutions > 0 {
+                banner = "Some accounts are still used by another saved connection, so they were kept."
+            }
+            await refreshBudget()
+        } catch {
+            banner = "Couldn’t remove the connection: \(error.localizedDescription)"
+            return
         }
-        try? context.save()
         await syncAll(force: false)
     }
 
@@ -893,7 +990,7 @@ final class AppModel {
         }
 
         await refreshCategorizationCounts()
-        refreshRecurring()
+        await refreshRecurring()
         await cairnLog(
             .info,
             "Auto-categorize(\(scope == .background ? "background" : "foreground")): "
@@ -941,7 +1038,7 @@ final class AppModel {
         do {
             let outcome = try await engine.applyRules()
             await refreshCategorizationCounts()
-            refreshRecurring()
+            await refreshRecurring()
             return outcome
         } catch {
             await cairnLog(.warning, "Couldn't apply rules: \(error.localizedDescription)")
@@ -957,9 +1054,13 @@ final class AppModel {
     /// Recomputes detected subscriptions and regular payments entirely
     /// on-device. Cheap enough to run after a sync or a flag change; it only
     /// groups transactions already in the local store.
-    func refreshRecurring() {
-        let transactions = (try? container.mainContext.fetch(FetchDescriptor<LedgerTransaction>())) ?? []
-        recurringSeries = RecurringDetector.detect(transactions: transactions)
+    ///
+    /// Runs on the engine's context rather than the main context: the detector
+    /// reads transaction relationships, and a repair or sync running in the
+    /// background can delete a duplicate row mid-pass. Mapping a stale
+    /// main-context copy would trap in SwiftData.
+    func refreshRecurring() async {
+        recurringSeries = (try? await engine.recurringSeries()) ?? []
     }
 
     /// Called right after the person changes a transaction's category, so the
@@ -975,7 +1076,7 @@ final class AppModel {
                 )
             }
             await refreshCategorizationCounts()
-            refreshRecurring()
+            await refreshRecurring()
         }
     }
 

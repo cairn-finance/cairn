@@ -45,7 +45,7 @@ struct InsightsView: View {
         .navigationTitle("Insights")
         .task {
             await model.refreshCategorizationCounts()
-            model.refreshRecurring()
+            await model.refreshRecurring()
         }
         .onChange(of: month) { _, _ in
             paceSelection = nil

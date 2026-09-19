@@ -2,7 +2,7 @@ import Foundation
 
 /// Errors surfaced by the SimpleFIN client. Cases map to the protocol's
 /// documented HTTP responses so the UI can give specific, actionable guidance.
-public enum SimpleFINError: Error, LocalizedError, Sendable {
+public enum SimpleFINError: Error, LocalizedError, Sendable, Equatable {
     /// The setup token was not a valid Base64-encoded URL.
     case invalidToken
     /// The claim URL was not HTTPS.
@@ -18,6 +18,10 @@ public enum SimpleFINError: Error, LocalizedError, Sendable {
     case decoding(String)
     /// The server reported structured errors in `errlist`.
     case serverReported([SimpleFINServerError])
+    /// The `Institution` row a sync was about to use is gone from the store. A
+    /// repair can merge a duplicate row away mid-sync, so this is a skip, not a
+    /// connection failure.
+    case institutionGone
 
     public var errorDescription: String? {
         switch self {
@@ -39,6 +43,8 @@ public enum SimpleFINError: Error, LocalizedError, Sendable {
             "The SimpleFIN server sent data Cairn couldn’t understand: \(ErrorSanitizer.sanitize(message))"
         case let .serverReported(errors):
             errors.first?.message ?? "The SimpleFIN server reported an error."
+        case .institutionGone:
+            "This saved connection was merged or removed while syncing."
         }
     }
 }
