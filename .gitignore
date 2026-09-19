@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# SwiftPM / Xcode build output from the app sources on this repository
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Local files
+*.log
+*.tsv
