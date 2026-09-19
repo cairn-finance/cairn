@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # CloudKit fixes a field's encryption setting the moment the schema is deployed
+  # to Production: it can never be flipped afterwards, in either direction. So a
+  # change to Sources/CairnCore/Models has to be deployed before it ships, and
+  # Config/schema-promotions.txt records that it was. This job fails until the
+  # current schema hash appears there, which is what stops a new field or a new
+  # encryption attribute from reaching TestFlight undeployed.
+  schema-promotion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Proves the extraction is portable (plain POSIX awk) before trusting it.
+      - name: Check the schema-hash fixtures
+        run: Scripts/tests/schema-hash-test.sh
+      - name: Require a recorded CloudKit schema promotion
+        run: Scripts/schema-hash.sh --check
+
+  test-and-build:
+    # macOS 26 runners ship Xcode 27, which Cairn's iOS 26 / macOS 26 baseline needs.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_27.app ]; then
+            sudo xcode-select -s /Applications/Xcode_27.app
+          fi
+          xcodebuild -version
+
+      - name: Install tooling
+        run: brew install xcodegen swiftlint
+
+      - name: Run core tests
+        run: swift test
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Lint
+        run: swiftlint
+
+      - name: Build macOS
+        run: |
+          xcodebuild -project Cairn.xcodeproj -scheme Cairn \
+            -destination 'platform=macOS' \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build
+
+      - name: Build iOS simulator
+        run: |
+          xcodebuild -project Cairn.xcodeproj -scheme Cairn \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build

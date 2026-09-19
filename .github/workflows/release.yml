@@ -1,0 +1,230 @@
+name: Release
+
+# Cut a release by pushing a tag like `v0.1.0` on `main`. See docs/releasing.md
+# and Scripts/release.sh. The tag is the single source of truth for the marketing
+# version; the build number is derived from the commit count so it always grows.
+on:
+  push:
+    tags: ["v*"]
+
+# Needed for the final job to create the GitHub Release.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Validate the tag and work out the version/build pair before spending time on
+  # two signed archives.
+  prepare:
+    runs-on: macos-26
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Refuse tags that are not on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME is not contained in main; refusing to release."
+            exit 1
+          fi
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_27.app ]; then
+            sudo xcode-select -s /Applications/Xcode_27.app
+          fi
+          xcodebuild -version
+
+      - name: Install tooling
+        run: brew install swiftlint
+
+      - name: Run core tests
+        run: swift test
+
+      - name: Lint
+        run: swiftlint
+
+      - name: Require a recorded CloudKit schema promotion
+        run: Scripts/schema-hash.sh --check
+
+      - name: Resolve version and build number
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tags must look like vX.Y.Z (got $GITHUB_REF_NAME)."
+            exit 1
+          fi
+          # Commit count is deterministic, grows along main, and keeps re-runs of
+          # the same tag on the same build number.
+          build="$(git rev-list --count HEAD)"
+          echo "Releasing $version (build $build)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  # One signed archive per platform, uploaded straight to TestFlight. Both use
+  # the same tag and build number.
+  archive:
+    needs: prepare
+    runs-on: macos-26
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iOS
+            destination: generic/platform=iOS
+            label: ios
+          - platform: macOS
+            destination: generic/platform=macOS
+            label: macos
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_NUMBER: ${{ needs.prepare.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_27.app ]; then
+            sudo xcode-select -s /Applications/Xcode_27.app
+          fi
+          xcodebuild -version
+
+      - name: Install tooling
+        run: brew install xcodegen
+
+      - name: Write signing configuration
+        env:
+          TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+          BUNDLE_ID: ${{ secrets.PRODUCT_BUNDLE_IDENTIFIER }}
+          CONTAINER_ID: ${{ secrets.ICLOUD_CONTAINER_ID }}
+        run: |
+          if [ -z "$TEAM" ] || [ -z "$BUNDLE_ID" ] || [ -z "$CONTAINER_ID" ]; then
+            echo "::error::DEVELOPMENT_TEAM, PRODUCT_BUNDLE_IDENTIFIER and ICLOUD_CONTAINER_ID secrets are required."
+            exit 1
+          fi
+          cat > Config/Signing.local.xcconfig <<EOF
+          DEVELOPMENT_TEAM = $TEAM
+          PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID
+          ICLOUD_CONTAINER_ID = $CONTAINER_ID
+          EOF
+
+      - name: Write App Store Connect API key
+        env:
+          KEY_B64: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+        run: |
+          if [ -z "$KEY_B64" ] || [ -z "$KEY_ID" ] || [ -z "$ISSUER_ID" ]; then
+            echo "::error::APPSTORE_API_PRIVATE_KEY, APPSTORE_API_KEY_ID and APPSTORE_API_ISSUER_ID secrets are required."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/private_keys/AuthKey_${KEY_ID}.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/private_keys/AuthKey_${KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: Write export options
+        env:
+          TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions-${{ matrix.label }}.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>$TEAM</string>
+            <!-- Keep the build number we inject; never let Xcode renumber. -->
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Archive ${{ matrix.platform }}
+        run: |
+          xcodebuild archive \
+            -project Cairn.xcodeproj \
+            -scheme Cairn \
+            -configuration Release \
+            -destination '${{ matrix.destination }}' \
+            -archivePath "$RUNNER_TEMP/Cairn-${{ matrix.label }}.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "${{ secrets.APPSTORE_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.APPSTORE_API_ISSUER_ID }}" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+
+      - name: Upload ${{ matrix.platform }} to TestFlight
+        run: |
+          rm -rf "$RUNNER_TEMP/export-${{ matrix.label }}"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Cairn-${{ matrix.label }}.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export-${{ matrix.label }}" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-${{ matrix.label }}.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "${{ secrets.APPSTORE_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.APPSTORE_API_ISSUER_ID }}"
+
+      - name: Package dSYMs
+        run: |
+          cd "$RUNNER_TEMP/Cairn-${{ matrix.label }}.xcarchive"
+          zip -qry "$RUNNER_TEMP/Cairn-${{ matrix.label }}-dSYMs.zip" dSYMs
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dSYMs-${{ matrix.label }}
+          path: ${{ runner.temp }}/Cairn-${{ matrix.label }}-dSYMs.zip
+          if-no-files-found: error
+
+  # Publish the GitHub Release with generated notes and the dSYMs so crash
+  # reports stay symbolicated.
+  publish:
+    needs: [prepare, archive]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dSYMs
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The job has no checkout, so tell gh which repo to act on.
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          title="Cairn ${tag#v}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dSYMs/*.zip --clobber
+          else
+            gh release create "$tag" dSYMs/*.zip \
+              --title "$title" \
+              --generate-notes \
+              --verify-tag
+          fi
