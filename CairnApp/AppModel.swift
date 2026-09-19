@@ -440,7 +440,8 @@ final class AppModel {
             )
             if case .ambiguous = adoption {
                 banner = "This SimpleFIN account’s connections match more than one saved connection. "
-                    + "Cairn left the saved rows alone and will reconcile them on the next repair."
+                    + "Cairn left them as they are, so you’ll keep seeing both until it combines the "
+                    + "duplicates automatically."
             }
             return true
         } catch {
@@ -531,7 +532,8 @@ final class AppModel {
             )
             if case .ambiguous = adoption {
                 banner = "This saved connection’s banks match more than one saved connection. "
-                    + "Cairn left them alone and will reconcile them on the next repair."
+                    + "Cairn left them as they are, so you’ll keep seeing both until it combines the "
+                    + "duplicates automatically."
             }
             removeRecoverable(id: id)
             // Reconnecting from onboarding has to leave that screen; from
