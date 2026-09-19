@@ -589,6 +589,29 @@ public actor SyncEngine {
 
     // MARK: - Repairing duplicate connections
 
+    /// One credential the repair merged away, and what decides which local
+    /// Keychain copy to keep when both copies exist.
+    public struct CredentialRetirement: Sendable, Equatable {
+        /// The credential the Access URL should move to.
+        public let survivorCredentialID: UUID
+        /// The most recent `lastSuccessfulFetch` among the retired credential's
+        /// institutions, captured before the merge, or `nil` when it never
+        /// completed a fetch.
+        public let retiredLastSuccessfulFetch: Date?
+        /// The same for the survivor's institutions, captured before the merge.
+        public let survivorLastSuccessfulFetch: Date?
+
+        public init(
+            survivorCredentialID: UUID,
+            retiredLastSuccessfulFetch: Date? = nil,
+            survivorLastSuccessfulFetch: Date? = nil
+        ) {
+            self.survivorCredentialID = survivorCredentialID
+            self.retiredLastSuccessfulFetch = retiredLastSuccessfulFetch
+            self.survivorLastSuccessfulFetch = survivorLastSuccessfulFetch
+        }
+    }
+
     /// What one repair pass did, for logging and for deciding which Keychain
     /// items to re-key.
     public struct ConnectionRepairOutcome: Sendable, Equatable {
@@ -598,9 +621,9 @@ public actor SyncEngine {
         public var deletedInstitutions: Int = 0
         public var unsafeMerges: Int = 0
         public var indeterminateGroups: Int = 0
-        /// Credential merged away -> the survivor its Access URL should move to.
-        /// Only credentials with no remaining institution appear here.
-        public var retiredCredentials: [UUID: UUID] = [:]
+        /// Credential merged away -> what its Access URL should move to. Only
+        /// credentials with no remaining institution appear here.
+        public var retiredCredentials: [UUID: CredentialRetirement] = [:]
 
         public init() {}
 
@@ -634,6 +657,10 @@ public actor SyncEngine {
         // Credential merged away -> the survivors its connections landed on.
         var retirementTargets: [UUID: Set<UUID>] = [:]
         var changed = false
+
+        // Read each credential's freshest successful fetch before anything is
+        // merged away; the re-key needs it to keep the working Keychain copy.
+        let fetchesByCredential = Self.mostRecentFetches(in: all)
 
         for members in groups.values where members.count > 1 {
             outcome.duplicateGroups += 1
@@ -702,7 +729,11 @@ public actor SyncEngine {
         let referenced = Set(after.map(\.credentialID))
         for (retired, targets) in retirementTargets where !referenced.contains(retired) {
             if let survivor = targets.min(by: { $0.uuidString < $1.uuidString }) {
-                outcome.retiredCredentials[retired] = survivor
+                outcome.retiredCredentials[retired] = CredentialRetirement(
+                    survivorCredentialID: survivor,
+                    retiredLastSuccessfulFetch: fetchesByCredential[retired],
+                    survivorLastSuccessfulFetch: fetchesByCredential[survivor]
+                )
             }
         }
 
@@ -814,6 +845,17 @@ public actor SyncEngine {
         }
         guard let index = ConnectionSurvivor.choose(candidates) else { return nil }
         return members[index]
+    }
+
+    /// Each credential's most recent successful fetch, read before a merge
+    /// deletes the merged-away rows.
+    static func mostRecentFetches(in institutions: [Institution]) -> [UUID: Date] {
+        var result: [UUID: Date] = [:]
+        for institution in institutions {
+            guard let fetch = institution.lastSuccessfulFetch else { continue }
+            result[institution.credentialID] = max(result[institution.credentialID] ?? .distantPast, fetch)
+        }
+        return result
     }
 
     /// Fills gaps in the survivor from a duplicate without overwriting anything

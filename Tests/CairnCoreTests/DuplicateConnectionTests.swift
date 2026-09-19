@@ -396,6 +396,7 @@ struct DuplicateConnectionTests {
             in: context, credentialID: seed.credentialA, connectionID: "CON-1", orgID: "ORG-1",
             createdAt: Date(timeIntervalSince1970: 11)
         )
+        childA.lastSuccessfulFetch = Date(timeIntervalSince1970: 100)
         insertAccount(
             in: context, bankAccountID: "1", institution: childA,
             transactions: [
@@ -408,6 +409,7 @@ struct DuplicateConnectionTests {
             in: context, credentialID: seed.credentialB, connectionID: "CON-1", orgID: "ORG-1",
             createdAt: Date(timeIntervalSince1970: 21)
         )
+        childB.lastSuccessfulFetch = Date(timeIntervalSince1970: 200)
         insertAccount(
             in: context, bankAccountID: "1", institution: childB,
             transactions: [
@@ -427,7 +429,12 @@ struct DuplicateConnectionTests {
 
         let outcome = try await engine.repairDuplicateConnections()
         #expect(outcome.duplicateGroups == 1)
-        #expect(outcome.retiredCredentials[seed.credentialB] == seed.credentialA)
+        let retirement = try #require(outcome.retiredCredentials[seed.credentialB])
+        #expect(retirement.survivorCredentialID == seed.credentialA)
+        // The fetch dates are captured before the merge, so the re-key can tell
+        // which local Keychain copy is working.
+        #expect(retirement.retiredLastSuccessfulFetch == Date(timeIntervalSince1970: 200))
+        #expect(retirement.survivorLastSuccessfulFetch == Date(timeIntervalSince1970: 100))
 
         // One connection, one account, all three transactions.
         let institutions = try context.fetch(FetchDescriptor<Institution>())
@@ -473,8 +480,8 @@ struct DuplicateConnectionTests {
 
         let outcome1 = try await engine1.repairDuplicateConnections()
         let outcome2 = try await engine2.repairDuplicateConnections()
-        #expect(outcome1.retiredCredentials[seed.credentialB] == seed.credentialA)
-        #expect(outcome2.retiredCredentials[seed.credentialB] == seed.credentialA)
+        #expect(outcome1.retiredCredentials[seed.credentialB]?.survivorCredentialID == seed.credentialA)
+        #expect(outcome2.retiredCredentials[seed.credentialB]?.survivorCredentialID == seed.credentialA)
 
         let survivors1 = try container1.mainContext.fetch(FetchDescriptor<Institution>())
             .filter { !$0.bankConnectionID.isEmpty }
@@ -710,6 +717,48 @@ struct DuplicateConnectionTests {
 
         #expect(try CredentialReKey.move(store: store, from: old, to: new, synchronizable: false))
         #expect(try store.secret(for: new) == "https://new.example/simplefin")
+        #expect(try store.secret(for: old) == nil)
+    }
+
+    @Test("Re-keying keeps the fresher secret when the older survivor's copy is stale")
+    func reKeyKeepsRetiredSecretWhenSurvivorStale() throws {
+        let old = UUID()
+        let new = UUID()
+        let store = InMemoryCredentialStore()
+        try store.store("https://retired.example/simplefin", id: old, synchronizable: false)
+        try store.store("https://stale.example/simplefin", id: new, synchronizable: false)
+
+        // The retired credential fetched more recently, so its working Access
+        // URL must win under the survivor's id.
+        #expect(try CredentialReKey.move(
+            store: store,
+            from: old,
+            to: new,
+            synchronizable: false,
+            retiredLastSuccessfulFetch: Date(timeIntervalSince1970: 200),
+            survivorLastSuccessfulFetch: Date(timeIntervalSince1970: 100)
+        ))
+        #expect(try store.secret(for: new) == "https://retired.example/simplefin")
+        #expect(try store.secret(for: old) == nil)
+    }
+
+    @Test("Re-keying keeps the survivor's secret when it fetched more recently")
+    func reKeyKeepsSurvivorSecretWhenFresh() throws {
+        let old = UUID()
+        let new = UUID()
+        let store = InMemoryCredentialStore()
+        try store.store("https://stale.example/simplefin", id: old, synchronizable: false)
+        try store.store("https://survivor.example/simplefin", id: new, synchronizable: false)
+
+        #expect(try CredentialReKey.move(
+            store: store,
+            from: old,
+            to: new,
+            synchronizable: false,
+            retiredLastSuccessfulFetch: Date(timeIntervalSince1970: 100),
+            survivorLastSuccessfulFetch: Date(timeIntervalSince1970: 200)
+        ))
+        #expect(try store.secret(for: new) == "https://survivor.example/simplefin")
         #expect(try store.secret(for: old) == nil)
     }
 }

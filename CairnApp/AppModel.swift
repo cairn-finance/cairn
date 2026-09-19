@@ -379,8 +379,8 @@ final class AppModel {
             let outcome = try await engine.repairDuplicateConnections()
             guard outcome.didChange || !outcome.retiredCredentials.isEmpty else { return }
 
-            for (retired, survivor) in outcome.retiredCredentials {
-                await reKeyCredential(from: retired, to: survivor)
+            for (retired, retirement) in outcome.retiredCredentials {
+                await reKeyCredential(from: retired, retirement: retirement)
             }
             await cairnLog(
                 .info,
@@ -396,19 +396,23 @@ final class AppModel {
 
     /// Re-stores a merged-away credential's secret under the survivor before
     /// deleting the old item, so a failed write can never lose the only copy.
-    private func reKeyCredential(from old: UUID, to new: UUID) async {
-        guard old != new else { return }
-        guard let secret = try? credentials.secret(for: old) else { return }
-        if (try? credentials.secret(for: new)) == nil {
-            do {
-                try credentials.store(secret, id: new, synchronizable: useCloudKit)
-            } catch {
-                await cairnLog(.warning, "Could not re-key a merged SimpleFIN credential on this device; leaving the old copy.")
-                return
-            }
+    /// When the survivor already holds a secret, the copy whose credential
+    /// fetched most recently wins.
+    private func reKeyCredential(from old: UUID, retirement: SyncEngine.CredentialRetirement) async {
+        do {
+            let moved = try CredentialReKey.move(
+                store: credentials,
+                from: old,
+                to: retirement.survivorCredentialID,
+                synchronizable: useCloudKit,
+                retiredLastSuccessfulFetch: retirement.retiredLastSuccessfulFetch,
+                survivorLastSuccessfulFetch: retirement.survivorLastSuccessfulFetch
+            )
+            guard moved else { return }
+            await cairnLog(.info, "Re-keyed a merged SimpleFIN credential on this device.")
+        } catch {
+            await cairnLog(.warning, "Could not re-key a merged SimpleFIN credential on this device; leaving the old copy.")
         }
-        try? credentials.delete(id: old)
-        await cairnLog(.info, "Re-keyed a merged SimpleFIN credential on this device.")
     }
 
     // MARK: - Onboarding
