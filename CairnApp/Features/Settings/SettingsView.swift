@@ -148,6 +148,14 @@ struct SettingsView: View {
 
     private var syncSection: some View {
         Section {
+            IconRow(
+                "Connection",
+                systemImage: model.isOffline ? "wifi.slash" : "wifi",
+                tint: model.isOffline ? CairnTheme.warning : CairnTheme.positive
+            ) {
+                Text(model.isOffline ? "Offline" : "Online")
+                    .foregroundStyle(.secondary)
+            }
             IconRow("Last successful sync", systemImage: "arrow.triangle.2.circlepath", tint: CairnTheme.accent) {
                 if let date = lastSuccessfulSync {
                     Text(date, format: .relative(presentation: .named))
@@ -179,7 +187,10 @@ struct SettingsView: View {
         } header: {
             Text("Sync")
         } footer: {
-            Text("Each bank has its own SimpleFIN daily budget, shared across your devices. Cairn shows the smallest and refreshes conservatively.")
+            Text("Each bank has its own SimpleFIN daily budget, shared across your devices. Cairn shows the smallest and refreshes conservatively."
+                + (model.isOffline
+                    ? " You’re offline right now, so sync is paused; your saved data still works and sync resumes automatically."
+                    : ""))
         }
     }
 

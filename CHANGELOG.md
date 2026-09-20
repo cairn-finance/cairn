@@ -12,13 +12,22 @@ All notable changes to Cairn are documented here. This project follows
   refreshed privacy and support pages.
 - CI checks (tests and the schema hash) and a tag-driven release process that
   builds and uploads to TestFlight.
-- Older transaction history is backfilled in 89-day pages, so a connection shows
+- Older transaction history is backfilled in 45-day pages, so a connection shows
   as much history as the institution exposes, not just the most recent window.
 - Manual accounts can now be edited in the app: add, edit, and delete single
   transactions, and rename or delete the account itself.
+- Categories can be added, renamed, recolored, reordered, and archived, and a
+  category that nothing uses can be deleted.
+- An offline indicator on Home and Settings explains that sync is paused and
+  cached data still works, and onboarding offers a clear path to create a manual
+  account or import a CSV without connecting a bank.
+- Empty states with a short explanation and a next step on Home, Activity,
+  Insights, Investments, Recurring, Rules, Tags, and account detail.
 
 ### Changed
 
+- A sync that fails now stays visible as an actionable card with retry and
+  diagnostics, and reads as "paused" rather than a failure while offline.
 - Sync now uses a new CloudKit container, so data synced by earlier builds
   won't show up through it.
 - Cloud sync now defaults to off on new installs; onboarding asks before

@@ -68,8 +68,11 @@ struct TagsView: View {
                         systemImage: "tag",
                         title: "No tags yet",
                         message: "Tags are labels you can add to any transaction and search for later. "
-                            + "They are separate from categories."
-                    )
+                            + "They are separate from categories.",
+                        actionTitle: "New Tag"
+                    ) {
+                        editorTarget = .create
+                    }
                     .listRowBackground(Color.clear)
                 }
             } else {

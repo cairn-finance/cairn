@@ -16,11 +16,14 @@ struct HomeView: View {
 
     @State private var showingConnect = false
     @State private var showingManualAccount = false
-    @State private var connectionsToRemove: [UUID] = []
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
+                if model.isOffline {
+                    OfflineNoticeView()
+                        .cairnAppear()
+                }
                 if accounts.isEmpty {
                     emptyState
                 } else {
@@ -31,6 +34,8 @@ struct HomeView: View {
                     }
                     .buttonStyle(.pressableCard)
                     .cairnAppear()
+
+                    SyncIssueCard()
 
                     syncStatus
                         .cairnAppear(delay: 0.05)
@@ -63,22 +68,6 @@ struct HomeView: View {
             ManualAccountSheet()
                 .cairnLockCover()
         }
-        .alert(
-            "Remove connection?",
-            isPresented: Binding(
-                get: { !connectionsToRemove.isEmpty },
-                set: { if !$0 { connectionsToRemove = [] } }
-            )
-        ) {
-            Button("Remove", role: .destructive) {
-                let ids = connectionsToRemove
-                connectionsToRemove = []
-                Task { await model.removeConnections(credentialIDs: ids) }
-            }
-            Button("Cancel", role: .cancel) { connectionsToRemove = [] }
-        } message: {
-            Text("This removes the saved connection and its credential. Connecting again needs a new SimpleFIN setup token.")
-        }
     }
 
     // MARK: - Sections
@@ -90,10 +79,17 @@ struct HomeView: View {
                 ProgressView().controlSize(.mini)
                 Text("Syncing…")
             case let .failed(message):
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(CairnTheme.warning)
-                Text("Last sync had a problem")
-                    .accessibilityHint(message)
+                if model.isOffline {
+                    Image(systemName: "wifi.slash")
+                        .foregroundStyle(CairnTheme.warning)
+                    Text("Sync paused while offline")
+                        .accessibilityHint(message)
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(CairnTheme.warning)
+                    Text("Last sync had a problem")
+                        .accessibilityHint(message)
+                }
             case let .waiting(title, detail, _):
                 Image(systemName: "exclamationmark.circle")
                     .foregroundStyle(.secondary)
@@ -109,20 +105,7 @@ struct HomeView: View {
                 }
             }
             Spacer()
-            if let ids = model.syncState.missingCredentialIDs {
-                Button("Remove") { connectionsToRemove = ids }
-                    .buttonStyle(.plain)
-                    .font(.footnote.weight(.semibold))
-            }
-            if model.syncState.hasDetails {
-                NavigationLink {
-                    SyncDiagnosticsView()
-                } label: {
-                    Text("Details")
-                }
-                .buttonStyle(.plain)
-                .font(.footnote.weight(.semibold))
-            } else if model.remainingBudget < SyncEngine.dailyRequestLimit / 4 {
+            if model.remainingBudget < SyncEngine.dailyRequestLimit / 4 {
                 StatusPill(text: "\(model.remainingBudget) syncs left today", tint: CairnTheme.warning)
             }
         }
@@ -214,18 +197,7 @@ struct HomeView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Button {
-                showingConnect = true
-            } label: {
-                Label("Add a Connection", systemImage: "plus")
-            }
-            .buttonStyle(.cairnProminent)
-            Button {
-                showingManualAccount = true
-            } label: {
-                Label("Add a Manual Account", systemImage: "square.and.pencil")
-            }
-            .buttonStyle(.cairnSecondary)
+            SetupActions()
         }
         .padding(.top, 8)
         .cairnAppear()

@@ -52,13 +52,21 @@ struct TransactionsView: View {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.l) {
                 filterBar
                 if filtered.isEmpty {
-                    EmptyStateView(
-                        systemImage: allTransactions.isEmpty ? "list.bullet.rectangle" : "magnifyingglass",
-                        title: allTransactions.isEmpty ? "No activity yet" : "Nothing matches",
-                        message: emptyMessage,
-                        actionTitle: hasAnyFilter ? "Clear filters" : nil
-                    ) {
-                        clearFilters()
+                    if allTransactions.isEmpty {
+                        GetStartedEmptyState(
+                            systemImage: "list.bullet.rectangle",
+                            title: "No activity yet",
+                            message: "Sync a bank, add a manual account, or import a CSV to see transactions here."
+                        )
+                    } else {
+                        EmptyStateView(
+                            systemImage: "magnifyingglass",
+                            title: "Nothing matches",
+                            message: emptyMessage,
+                            actionTitle: hasAnyFilter ? "Clear filters" : nil
+                        ) {
+                            clearFilters()
+                        }
                     }
                 } else {
                     TransactionDayList(transactions: filtered, showsMonthHeaders: true)
@@ -183,10 +191,7 @@ struct TransactionsView: View {
     }
 
     private var emptyMessage: String {
-        if allTransactions.isEmpty {
-            return "Sync a bank or import a CSV to see transactions here."
-        }
-        return "Try a different search or clear the filters."
+        "Try a different search or clear the filters."
     }
 
     // MARK: - Filtering

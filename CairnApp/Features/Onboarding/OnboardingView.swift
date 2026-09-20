@@ -7,6 +7,7 @@ struct OnboardingView: View {
     @Environment(AppModel.self) private var model
     @State private var connection: AddConnectionSheet.ConnectionKind?
     @State private var credentialToForget: AppModel.RecoverableCredential?
+    @State private var showingUseWithoutBank = false
 
     var body: some View {
         ZStack {
@@ -37,6 +38,10 @@ struct OnboardingView: View {
                 model.completeOnboarding()
             }
             .cairnLockCover()
+        }
+        .sheet(isPresented: $showingUseWithoutBank) {
+            UseWithoutBankSheet { model.completeOnboarding() }
+                .cairnLockCover()
         }
         .confirmationDialog(
             "Forget the saved connection?",
@@ -227,9 +232,9 @@ struct OnboardingView: View {
             #endif
 
             Button {
-                model.completeOnboarding()
+                showingUseWithoutBank = true
             } label: {
-                Text("Continue without a bank")
+                Text("Use without a bank")
             }
             .buttonStyle(OnboardingSecondaryStyle())
 

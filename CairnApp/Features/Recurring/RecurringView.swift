@@ -54,8 +54,11 @@ struct RecurringView: View {
                         systemImage: "repeat",
                         title: "No recurring payments yet",
                         message: "Cairn looks for charges that repeat on a regular schedule. It needs at least "
-                            + "three similar charges on the same account before it calls something recurring."
-                    )
+                            + "three similar charges on the same account before it calls something recurring.",
+                        actionTitle: "Sync Now"
+                    ) {
+                        Task { await model.syncAll(force: true) }
+                    }
                 } else {
                     hero.cairnAppear()
                     if !outgoing.isEmpty {

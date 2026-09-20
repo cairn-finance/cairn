@@ -7,12 +7,24 @@ struct ManualAccountSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
+    /// The type a caller wants preselected, e.g. Investments adds an
+    /// investment account.
+    var initialType: AccountType = .checking
+    /// Called with the created account, so a caller can continue a flow.
+    var onCreated: ((Account) -> Void)?
+
     @State private var name = ""
     @State private var type: AccountType = .checking
     @State private var currencyCode = "USD"
     @State private var openingBalance = ""
     @State private var errorMessage: String?
     @FocusState private var nameFocused: Bool
+
+    init(initialType: AccountType = .checking, onCreated: ((Account) -> Void)? = nil) {
+        self.initialType = initialType
+        self.onCreated = onCreated
+        _type = State(initialValue: initialType)
+    }
 
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -131,12 +143,13 @@ struct ManualAccountSheet: View {
         let trimmedBalance = openingBalance.trimmingCharacters(in: .whitespacesAndNewlines)
         let balance = trimmedBalance.isEmpty ? 0 : (MinorUnits.parse(trimmedBalance, exponent: currency.exponent) ?? 0)
 
-        model.createManualAccount(
+        let account = model.createManualAccount(
             name: trimmedName,
             type: type,
             openingBalanceMinorUnits: balance,
             currency: currency
         )
+        onCreated?(account)
         dismiss()
     }
 }
