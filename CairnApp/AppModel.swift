@@ -53,6 +53,9 @@ final class AppModel {
     @ObservationIgnored let isSampleMode: Bool
     /// The "require unlock to open" state machine. UI reads `lock.isLocked`.
     @ObservationIgnored let lock: AppLockController
+    /// Watches network reachability so offline can be explained as a pause
+    /// rather than reported as a sync failure.
+    @ObservationIgnored let connectivity = NetworkMonitor()
 
     private(set) var onboardingComplete: Bool
     var useCloudKit: Bool
@@ -212,6 +215,9 @@ final class AppModel {
         #endif
 
         PowerSource.prepare()
+        // Reachability is independent of the store, so it starts even when the
+        // recovery screen is up; offline is still worth explaining there.
+        connectivity.start()
         // A background pass must never run against a store that failed to open.
         if storeFailure == nil {
             BackgroundCategorization.run = { [weak self] in
@@ -951,13 +957,15 @@ final class AppModel {
 
     // MARK: - Manual accounts & import
 
-    /// Creates a manual account for data SimpleFIN can't reach.
+    /// Creates a manual account for data SimpleFIN can't reach. Returns the new
+    /// account so a caller can continue a flow, such as importing into it.
+    @discardableResult
     func createManualAccount(
         name: String,
         type: AccountType,
         openingBalanceMinorUnits: Int64,
         currency: Currency
-    ) {
+    ) -> Account {
         let account = Account(
             bankAccountID: "manual-\(UUID().uuidString)",
             name: name,
@@ -970,6 +978,7 @@ final class AppModel {
         account.balanceDate = .now
         container.mainContext.insert(account)
         try? container.mainContext.save()
+        return account
     }
 
     /// Imports parsed CSV rows into an account, returning what was inserted.

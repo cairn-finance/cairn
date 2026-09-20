@@ -41,8 +41,11 @@ struct RulesView: View {
                         systemImage: "slider.horizontal.3",
                         title: "No rules yet",
                         message: "A rule matches a bank description and assigns a category. "
-                            + "Rules run on-device after every sync and always beat an automatic guess."
-                    )
+                            + "Rules run on-device after every sync and always beat an automatic guess.",
+                        actionTitle: "New Rule"
+                    ) {
+                        editorTarget = .create
+                    }
                     .listRowBackground(Color.clear)
                 }
             } else {

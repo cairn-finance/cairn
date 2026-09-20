@@ -24,11 +24,13 @@ struct InsightsView: View {
                 monthPicker
 
                 if currencyAccounts.isEmpty {
-                    EmptyStateView(
+                    GetStartedEmptyState(
                         systemImage: "chart.bar.xaxis",
                         title: "No accounts to analyze",
-                        message: "Connect a bank or add an account to see spending insights."
+                        message: "Connect a bank, add an account, or import a CSV to see spending insights."
                     )
+                } else if !hasInsightData {
+                    insufficientData
                 } else {
                     heroCard(data).cairnAppear()
                     paceCard(data).cairnAppear(delay: 0.05)
@@ -55,6 +57,23 @@ struct InsightsView: View {
     }
 
     // MARK: - Currency & data
+
+    /// Whether there is any transaction to analyze at all. With none, every
+    /// card would read zero, so an explanation is clearer than empty charts.
+    private var hasInsightData: Bool {
+        currencyAccounts.contains { !($0.transactions ?? []).isEmpty }
+    }
+
+    private var insufficientData: some View {
+        ContentUnavailableView {
+            Label("Not enough data yet", systemImage: "chart.bar.xaxis")
+        } description: {
+            Text("Insights appear once there are transactions in the last few months. "
+                + "Sync a bank or import a CSV to fill them in.")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 24)
+    }
 
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
 

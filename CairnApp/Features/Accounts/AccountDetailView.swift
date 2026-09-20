@@ -271,10 +271,19 @@ struct AccountDetailView: View {
             systemImage: emptyStateIcon,
             title: "No transactions yet",
             message: emptyStateMessage,
-            actionTitle: account.isManual ? "Import CSV" : nil
+            actionTitle: emptyActionTitle
         ) {
-            showingImporter = true
+            if account.isManual {
+                showingImporter = true
+            } else {
+                Task { await model.syncAll(force: true) }
+            }
         }
+    }
+
+    private var emptyActionTitle: String? {
+        if account.isWallet { return nil }
+        return account.isManual ? "Import CSV" : "Sync Now"
     }
 
     private var emptyStateIcon: String {
