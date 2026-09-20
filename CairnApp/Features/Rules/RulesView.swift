@@ -194,7 +194,12 @@ struct RuleEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(AppModel.self) private var model
-    @Query(sort: \CairnSchemaV1.Category.sortOrder) private var categories: [CairnSchemaV1.Category]
+    @Query(
+        sort: [
+            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+        ]
+    ) private var categories: [CairnSchemaV1.Category]
     @Query private var allTransactions: [LedgerTransaction]
     @Query private var settings: [AppSettings]
 

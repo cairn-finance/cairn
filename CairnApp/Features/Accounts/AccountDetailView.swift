@@ -321,7 +321,12 @@ struct AccountDetailView: View {
 struct TransactionDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppModel.self) private var model
-    @Query(sort: \CairnSchemaV1.Category.sortOrder) private var categories: [CairnSchemaV1.Category]
+    @Query(
+        sort: [
+            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+        ]
+    ) private var categories: [CairnSchemaV1.Category]
     @Query(sort: \Tag.name) private var allTags: [Tag]
 
     let transaction: LedgerTransaction
