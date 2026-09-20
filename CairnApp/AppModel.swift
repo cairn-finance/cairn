@@ -86,6 +86,9 @@ final class AppModel {
     @ObservationIgnored private var credentialsScanReady = false
     /// Coalesces repair passes: a remote change can arrive while one is running.
     @ObservationIgnored private var isRepairingConnections = false
+    /// Set while a sync resumed by a restored connection is in flight, so a
+    /// second path update cannot start an overlapping pass.
+    @ObservationIgnored var isResumingAfterReconnect = false
 
     /// Automatic categorization progress, surfaced in Insights.
     enum CategorizationState: Equatable {
@@ -217,6 +220,10 @@ final class AppModel {
         PowerSource.prepare()
         // Reachability is independent of the store, so it starts even when the
         // recovery screen is up; offline is still worth explaining there.
+        // A restored path resumes the sync the offline copy promises.
+        connectivity.onBecameOnline = { [weak self] in
+            self?.resumeSyncAfterReconnect()
+        }
         connectivity.start()
         // A background pass must never run against a store that failed to open.
         if storeFailure == nil {

@@ -92,8 +92,8 @@ struct CSVImportSheet: View {
         }
         .sheet(item: $payload) { item in
             ImportTransactionsSheet(account: item.account, text: item.text) {
-                onFinished?()
                 dismiss()
+                onFinished?()
             }
             .cairnLockCover()
         }
@@ -109,22 +109,39 @@ struct CSVImportSheet: View {
         switch result {
         case let .success(urls):
             guard let account = selectedAccount, let url = urls.first else { return }
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let data = try Data(contentsOf: url)
-                guard let text = String(data: data, encoding: .utf8)
-                    ?? String(data: data, encoding: .isoLatin1) else {
-                    model.banner = "Couldn’t read that file as text."
-                    return
+            Task {
+                let read = await Self.readText(at: url)
+                switch read {
+                case let .success(text):
+                    payload = ImportPayload(account: account, text: text)
+                case let .failure(failure):
+                    model.banner = failure.message
                 }
-                payload = ImportPayload(account: account, text: text)
-            } catch {
-                model.banner = "Couldn’t open the file: \(error.localizedDescription)"
             }
         case let .failure(error):
             guard (error as? CocoaError)?.code != .userCancelled else { return }
             model.banner = "Import cancelled: \(error.localizedDescription)"
+        }
+    }
+
+    private struct ReadFailure: Error, Sendable {
+        let message: String
+    }
+
+    /// Reads and decodes the picked file off the main actor, since a large
+    /// export can block the UI while `Data(contentsOf:)` runs.
+    private nonisolated static func readText(at url: URL) async -> Result<String, ReadFailure> {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let text = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1) else {
+                return .failure(ReadFailure(message: "Couldn’t read that file as text."))
+            }
+            return .success(text)
+        } catch {
+            return .failure(ReadFailure(message: "Couldn’t open the file: \(error.localizedDescription)"))
         }
     }
 }

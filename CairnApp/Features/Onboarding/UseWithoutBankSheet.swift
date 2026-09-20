@@ -56,7 +56,7 @@ struct UseWithoutBankSheet: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Not Now") { onReady() }
+                    Button("Not Now") { finish() }
                 }
             }
         }
@@ -64,12 +64,19 @@ struct UseWithoutBankSheet: View {
         .frame(minWidth: 480, minHeight: 460)
         #endif
         .sheet(isPresented: $showingManual) {
-            ManualAccountSheet(onCreated: { _ in onReady() })
+            ManualAccountSheet(onCreated: { _ in finish() })
                 .cairnLockCover()
         }
         .sheet(isPresented: $showingImport) {
-            CSVImportSheet(onFinished: onReady)
+            CSVImportSheet(onFinished: finish)
                 .cairnLockCover()
         }
+    }
+
+    /// Closes this sheet before telling the caller the person is ready, rather
+    /// than relying on the root view swapping onboarding out from under it.
+    private func finish() {
+        dismiss()
+        onReady()
     }
 }

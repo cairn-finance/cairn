@@ -7,9 +7,6 @@ struct ManualAccountSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
-    /// The type a caller wants preselected, e.g. Investments adds an
-    /// investment account.
-    var initialType: AccountType = .checking
     /// Called with the created account, so a caller can continue a flow.
     var onCreated: ((Account) -> Void)?
 
@@ -21,7 +18,6 @@ struct ManualAccountSheet: View {
     @FocusState private var nameFocused: Bool
 
     init(initialType: AccountType = .checking, onCreated: ((Account) -> Void)? = nil) {
-        self.initialType = initialType
         self.onCreated = onCreated
         _type = State(initialValue: initialType)
     }

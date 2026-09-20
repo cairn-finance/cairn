@@ -150,8 +150,13 @@ struct ImportTransactionsSheet: View {
                 let skipped = outcome.duplicatesSkipped
                 model.banner = "Imported \(outcome.inserted) transaction\(outcome.inserted == 1 ? "" : "s")"
                     + (skipped > 0 ? ", skipped \(skipped) duplicate\(skipped == 1 ? "" : "s")." : ".")
-                onImported?()
-                dismiss()
+                // A caller that supplies a callback owns dismissal, so the
+                // sheet is not told to close twice.
+                if let onImported {
+                    onImported()
+                } else {
+                    dismiss()
+                }
             }
         }
     }

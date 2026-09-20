@@ -12,6 +12,10 @@ final class NetworkMonitor {
     /// update so the UI never flashes an offline warning on launch.
     private(set) var isOnline = true
 
+    /// Called after the path transitions from offline to online, so the app can
+    /// resume a sync the network interrupted.
+    @ObservationIgnored var onBecameOnline: (() -> Void)?
+
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private let queue = DispatchQueue(label: "app.cairn.network-monitor")
     @ObservationIgnored private var isStarted = false
@@ -22,9 +26,18 @@ final class NetworkMonitor {
         monitor.pathUpdateHandler = { [weak self] path in
             let online = path.status == .satisfied
             Task { @MainActor [weak self] in
-                self?.isOnline = online
+                guard let self else { return }
+                let wasOnline = self.isOnline
+                self.isOnline = online
+                if !wasOnline, online {
+                    self.onBecameOnline?()
+                }
             }
         }
         monitor.start(queue: queue)
+    }
+
+    nonisolated deinit {
+        monitor.cancel()
     }
 }
