@@ -88,7 +88,7 @@ public struct TransactionFilter: Sendable, Equatable {
 /// split exists because a single `#Predicate` literal combining all of them
 /// exceeds the Swift type-checker's expression budget; see
 /// `docs/performance-scaling.md`.
-public enum TransactionQuery {
+public enum TransactionFetch {
     public static func descriptor(
         filter: TransactionFilter,
         pending: Bool? = nil,
@@ -210,6 +210,12 @@ public struct ListWindow: Sendable, Equatable {
 
     public mutating func expand(total: Int) {
         limit = nextLimit(total: total)
+    }
+
+    /// Loads one more page when the total is not known up front (a filtered
+    /// result set is scanned until the window fills).
+    public mutating func advance() {
+        limit += Self.pageSize
     }
 
     public mutating func reset() {

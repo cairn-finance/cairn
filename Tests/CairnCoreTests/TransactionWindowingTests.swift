@@ -151,7 +151,7 @@ struct TransactionSectionBuilderTests {
 
 @Suite("Transaction query predicates")
 @MainActor
-struct TransactionQueryTests {
+struct TransactionFetchTests {
     private func makeStore() throws -> ModelContainer {
         try ModelContainerFactory.make(mode: .local, inMemory: true).container
     }
@@ -214,7 +214,7 @@ struct TransactionQueryTests {
 
     private func ids(_ container: ModelContainer, filter: TransactionFilter, pending: Bool? = nil, limit: Int? = nil) throws -> [String] {
         try container.mainContext
-            .fetch(TransactionQuery.descriptor(filter: filter, pending: pending, limit: limit))
+            .fetch(TransactionFetch.descriptor(filter: filter, pending: pending, limit: limit))
             .map(\.bankTransactionID)
     }
 
@@ -222,7 +222,7 @@ struct TransactionQueryTests {
     /// windowed feed does page by page.
     private func refined(_ container: ModelContainer, filter: TransactionFilter, pending: Bool? = nil) throws -> [String] {
         try container.mainContext
-            .fetch(TransactionQuery.descriptor(filter: filter, pending: pending))
+            .fetch(TransactionFetch.descriptor(filter: filter, pending: pending))
             .filter { TransactionRefinement.matches($0.rowValue(), filter: filter) }
             .map(\.bankTransactionID)
     }
@@ -326,7 +326,7 @@ struct TransactionQueryTests {
         // The SQL predicate applies the sign only; the transfer exclusion runs
         // during refinement. 20 negative rows on account A, one on account B,
         // and the pending charge.
-        let counted = try seeded.container.mainContext.fetchCount(TransactionQuery.countDescriptor(filter: filter))
+        let counted = try seeded.container.mainContext.fetchCount(TransactionFetch.countDescriptor(filter: filter))
         #expect(counted == 22)
     }
 

@@ -167,16 +167,11 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: title, trailing: trailing)
             RowGroup {
-                ForEach(Array(accounts.enumerated()), id: \.element.persistentModelID) { index, account in
-                    NavigationLink {
-                        AccountDetailView(account: account)
-                    } label: {
-                        AccountRow(account: account)
-                    }
-                    .buttonStyle(.plain)
-                    if index < accounts.count - 1 {
-                        RowDivider()
-                    }
+                ForEach(accounts) { account in
+                    AccountGroupEntry(
+                        account: account,
+                        isLast: account.persistentModelID == accounts.last?.persistentModelID
+                    )
                 }
             }
         }
@@ -247,6 +242,27 @@ struct HomeView: View {
         guard let date = walletAccounts.compactMap(\.lastSyncedAt).max() else { return nil }
         return date.formatted(.relative(presentation: .named))
         #endif
+    }
+}
+
+/// One account row plus its trailing hairline, emitted as a single view so the
+/// list never has to build two elements to place a divider.
+private struct AccountGroupEntry: View {
+    let account: Account
+    let isLast: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            NavigationLink {
+                AccountDetailView(account: account)
+            } label: {
+                AccountRow(account: account)
+            }
+            .buttonStyle(.plain)
+            if !isLast {
+                RowDivider()
+            }
+        }
     }
 }
 

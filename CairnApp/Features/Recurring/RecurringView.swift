@@ -290,7 +290,7 @@ struct RecurringDetailView: View {
                 if !charges.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         SectionLabel(title: "Charges", trailing: "\(charges.count)")
-                        TransactionDayList(transactions: charges)
+                        TransactionDayList(rows: charges.map { $0.rowValue() })
                     }
                 }
             }
