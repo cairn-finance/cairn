@@ -85,7 +85,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes every account, transaction, category, and stored credential from this device and, if iCloud Sync is on, from your iCloud database. This cannot be undone. Export first if you want a copy.")
+            Text("This removes every account, transaction, category, and stored credential from this device and, if iCloud Sync is on, from iCloud. This cannot be undone. Export first for a copy.")
         }
         .confirmationDialog(
             "Disconnect \(institutionToDisconnect?.name ?? "institution")?",
@@ -103,7 +103,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { institutionToDisconnect = nil }
         } message: {
-            Text("The stored credential is removed from the Keychain and local data is deleted. Banks that share this SimpleFIN connection are disconnected too. Revoke access at SimpleFIN as well if you want to be certain.")
+            Text("The stored credential is removed from the Keychain and local data is deleted. Banks that share this SimpleFIN connection disconnect too. Revoke access at SimpleFIN to be certain.")
         }
         .confirmationDialog(
             "Remove Apple Wallet data?",
@@ -330,7 +330,7 @@ struct SettingsView: View {
         } header: {
             Text("Categorization")
         } footer: {
-            Text("Rules and your past corrections always run on-device, automatically after every sync and import. Apple Intelligence is used only for what they can’t place — one merchant at a time rather than one transaction at a time — and only its on-device model, never the cloud. The model pauses when your device is hot or in Low Power Mode.")
+            Text("Rules and corrections run on-device after every sync and import. Apple Intelligence fills what they can’t, one merchant at a time, and pauses in Low Power Mode.")
         }
     }
 
@@ -371,7 +371,7 @@ struct SettingsView: View {
         } header: {
             Text("Organization")
         } footer: {
-            Text("Rules assign a category by matching the bank description or amount. A rule always beats an automatic guess but never overrides a category you set. Tags are free-form labels you can add to any transaction and search for.")
+            Text("Rules assign a category by matching the bank description or amount. A rule beats an automatic guess but never a category you set. Tags are free-form labels for any transaction.")
         }
     }
 
@@ -462,7 +462,7 @@ struct SettingsView: View {
             return "Set a device passcode or password to use the app lock; until then it stays off."
         }
         let method = model.lock.biometryName.map { "\($0) or your device passcode" } ?? "your device passcode"
-        return "Cairn asks for \(method) when it opens or returns to the foreground. The SimpleFIN credential stays in the Keychain so a sync can run, and can be revoked any time from your SimpleFIN Bridge."
+        return "Cairn asks for \(method) when it opens or returns to the foreground. The SimpleFIN credential stays in the Keychain so a sync can run, and can be revoked any time from SimpleFIN."
     }
 
     // MARK: - Data

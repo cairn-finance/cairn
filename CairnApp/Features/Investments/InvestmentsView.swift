@@ -201,7 +201,7 @@ struct InvestmentsView: View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 CardHeader("How these numbers work")
-                Text("Cairn shows the positions and value your bank reported at the last sync. It does not fetch live market prices, so these figures are a snapshot — not a real-time portfolio value.")
+                Text("Cairn shows the positions and value your bank reported at the last sync. It does not fetch live market prices, so these are a snapshot — not a real-time value.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

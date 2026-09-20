@@ -454,7 +454,7 @@ final class AppModel {
             )
             if case .ambiguous = adoption {
                 banner = String(
-                    localized: "This SimpleFIN account’s connections match more than one saved connection. Cairn left them as they are, so you’ll keep seeing both until it combines the duplicates automatically."
+                    localized: "This SimpleFIN account matches more than one saved connection. Cairn left both and will combine the duplicates automatically."
                 )
             }
             return true
@@ -548,7 +548,7 @@ final class AppModel {
             )
             if case .ambiguous = adoption {
                 banner = String(
-                    localized: "This saved connection’s banks match more than one saved connection. Cairn left them as they are, so you’ll keep seeing both until it combines the duplicates automatically."
+                    localized: "This saved connection’s banks match more than one saved connection. Cairn left both and will combine the duplicates automatically."
                 )
             }
             removeRecoverable(id: id)
