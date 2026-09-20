@@ -2619,7 +2619,7 @@ public actor SyncEngine {
                     symbolName: item.1,
                     colorHex: item.2,
                     sortOrder: index,
-                    isSystem: item.0 == "Uncategorized" || item.0 == "Transfers"
+                    isSystem: CategoryManagement.isSystemCategoryName(item.0)
                 )
                 modelContext.insert(category)
             }
@@ -2634,7 +2634,8 @@ public actor SyncEngine {
                     name: item.0,
                     symbolName: item.1,
                     colorHex: item.2,
-                    sortOrder: defaults.count + offset
+                    sortOrder: defaults.count + offset,
+                    isSystem: CategoryManagement.isSystemCategoryName(item.0)
                 )
                 modelContext.insert(category)
             }
@@ -2655,6 +2656,17 @@ public actor SyncEngine {
     @discardableResult
     public func deduplicateCategories() throws -> Int {
         let all = try modelContext.fetch(FetchDescriptor<Category>())
+
+        // Backfill the system flag for built-ins seeded before they were
+        // protected. Behavior is keyed by name, so a renamed or removed row would
+        // break transfer pairing and fee/income routing.
+        var protectedChanged = false
+        for category in all
+        where !category.isSystem && CategoryManagement.isSystemCategoryName(category.name) {
+            category.isSystem = true
+            protectedChanged = true
+        }
+
         var groups: [String: [Category]] = [:]
         for category in all {
             let key = category.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -2679,7 +2691,7 @@ public actor SyncEngine {
                 removed += 1
             }
         }
-        if removed > 0 { try modelContext.save() }
+        if removed > 0 || protectedChanged { try modelContext.save() }
         return removed
     }
 
@@ -2740,19 +2752,28 @@ public actor SyncEngine {
                     : transaction.normalizedMerchant
             )
         }
+        // Identity is bank id + account. A row the person edited no longer
+        // matches on content, so track the deterministic ids already present and
+        // never insert a second row wearing the same `bankTransactionID`.
+        var existingIdentifiers = Set(existing.map(\.bankTransactionID))
 
         let rules = try loadRuleSnapshots()
         var outcome = ImportOutcome()
 
         for item in imports.sorted(by: { $0.date < $1.date }) {
             let normalized = MerchantNormalizer.normalize(item.merchant)
+            let identifier = Self.importIdentifier(for: item, normalized: normalized)
+            if existingIdentifiers.contains(identifier) {
+                outcome.duplicatesSkipped += 1
+                continue
+            }
             if isLikelyDuplicate(item, normalized: normalized, among: candidates) {
                 outcome.duplicatesSkipped += 1
                 continue
             }
 
             let model = LedgerTransaction(
-                bankTransactionID: Self.importIdentifier(for: item, normalized: normalized),
+                bankTransactionID: identifier,
                 payeeDescription: item.description,
                 amountMinorUnits: item.amountMinorUnits
             )
@@ -2771,11 +2792,12 @@ public actor SyncEngine {
             candidates.append(
                 ImportCandidate(amountMinorUnits: item.amountMinorUnits, date: item.date, merchant: normalized)
             )
+            existingIdentifiers.insert(identifier)
             outcome.inserted += 1
         }
 
         if account.isManual {
-            try recomputeManualBalance(account: account)
+            try recomputeManualBalance(account, now: now)
         }
 
         try modelContext.save()
@@ -2798,15 +2820,18 @@ public actor SyncEngine {
     }
 
     /// Recomputes a manual account's balance from its opening balance and all of
-    /// its transactions.
-    private func recomputeManualBalance(account: Account) throws {
+    /// its transactions. A row marked deleted in this context is skipped, so a
+    /// batch delete other code performed cannot leave the balance inflated.
+    func recomputeManualBalance(_ account: Account, now: Date = .now) throws {
         let accountBankID = account.bankAccountID
         let transactions = try modelContext.fetch(
             FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.accountIDIndex == accountBankID })
         )
-        let sum = transactions.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
+        let sum = transactions
+            .filter { !$0.isDeleted }
+            .reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
         account.balanceMinorUnits = MinorUnits.addClamped(account.startingBalanceMinorUnits, sum)
-        account.balanceDate = .now
+        account.balanceDate = now
     }
 
     /// A deterministic id so re-importing the same file doesn't create new rows

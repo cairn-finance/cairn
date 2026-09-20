@@ -71,6 +71,59 @@ struct CategoryManagementTests {
         }
     }
 
+    @Test("A name that duplicates a category or a built-in is refused")
+    func duplicateNamesRefused() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        insertCategory(context, name: "Coffee", sortOrder: 0)
+        let dining = insertCategory(context, name: "Dining", sortOrder: 1)
+        try context.save()
+
+        await #expect(throws: CategoryManagementError.duplicateName) {
+            try await engine.createCategory(name: " coffee ", symbolName: "tag.fill", colorHex: "#FF9500")
+        }
+        await #expect(throws: CategoryManagementError.duplicateName) {
+            try await engine.createCategory(name: "Fees", symbolName: "tag.fill", colorHex: "#FF9500")
+        }
+        await #expect(throws: CategoryManagementError.duplicateName) {
+            try await engine.updateCategory(
+                id: dining.uuid,
+                name: "COFFEE",
+                symbolName: "fork.knife",
+                colorHex: "#FF2D55"
+            )
+        }
+        // The name is unchanged when the rename was refused.
+        #expect(try refetch(dining.uuid, in: container).name == "Dining")
+    }
+
+    @Test("Seeding marks every built-in category as system")
+    func seedsSystemCategories() async throws {
+        let (container, engine) = try makeEngine()
+        try await engine.seedDefaultCategoriesIfNeeded()
+
+        let all = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV1.Category>())
+        for name in CategoryManagement.systemCategoryNames {
+            let category = try #require(all.first { $0.name == name })
+            #expect(category.isSystem)
+        }
+    }
+
+    @Test("Deduplication backfills the system flag on legacy built-ins")
+    func dedupBackfillsSystemFlag() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        insertCategory(context, name: "Fees", sortOrder: 0)
+        insertCategory(context, name: "Income", sortOrder: 1)
+        try context.save()
+
+        _ = try await engine.deduplicateCategories()
+
+        let all = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV1.Category>())
+        #expect(all.first { $0.name == "Fees" }?.isSystem == true)
+        #expect(all.first { $0.name == "Income" }?.isSystem == true)
+    }
+
     @Test("A non-system category can be renamed and recolored")
     func renameAndRecolor() async throws {
         let (container, engine) = try makeEngine()

@@ -72,7 +72,7 @@ struct ManualEntryTests {
         #expect(row.payeeDescription == "Blue Bottle Coffee #123")
         #expect(row.amountMinorUnits == -675)
         #expect(row.postedDate == date)
-        #expect(row.isImported)
+        #expect(!row.isImported)
         #expect(!row.isPending)
         #expect(row.currencyExponent == 2)
         #expect(row.accountIDIndex == account.bankAccountID)

@@ -7,7 +7,12 @@ import CairnCore
 struct TransactionEditSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \CairnSchemaV1.Category.sortOrder) private var categories: [CairnSchemaV1.Category]
+    @Query(
+        sort: [
+            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+        ]
+    ) private var categories: [CairnSchemaV1.Category]
     @Query(sort: \Tag.name) private var allTags: [Tag]
 
     let account: Account
@@ -23,6 +28,7 @@ struct TransactionEditSheet: View {
     @State private var showingNewTag = false
     @State private var errorMessage: String?
     @State private var didLoad = false
+    @State private var isSaving = false
     @FocusState private var payeeFocused: Bool
 
     private var isEditing: Bool { transaction != nil }
@@ -59,7 +65,7 @@ struct TransactionEditSheet: View {
                 Section("Category") {
                     Picker("Category", selection: $categoryID) {
                         Text("Uncategorized").tag(PersistentIdentifier?.none)
-                        ForEach(categories.filter { !$0.isArchived }) { category in
+                        ForEach(pickerCategories) { category in
                             Label(category.name, systemImage: category.symbolName)
                                 .tag(Optional(category.persistentModelID))
                         }
@@ -124,7 +130,7 @@ struct TransactionEditSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(trimmedPayee.isEmpty || parsedAmount == nil)
+                        .disabled(trimmedPayee.isEmpty || parsedAmount == nil || isSaving)
                 }
             }
             .onAppear(perform: load)
@@ -142,6 +148,12 @@ struct TransactionEditSheet: View {
 
     private var selectedTags: [Tag] {
         allTags.filter { tagIDs.contains($0.persistentModelID) }
+    }
+
+    /// Keep an archived category visible when it is the row's current choice,
+    /// so the picker never renders a blank selection.
+    private var pickerCategories: [CairnSchemaV1.Category] {
+        categories.filter { !$0.isArchived || $0.persistentModelID == categoryID }
     }
 
     private func toggleTag(_ tag: Tag) {
@@ -172,10 +184,8 @@ struct TransactionEditSheet: View {
     }
 
     private func save() {
-        guard let parsedAmount else {
-            errorMessage = "Enter a valid amount, e.g. -12.34."
-            return
-        }
+        guard !isSaving, let parsedAmount, !trimmedPayee.isEmpty else { return }
+        isSaving = true
         let entry = ManualEntry(
             payee: trimmedPayee,
             amountMinorUnits: parsedAmount,
@@ -193,8 +203,9 @@ struct TransactionEditSheet: View {
             }
             if succeeded {
                 dismiss()
-            } else if let banner = model.banner {
-                errorMessage = banner
+            } else {
+                isSaving = false
+                errorMessage = model.banner
             }
         }
     }

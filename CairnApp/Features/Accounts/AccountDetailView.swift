@@ -134,11 +134,11 @@ struct AccountDetailView: View {
         }
         .alert("Delete account?", isPresented: $showingDeleteAccount) {
             Button("Delete", role: .destructive) {
-                Task {
-                    if await model.deleteManualAccount(account) {
-                        dismiss()
-                    }
-                }
+                // Capture identity, dismiss, then delete off-screen: the detail
+                // view must never read a model that has been removed.
+                let accountID = account.persistentModelID
+                dismiss()
+                Task { await model.deleteManualAccount(id: accountID) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -544,7 +544,9 @@ struct TransactionDetailView: View {
                 }
 
                 LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(categories.filter { !$0.isArchived }) { category in
+                    ForEach(categories.filter {
+                        !$0.isArchived || $0.uuid == transaction.effectiveCategory?.uuid
+                    }) { category in
                         let selected = transaction.effectiveCategory?.uuid == category.uuid
                         Button {
                             select(category)
@@ -762,7 +764,9 @@ struct TransactionDetailView: View {
                     detailRow("Transacted", transacted.formatted(date: .abbreviated, time: .shortened))
                 }
                 detailRow("Institution", transaction.account?.institution?.name ?? "—")
-                if transaction.isImported {
+                if transaction.bankTransactionID.hasPrefix("manual-") {
+                    detailRow("Source", "Manual")
+                } else if transaction.bankTransactionID.hasPrefix("import-") {
                     detailRow("Source", "CSV import")
                 }
                 VStack(alignment: .leading, spacing: 3) {

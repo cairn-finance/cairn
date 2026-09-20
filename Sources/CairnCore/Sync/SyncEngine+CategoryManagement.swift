@@ -6,6 +6,7 @@ public enum CategoryManagementError: Error, LocalizedError, Equatable {
     case emptyName
     case notFound
     case systemCategory
+    case duplicateName
     case referenced(transactionCount: Int, ruleCount: Int)
 
     public var errorDescription: String? {
@@ -16,6 +17,8 @@ public enum CategoryManagementError: Error, LocalizedError, Equatable {
             return "That category no longer exists."
         case .systemCategory:
             return "Built-in categories can’t be renamed or removed."
+        case .duplicateName:
+            return "That name is already used by another category."
         case let .referenced(transactionCount, ruleCount):
             var parts: [String] = []
             if transactionCount > 0 {
@@ -25,7 +28,7 @@ public enum CategoryManagementError: Error, LocalizedError, Equatable {
                 parts.append("\(ruleCount) rule\(ruleCount == 1 ? "" : "s")")
             }
             let list = parts.isEmpty ? "records" : parts.joined(separator: " and ")
-            return "\(list) still use this category, so it was hidden instead of deleted."
+            return "\(list) still use this category, so it wasn’t deleted."
         }
     }
 }
@@ -61,6 +64,9 @@ public extension SyncEngine {
             throw CategoryManagementError.emptyName
         }
         let existing = try modelContext.fetch(FetchDescriptor<Category>())
+        guard !nameIsTaken(trimmed, among: existing, excluding: nil) else {
+            throw CategoryManagementError.duplicateName
+        }
         let nextOrder = (existing.map(\.sortOrder).max() ?? -1) + 1
         let category = Category(
             name: trimmed,
@@ -85,6 +91,13 @@ public extension SyncEngine {
             throw CategoryManagementError.emptyName
         }
         let category = try categoryForManagement(id: id)
+        let existing = try modelContext.fetch(FetchDescriptor<Category>())
+        // Keeping its own name is always allowed (a recolor, or a no-op rename),
+        // even for a legacy built-in that hasn't been flagged system yet.
+        if !CategoryManagement.namesCollide(trimmed, category.name),
+           nameIsTaken(trimmed, among: existing, excluding: category.uuid) {
+            throw CategoryManagementError.duplicateName
+        }
         if category.isSystem {
             guard trimmed == category.name, symbolName == category.symbolName else {
                 throw CategoryManagementError.systemCategory
@@ -185,5 +198,18 @@ public extension SyncEngine {
             throw CategoryManagementError.notFound
         }
         return category
+    }
+
+    /// Whether a proposed name collides with a built-in name or a stored
+    /// category, ignoring case and excluding the row being edited.
+    private func nameIsTaken(
+        _ name: String,
+        among existing: [Category],
+        excluding uuid: UUID?
+    ) -> Bool {
+        if CategoryManagement.isSystemCategoryName(name) { return true }
+        return existing.contains {
+            $0.uuid != uuid && CategoryManagement.namesCollide($0.name, name)
+        }
     }
 }

@@ -52,8 +52,7 @@ public enum ManualEntryError: Error, Equatable, LocalizedError, Sendable {
 
 extension SyncEngine {
     /// Adds a user-entered transaction to a manual account. Identity is a
-    /// generated `manual-` id so it can never collide with a bank row, and the
-    /// row is marked imported like a CSV row.
+    /// generated `manual-` id so it can never collide with a bank row.
     @discardableResult
     public func addManualTransaction(
         _ entry: ManualEntry,
@@ -72,7 +71,7 @@ extension SyncEngine {
         )
         model.isPending = false
         model.currencyExponent = account.currency.exponent
-        model.isImported = true
+        model.isImported = false
         model.accountIDIndex = account.bankAccountID
         model.account = account
         model.createdAt = now
@@ -80,7 +79,7 @@ extension SyncEngine {
         try apply(entry, to: model)
         modelContext.insert(model)
 
-        try recomputeBalance(account, now: now)
+        try recomputeManualBalance(account, now: now)
         try modelContext.save()
         return model.persistentModelID
     }
@@ -102,7 +101,7 @@ extension SyncEngine {
         try apply(entry, to: transaction)
         transaction.modifiedAt = now
 
-        try recomputeBalance(account, now: now)
+        try recomputeManualBalance(account, now: now)
         try modelContext.save()
     }
 
@@ -120,7 +119,7 @@ extension SyncEngine {
         try requireManual(account)
 
         modelContext.delete(transaction)
-        try recomputeBalance(account, now: now)
+        try recomputeManualBalance(account, now: now)
         try modelContext.save()
     }
 
@@ -183,19 +182,5 @@ extension SyncEngine {
 
         transaction.userCategory = entry.categoryID.flatMap { live(Category.self, $0) }
         transaction.tags = entry.tagIDs.compactMap { live(Tag.self, $0) }
-    }
-
-    /// Recomputes a manual account's balance from its opening balance and all of
-    /// its transactions.
-    private func recomputeBalance(_ account: Account, now: Date) throws {
-        let accountBankID = account.bankAccountID
-        let transactions = try modelContext.fetch(
-            FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.accountIDIndex == accountBankID })
-        )
-        let sum = transactions
-            .filter { !$0.isDeleted }
-            .reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
-        account.balanceMinorUnits = MinorUnits.addClamped(account.startingBalanceMinorUnits, sum)
-        account.balanceDate = now
     }
 }

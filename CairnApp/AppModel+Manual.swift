@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import CairnCore
 
 /// Manual-account editing reached from the UI. Kept in its own file so the main
@@ -56,17 +57,24 @@ extension AppModel {
         }
     }
 
-    /// Deletes a manual account and everything in it.
+    /// Deletes a manual account by identity, so a caller can dismiss the screen
+    /// that showed it before the model is removed.
     @discardableResult
-    func deleteManualAccount(_ account: Account) async -> Bool {
+    func deleteManualAccount(id: PersistentIdentifier) async -> Bool {
         do {
-            try await engine.deleteManualAccount(accountID: account.persistentModelID)
+            try await engine.deleteManualAccount(accountID: id)
             await refreshRecurring()
             return true
         } catch {
             reportManualError(error)
             return false
         }
+    }
+
+    /// Deletes a manual account and everything in it.
+    @discardableResult
+    func deleteManualAccount(_ account: Account) async -> Bool {
+        await deleteManualAccount(id: account.persistentModelID)
     }
 
     private func reportManualError(_ error: any Error) {
