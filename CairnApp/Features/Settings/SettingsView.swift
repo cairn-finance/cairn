@@ -36,13 +36,12 @@ struct SettingsView: View {
 
     /// Wallet accounts are written by FinanceKit on iPhone/iPad and reach other
     /// devices through iCloud, so the count alone understates how they update.
-    private var walletSubtitle: String {
+    private var walletSubtitle: LocalizedStringKey {
         let count = walletAccounts.count
-        let base = "\(count) \(count == 1 ? "account" : "accounts")"
         #if os(macOS)
-        return base + " · Updates on your iPhone"
+        return "^[\(count) account](inflect: true) · Updates on your iPhone"
         #else
-        return base
+        return "^[\(count) account](inflect: true)"
         #endif
     }
 
@@ -86,11 +85,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(
-                "This removes every account, transaction, category, and stored credential from this device and, "
-                + "if iCloud Sync is on, from your iCloud database. This cannot be undone. "
-                + "Export first if you want a copy."
-            )
+            Text("This removes every account, transaction, category, and stored credential from this device and, if iCloud Sync is on, from your iCloud database. This cannot be undone. Export first if you want a copy.")
         }
         .confirmationDialog(
             "Disconnect \(institutionToDisconnect?.name ?? "institution")?",
@@ -108,9 +103,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { institutionToDisconnect = nil }
         } message: {
-            Text("The stored credential is removed from the Keychain and local data is deleted. "
-                + "Banks that share this SimpleFIN connection are disconnected too. "
-                + "Revoke access at SimpleFIN as well if you want to be certain.")
+            Text("The stored credential is removed from the Keychain and local data is deleted. Banks that share this SimpleFIN connection are disconnected too. Revoke access at SimpleFIN as well if you want to be certain.")
         }
         .confirmationDialog(
             "Remove Apple Wallet data?",
@@ -122,8 +115,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes the Wallet accounts and transactions Cairn imported. "
-                + "It can’t revoke access; change that in Settings › Privacy & Security › Financial Data.")
+            Text("This deletes the Wallet accounts and transactions Cairn imported. It can’t revoke access; change that in Settings › Privacy & Security › Financial Data.")
         }
         .confirmationDialog(
             "Forget the saved connection?",
@@ -139,8 +131,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { credentialToForget = nil }
         } message: {
-            Text("This removes the saved SimpleFIN connection from this device. "
-                + "Reconnecting it later will need a new setup token.")
+            Text("This removes the saved SimpleFIN connection from this device. Reconnecting it later will need a new setup token.")
         }
     }
 
@@ -317,7 +308,7 @@ struct SettingsView: View {
             )) {
                 IconRow(
                     "Use Apple Intelligence",
-                    subtitle: AppleIntelligenceCategorizer.deviceProfile.summary,
+                    subtitle: "\(AppleIntelligenceCategorizer.deviceProfile.summary)",
                     systemImage: "sparkles",
                     tint: Color(red: 0.62, green: 0.36, blue: 0.87)
                 )
@@ -339,10 +330,7 @@ struct SettingsView: View {
         } header: {
             Text("Categorization")
         } footer: {
-            Text("Rules and your past corrections always run on-device, automatically after every sync and import. "
-                + "Apple Intelligence is used only for what they can’t place — one merchant at a time rather than one "
-                + "transaction at a time — and only its on-device model, never the cloud. The model pauses when your "
-                + "device is hot or in Low Power Mode.")
+            Text("Rules and your past corrections always run on-device, automatically after every sync and import. Apple Intelligence is used only for what they can’t place — one merchant at a time rather than one transaction at a time — and only its on-device model, never the cloud. The model pauses when your device is hot or in Low Power Mode.")
         }
     }
 
@@ -383,25 +371,23 @@ struct SettingsView: View {
         } header: {
             Text("Organization")
         } footer: {
-            Text("Rules assign a category by matching the bank description or amount. A rule always "
-                + "beats an automatic guess but never overrides a category you set. Tags are free-form "
-                + "labels you can add to any transaction and search for.")
+            Text("Rules assign a category by matching the bank description or amount. A rule always beats an automatic guess but never overrides a category you set. Tags are free-form labels you can add to any transaction and search for.")
         }
     }
 
-    private var rulesSubtitle: String {
+    private var rulesSubtitle: LocalizedStringKey {
         let count = rules.count
-        return count == 0 ? "None yet" : "\(count) rule\(count == 1 ? "" : "s")"
+        return count == 0 ? "None yet" : "^[\(count) rule](inflect: true)"
     }
 
-    private var tagsSubtitle: String {
+    private var tagsSubtitle: LocalizedStringKey {
         let count = tags.count
-        return count == 0 ? "None yet" : "\(count) tag\(count == 1 ? "" : "s")"
+        return count == 0 ? "None yet" : "^[\(count) tag](inflect: true)"
     }
 
-    private var categoriesSubtitle: String {
+    private var categoriesSubtitle: LocalizedStringKey {
         let count = categories.filter { !$0.isArchived }.count
-        return count == 1 ? "1 category" : "\(count) categories"
+        return "^[\(count) category](inflect: true)"
     }
 
     // MARK: - Storage
@@ -471,14 +457,12 @@ struct SettingsView: View {
         }
     }
 
-    private var appLockFooter: String {
+    private var appLockFooter: LocalizedStringKey {
         guard model.lock.canAuthenticate else {
             return "Set a device passcode or password to use the app lock; until then it stays off."
         }
         let method = model.lock.biometryName.map { "\($0) or your device passcode" } ?? "your device passcode"
-        return "Cairn asks for \(method) when it opens or returns to the foreground. "
-            + "The SimpleFIN credential stays in the Keychain so a sync can run, "
-            + "and can be revoked any time from your SimpleFIN Bridge."
+        return "Cairn asks for \(method) when it opens or returns to the foreground. The SimpleFIN credential stays in the Keychain so a sync can run, and can be revoked any time from your SimpleFIN Bridge."
     }
 
     // MARK: - Data

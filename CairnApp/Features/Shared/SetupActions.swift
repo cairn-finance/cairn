@@ -72,8 +72,8 @@ struct SetupActions: View {
 /// and the SetupActions paths beneath it.
 struct GetStartedEmptyState: View {
     var systemImage: String = "mountain.2.fill"
-    var title: String
-    var message: String
+    var title: LocalizedStringKey
+    var message: LocalizedStringKey
     var includesConnect: Bool = true
     var manualAccountType: AccountType = .checking
     var onFinished: (() -> Void)?

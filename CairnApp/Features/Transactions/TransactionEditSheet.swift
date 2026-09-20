@@ -33,6 +33,12 @@ struct TransactionEditSheet: View {
 
     private var isEditing: Bool { transaction != nil }
 
+    /// "0.00" or "0,00" depending on the locale, matching the parser.
+    private var decimalPlaceholder: String {
+        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
+        return "0\(separator)00"
+    }
+
     private var trimmedPayee: String {
         payee.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -50,7 +56,7 @@ struct TransactionEditSheet: View {
                     TextField("Payee", text: $payee, prompt: Text("Coffee, Rent, Paycheck…"))
                         .focused($payeeFocused)
                     HStack {
-                        TextField("0.00", text: $amount)
+                        TextField(decimalPlaceholder, text: $amount)
                             .font(.body.weight(.semibold).monospacedDigit())
                             #if os(iOS)
                             .keyboardType(.numbersAndPunctuation)

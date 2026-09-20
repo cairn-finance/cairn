@@ -14,7 +14,7 @@ struct InsightFilteredListView: View {
     private var allTransactions: [LedgerTransaction]
 
     let title: String
-    let emptyMessage: String
+    let emptyMessage: LocalizedStringKey
     let currency: Currency
     let scope: Scope
 
@@ -50,7 +50,7 @@ struct InsightFilteredListView: View {
                         AmountText(money: Money(minorUnits: totalSpent, currency: currency), font: .cairnDisplay)
                     }
                     Spacer()
-                    Text("\(filtered.count) transaction\(filtered.count == 1 ? "" : "s")")
+                    Text("^[\(filtered.count) transaction](inflect: true)")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -60,7 +60,7 @@ struct InsightFilteredListView: View {
                 HStack(spacing: 12) {
                     SettingsIcon(systemImage: "sparkles", tint: CairnTheme.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(filtered.count) transaction\(filtered.count == 1 ? "" : "s") to review")
+                        Text("^[\(filtered.count) transaction](inflect: true) to review")
                             .font(.headline)
                         Text("Pick a category and Cairn remembers it for that merchant.")
                             .font(.caption)

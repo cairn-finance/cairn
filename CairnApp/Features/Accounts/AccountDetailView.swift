@@ -282,17 +282,17 @@ struct AccountDetailView: View {
         // Wallet data is only ever refreshed on iPhone/iPad; elsewhere say so
         // instead of implying the local device keeps it current.
         if account.isWallet, !WalletAvailability.isSupported {
-            parts.append("Updates on your iPhone")
+            parts.append(String(localized: "Updates on your iPhone"))
         }
-        parts.append(account.accountType.displayName)
-        if account.currency.code != "USD" || account.currency.isCustom { parts.append(account.currency.displayLabel) }
+        parts.append(String(localized: "\(account.accountType.displayName)"))
+        if account.currency.code != "USD" || account.currency.isCustom { parts.append(String(localized: "\(account.currency.displayLabel)")) }
         return parts.joined(separator: " · ")
     }
 
     /// What the account is "from", shown in the hero header.
     private var sourceLabel: String {
-        if account.isWallet { return AccountSource.financeKit.displayName }
-        return account.isManual ? "Manual account" : "Account"
+        if account.isWallet { return String(localized: "\(AccountSource.financeKit.displayName)") }
+        return account.isManual ? String(localized: "Manual account") : String(localized: "Account")
     }
 
     // MARK: - History
@@ -372,7 +372,7 @@ struct AccountDetailView: View {
         }
     }
 
-    private var emptyActionTitle: String? {
+    private var emptyActionTitle: LocalizedStringKey? {
         if account.isWallet { return nil }
         return account.isManual ? "Import CSV" : "Sync Now"
     }
@@ -382,7 +382,7 @@ struct AccountDetailView: View {
         return account.isManual ? "square.and.arrow.down" : "arrow.triangle.2.circlepath"
     }
 
-    private var emptyStateMessage: String {
+    private var emptyStateMessage: LocalizedStringKey {
         if account.isWallet {
             return "Wallet activity appears here after Cairn refreshes on your iPhone."
         }
@@ -483,9 +483,15 @@ struct TransactionDetailView: View {
                         size: 52
                     )
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(transaction.payeeDescription.isEmpty ? "No description" : transaction.payeeDescription)
-                            .font(.title3.weight(.semibold))
-                            .fixedSize(horizontal: false, vertical: true)
+                        if transaction.payeeDescription.isEmpty {
+                            Text("No description")
+                                .font(.title3.weight(.semibold))
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text(transaction.payeeDescription)
+                                .font(.title3.weight(.semibold))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         HStack(spacing: 6) {
                             Text(transaction.effectiveDate, format: .dateTime.weekday(.wide).month(.wide).day())
                             if transaction.isPending {
@@ -594,7 +600,7 @@ struct TransactionDetailView: View {
         .animation(CairnTheme.Motion.quick, value: selected)
     }
 
-    private var categorySubtitle: String {
+    private var categorySubtitle: LocalizedStringKey {
         if transaction.isCategorizedByUser {
             return "Set by you. Automatic rules won't change it."
         }

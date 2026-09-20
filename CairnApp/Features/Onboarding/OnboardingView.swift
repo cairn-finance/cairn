@@ -60,8 +60,7 @@ struct OnboardingView: View {
             }
             Button("Cancel", role: .cancel) { credentialToForget = nil }
         } message: {
-            Text("This removes the saved SimpleFIN connection from this device. "
-                + "Reconnecting it later will need a new setup token.")
+            Text("This removes the saved SimpleFIN connection from this device. Reconnecting it later will need a new setup token.")
         }
     }
 
@@ -80,8 +79,7 @@ struct OnboardingView: View {
             }
             ForEach(model.recoverableCredentials) { credential in
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("\(credential.host) is still in this device’s Keychain. "
-                        + "Reconnect it without creating a new setup token.")
+                    Text("\(credential.host) is still in this device’s Keychain. Reconnect it without creating a new setup token.")
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.66))
                         .fixedSize(horizontal: false, vertical: true)
@@ -192,7 +190,7 @@ struct OnboardingView: View {
         )
     }
 
-    private func promise(icon: String, title: String, detail: String) -> some View {
+    private func promise(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .semibold))
@@ -259,7 +257,7 @@ struct OnboardingView: View {
 
         var id: String { rawValue }
 
-        var title: String {
+        var title: LocalizedStringKey {
             switch self {
             case .local: "This Device Only"
             case .cloud: "iCloud Sync"
@@ -295,7 +293,7 @@ struct OnboardingView: View {
         )
     }
 
-    private var storageDetail: String {
+    private var storageDetail: LocalizedStringKey {
         model.useCloudKit
             ? "Syncs through your private iCloud database, with amounts and descriptions encrypted first. Takes effect when you reopen Cairn."
             : "Nothing leaves this device. You can turn on iCloud Sync later in Settings."

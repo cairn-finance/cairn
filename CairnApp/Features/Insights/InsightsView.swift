@@ -160,7 +160,7 @@ struct InsightsView: View {
                                 withAnimation(CairnTheme.Motion.quick) { month = candidate }
                             } label: {
                                 Chip(
-                                    title: candidate.formatted(.dateTime.month(.abbreviated).year(.twoDigits)),
+                                    title: LocalizedStringKey(candidate.formatted(.dateTime.month(.abbreviated).year(.twoDigits))),
                                     isSelected: isSelected(candidate),
                                     tint: CairnTheme.ink
                                 )
@@ -311,7 +311,7 @@ struct InsightsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 CardHeader(
                     "Spending pace",
-                    subtitle: selected.map { "Day \($0.day): \(moneyText($0.amountMinorUnits)) spent" } ?? paceSubtitle(data)
+                    subtitle: selected.map { LocalizedStringKey("Day \($0.day): \(moneyText($0.amountMinorUnits)) spent") } ?? paceSubtitle(data)
                 )
 
                 if data.cumulative.isEmpty {
@@ -415,7 +415,7 @@ struct InsightsView: View {
         }
     }
 
-    private func paceSubtitle(_ data: InsightsSnapshot) -> String? {
+    private func paceSubtitle(_ data: InsightsSnapshot) -> LocalizedStringKey? {
         guard isCurrentMonth, data.averageDailyPace > 0 else { return nil }
         let usual = data.averageDailyPace * Int64(data.lastDayWithData)
         let diff = data.currentToDateSpending - usual
@@ -457,7 +457,7 @@ struct InsightsView: View {
                 CardHeader(
                     "Six-month trend",
                     subtitle: selected.map {
-                        "\($0.monthStart.formatted(.dateTime.month(.wide))): \(moneyText($0.spendingMinorUnits)) spent"
+                        LocalizedStringKey("\($0.monthStart.formatted(.dateTime.month(.wide))): \(moneyText($0.spendingMinorUnits)) spent")
                     } ?? "Average \(moneyText(average)) per month"
                 )
 
@@ -756,20 +756,20 @@ struct InsightsView: View {
 
     /// Explains *why* work is still queued, so a pass paused for power doesn't
     /// look stuck.
-    private func pendingModelMessage(_ count: Int) -> String {
+    private func pendingModelMessage(_ count: Int) -> LocalizedStringKey {
         switch model.modelPauseReason {
         case .pauseBattery:
-            "\(count) still queued; they finish while your device is charging."
+            "^[\(count) transaction](inflect: true) still queued; they finish while your device is charging."
         case .pauseLowPower:
-            "\(count) still queued; they continue when Low Power Mode is off."
+            "^[\(count) transaction](inflect: true) still queued; they continue when Low Power Mode is off."
         case .pauseThermal:
-            "\(count) still queued; they continue once your device cools down."
+            "^[\(count) transaction](inflect: true) still queued; they continue once your device cools down."
         default:
-            "\(count) still queued; they continue automatically next time."
+            "^[\(count) transaction](inflect: true) still queued; they continue automatically next time."
         }
     }
 
-    private func statusLabel(_ text: String, systemImage: String, tint: Color) -> some View {
+    private func statusLabel(_ text: LocalizedStringKey, systemImage: String, tint: Color) -> some View {
         Label(text, systemImage: systemImage)
             .font(.callout)
             .foregroundStyle(tint)
@@ -778,7 +778,7 @@ struct InsightsView: View {
     private func allCategorizedLabel(categorized: Int) -> some View {
         statusLabel(
             categorized > 0
-                ? "Categorized \(categorized) transaction\(categorized == 1 ? "" : "s"). All caught up."
+                ? "Categorized ^[\(categorized) transaction](inflect: true). All caught up."
                 : "All transactions are categorized.",
             systemImage: "checkmark.circle.fill",
             tint: CairnTheme.positive
@@ -788,7 +788,7 @@ struct InsightsView: View {
     private func needsCategoryLabel(count: Int, reason: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             statusLabel(
-                "\(count) transaction\(count == 1 ? "" : "s") need a category.",
+                "^[\(count) transaction](inflect: true) need a category.",
                 systemImage: "exclamationmark.circle",
                 tint: .secondary
             )

@@ -275,12 +275,13 @@ private struct CardSurfaceModifier: ViewModifier {
 
 /// A quiet uppercase label that sits above a card or list group.
 struct SectionLabel: View {
-    let title: String
+    let title: LocalizedStringKey
     var trailing: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title.uppercased())
+            Text(title)
+                .textCase(.uppercase)
                 .font(.cairnLabel)
                 .tracking(0.8)
                 .foregroundStyle(.secondary)
@@ -297,11 +298,11 @@ struct SectionLabel: View {
 
 /// A titled row inside a card, with an optional trailing action.
 struct CardHeader<Trailing: View>: View {
-    let title: String
-    var subtitle: String?
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey?
     @ViewBuilder var trailing: Trailing
 
-    init(_ title: String, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+    init(_ title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
         self.title = title
         self.subtitle = subtitle
         self.trailing = trailing()
@@ -441,8 +442,13 @@ struct TrendPill: View {
         HStack(spacing: 3) {
             Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right")
                 .font(.system(size: 9, weight: .bold))
-            Text(percent > cap ? "\(cap)+%" : "\(percent)%")
-                .monospacedDigit()
+            if percent > cap {
+                Text("\(cap)+%")
+                    .monospacedDigit()
+            } else {
+                Text((Double(percent) / 100).formatted(.percent.precision(.fractionLength(0))))
+                    .monospacedDigit()
+            }
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(onInk ? .white : tint)
@@ -457,7 +463,7 @@ struct TrendPill: View {
 
 /// A labeled value used inside summary cards.
 struct Metric: View {
-    let title: String
+    let title: LocalizedStringKey
     let money: Money
     var tint: Color = .primary
     var font: Font = .callout.weight(.semibold)
@@ -475,7 +481,7 @@ struct Metric: View {
 
 /// A small inset tile with a label and a figure, used in stat grids.
 struct StatTile<Value: View>: View {
-    let title: String
+    let title: LocalizedStringKey
     var systemImage: String?
     var tint: Color = .secondary
     @ViewBuilder var value: Value
@@ -505,7 +511,7 @@ struct StatTile<Value: View>: View {
 /// A compact capsule chip. Selected chips fill with the accent; unselected
 /// ones sit on an inset surface.
 struct Chip: View {
-    let title: String
+    let title: LocalizedStringKey
     var systemImage: String?
     var isSelected: Bool = false
     var tint: Color = CairnTheme.accent
@@ -533,7 +539,7 @@ struct Chip: View {
 struct SegmentedPicker<Option: Hashable & Identifiable>: View {
     let options: [Option]
     @Binding var selection: Option
-    let title: (Option) -> String
+    let title: (Option) -> LocalizedStringKey
     /// Render on the ink hero surface.
     var onInk: Bool = false
 
@@ -648,9 +654,9 @@ struct Sparkline: View {
 /// Empty-state presentation shared by the main lists.
 struct EmptyStateView: View {
     let systemImage: String
-    let title: String
-    let message: String
-    var actionTitle: String?
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey
+    var actionTitle: LocalizedStringKey?
     var action: (() -> Void)?
 
     var body: some View {
@@ -770,15 +776,15 @@ struct SettingsIcon: View {
 
 /// A row with a leading icon, a title, and trailing content.
 struct IconRow<Trailing: View>: View {
-    let title: String
-    var subtitle: String?
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey?
     let systemImage: String
     var tint: Color = CairnTheme.accent
     @ViewBuilder var trailing: Trailing
 
     init(
-        _ title: String,
-        subtitle: String? = nil,
+        _ title: LocalizedStringKey,
+        subtitle: LocalizedStringKey? = nil,
         systemImage: String,
         tint: Color = CairnTheme.accent,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
@@ -809,9 +815,9 @@ struct IconRow<Trailing: View>: View {
 
 /// Small explanatory text under a group of controls.
 struct FootnoteText: View {
-    let text: String
+    let text: LocalizedStringKey
 
-    init(_ text: String) { self.text = text }
+    init(_ text: LocalizedStringKey) { self.text = text }
 
     var body: some View {
         Text(text)
@@ -825,7 +831,7 @@ struct FootnoteText: View {
 
 /// A small inline status such as "Synced 2m ago" or "Pending".
 struct StatusPill: View {
-    let text: String
+    let text: LocalizedStringKey
     var systemImage: String?
     var tint: Color = .secondary
 
@@ -916,13 +922,15 @@ extension String {
 
 extension Date {
     /// "Today", "Yesterday", or "Mon, Sep 8".
-    var cairnDayLabel: String {
+    var cairnDayLabel: LocalizedStringKey {
         let calendar = Calendar.current
         if calendar.isDateInToday(self) { return "Today" }
         if calendar.isDateInYesterday(self) { return "Yesterday" }
         if calendar.isDate(self, equalTo: .now, toGranularity: .year) {
-            return formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            return LocalizedStringKey(
+                formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            )
         }
-        return formatted(.dateTime.month(.abbreviated).day().year())
+        return LocalizedStringKey(formatted(.dateTime.month(.abbreviated).day().year()))
     }
 }

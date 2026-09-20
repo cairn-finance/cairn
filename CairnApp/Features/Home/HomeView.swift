@@ -106,7 +106,7 @@ struct HomeView: View {
             }
             Spacer()
             if model.remainingBudget < SyncEngine.dailyRequestLimit / 4 {
-                StatusPill(text: "\(model.remainingBudget) syncs left today", tint: CairnTheme.warning)
+                StatusPill(text: "^[\(model.remainingBudget) sync](inflect: true) left today", tint: CairnTheme.warning)
             }
         }
         .font(.footnote)
@@ -140,7 +140,7 @@ struct HomeView: View {
                 }
                 if !institutionAccounts.isEmpty {
                     accountGroup(
-                        title: institution.name.isEmpty ? "Institution" : institution.name,
+                        title: institution.name.isEmpty ? "Institution" : LocalizedStringKey(institution.name),
                         trailing: institutionTrailing(institution),
                         accounts: institutionAccounts
                     )
@@ -163,7 +163,7 @@ struct HomeView: View {
         return date.formatted(.relative(presentation: .named))
     }
 
-    private func accountGroup(title: String, trailing: String?, accounts: [Account]) -> some View {
+    private func accountGroup(title: LocalizedStringKey, trailing: String?, accounts: [Account]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: title, trailing: trailing)
             RowGroup {
@@ -296,10 +296,17 @@ struct NetWorthHero: View {
         HeroCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text(selectedPoint.map { $0.date.formatted(date: .abbreviated, time: .omitted) } ?? "Net worth")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.75))
-                        .contentTransition(.opacity)
+                    if let selectedPoint {
+                        Text(selectedPoint.date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .contentTransition(.opacity)
+                    } else {
+                        Text("Net worth")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .contentTransition(.opacity)
+                    }
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))

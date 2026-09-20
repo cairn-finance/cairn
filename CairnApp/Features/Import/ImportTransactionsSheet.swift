@@ -133,11 +133,11 @@ struct ImportTransactionsSheet: View {
     private var summaryFooter: some View {
         let count = parsed?.transactions.count ?? 0
         let skipped = parsed?.skippedRows ?? 0
-        Text(
-            "\(count) transaction\(count == 1 ? "" : "s") ready to import"
-            + (skipped > 0 ? ", \(skipped) row\(skipped == 1 ? "" : "s") skipped." : ".")
-            + " Duplicates already in the account are skipped automatically."
-        )
+        if skipped > 0 {
+            Text("^[\(count) transaction](inflect: true) ready to import, ^[\(skipped) row](inflect: true) skipped. Duplicates already in the account are skipped automatically.")
+        } else {
+            Text("^[\(count) transaction](inflect: true) ready to import. Duplicates already in the account are skipped automatically.")
+        }
     }
 
     private func performImport() {
@@ -148,8 +148,11 @@ struct ImportTransactionsSheet: View {
             isImporting = false
             if let outcome {
                 let skipped = outcome.duplicatesSkipped
-                model.banner = "Imported \(outcome.inserted) transaction\(outcome.inserted == 1 ? "" : "s")"
-                    + (skipped > 0 ? ", skipped \(skipped) duplicate\(skipped == 1 ? "" : "s")." : ".")
+                if skipped > 0 {
+                    model.banner = String(localized: "Imported ^[\(outcome.inserted) transaction](inflect: true), skipped ^[\(skipped) duplicate](inflect: true).")
+                } else {
+                    model.banner = String(localized: "Imported ^[\(outcome.inserted) transaction](inflect: true).")
+                }
                 // A caller that supplies a callback owns dismissal, so the
                 // sheet is not told to close twice.
                 if let onImported {

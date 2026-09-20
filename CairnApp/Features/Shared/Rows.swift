@@ -43,10 +43,10 @@ struct AccountRow: View {
     /// so the line under the name always says something useful.
     private var subtitle: String {
         var parts: [String] = []
-        if account.isManual { parts.append("Manual") }
-        if account.accountType != .other { parts.append(account.accountType.displayName) }
+        if account.isManual { parts.append(String(localized: "Manual")) }
+        if account.accountType != .other { parts.append(String(localized: "\(account.accountType.displayName)")) }
         if account.accountType == .other || account.currency.code != "USD" || account.currency.isCustom {
-            parts.append(account.currency.displayLabel)
+            parts.append(String(localized: "\(account.currency.displayLabel)"))
         }
         return parts.joined(separator: " · ")
     }
@@ -74,11 +74,19 @@ struct TransactionRow: View {
             .opacity(transaction.isIgnored ? 0.5 : 1)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(transaction.payeeDescription.isEmpty ? "No description" : transaction.payeeDescription)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                    .strikethrough(transaction.isIgnored, color: .secondary)
-                    .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
+                if transaction.payeeDescription.isEmpty {
+                    Text("No description")
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+                        .strikethrough(transaction.isIgnored, color: .secondary)
+                        .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
+                } else {
+                    Text(transaction.payeeDescription)
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+                        .strikethrough(transaction.isIgnored, color: .secondary)
+                        .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
+                }
 
                 HStack(spacing: 5) {
                     if transaction.isPending {
@@ -131,9 +139,9 @@ struct TransactionRow: View {
 
     /// The category, or "Transfer" when the row is money movement and has no
     /// category of its own.
-    private var categoryLabel: String? {
+    private var categoryLabel: LocalizedStringKey? {
         if let category = transaction.effectiveCategory {
-            return category.name
+            return LocalizedStringKey(category.name)
         }
         return transaction.countsAsTransfer ? "Transfer" : "Uncategorized"
     }
@@ -243,11 +251,11 @@ struct HoldingRow: View {
             parts.append(holding.name)
         }
         if let shares = holding.shares {
-            let text = shares.formatted(.number.precision(.fractionLength(0...4)))
-            parts.append("\(text) \(shares == 1 ? "share" : "shares")")
+            let count = shares.formatted(.number.precision(.fractionLength(0...4)))
+            parts.append("\(count) \(shares == 1 ? String(localized: "share") : String(localized: "shares"))")
         }
         if let cost = holding.costBasis {
-            parts.append("Cost \(cost.formatted())")
+            parts.append(String(localized: "Cost \(cost.formatted())"))
         }
         return parts.joined(separator: " · ")
     }

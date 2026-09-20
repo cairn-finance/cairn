@@ -64,11 +64,13 @@ public struct Currency: Hashable, Sendable, Codable {
     }
 
     /// A user-facing label for pickers and rows.
-    public var displayLabel: String {
+    public var displayLabel: LocalizedStringResource {
         if isCustom {
-            return customName ?? customAbbreviation ?? "Custom"
+            if let customName { return LocalizedStringResource(stringLiteral: customName) }
+            if let customAbbreviation { return LocalizedStringResource(stringLiteral: customAbbreviation) }
+            return "Custom"
         }
-        return code
+        return LocalizedStringResource(stringLiteral: code)
     }
 
     public static let usd = Currency(code: "USD")

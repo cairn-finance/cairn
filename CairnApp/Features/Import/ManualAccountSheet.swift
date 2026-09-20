@@ -28,6 +28,19 @@ struct ManualAccountSheet: View {
 
     private let typeColumns = [GridItem(.adaptive(minimum: 96), spacing: 8)]
 
+    /// "0.00" or "0,00" depending on the locale, so the example matches what the
+    /// keyboard and parser expect.
+    private var decimalPlaceholder: String {
+        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
+        return "0\(separator)00"
+    }
+
+    /// "1250.00" / "1250,00" used in the liability footer example.
+    private var negativeExample: String {
+        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
+        return "-1250\(separator)00"
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -46,7 +59,7 @@ struct ManualAccountSheet: View {
 
                 Section {
                     HStack {
-                        TextField("0.00", text: $openingBalance)
+                        TextField(decimalPlaceholder, text: $openingBalance)
                             .font(.title3.weight(.semibold).monospacedDigit())
                             #if os(iOS)
                             .keyboardType(.numbersAndPunctuation)
@@ -64,9 +77,11 @@ struct ManualAccountSheet: View {
                 } header: {
                     Text("Opening balance")
                 } footer: {
-                    Text(type.isLiability
-                         ? "Enter what you currently owe as a negative number, e.g. -1250.00."
-                         : "The balance right now. You can import transactions afterwards.")
+                    if type.isLiability {
+                        Text("Enter what you currently owe as a negative number, e.g. \(negativeExample).")
+                    } else {
+                        Text("The balance right now. You can import transactions afterwards.")
+                    }
                 }
 
                 if let errorMessage {

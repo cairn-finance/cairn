@@ -27,7 +27,7 @@ struct TransactionsView: View {
     enum QuickFilter: String, CaseIterable, Identifiable {
         case all, spending, income, pending, uncategorized
         var id: String { rawValue }
-        var title: String {
+        var title: LocalizedStringKey {
             switch self {
             case .all: "All"
             case .spending: "Spending"
@@ -190,7 +190,7 @@ struct TransactionsView: View {
         }
     }
 
-    private var emptyMessage: String {
+    private var emptyMessage: LocalizedStringKey {
         "Try a different search or clear the filters."
     }
 

@@ -8,6 +8,7 @@ options:
   generateEmptyDirectories: true
   xcodeVersion: "27.0"
   developmentLanguage: en
+  knownRegions: [en, Base]
 
 packages:
   CairnCore:

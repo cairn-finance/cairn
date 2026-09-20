@@ -23,8 +23,17 @@ All notable changes to Cairn are documented here. This project follows
   account or import a CSV without connecting a bank.
 - Empty states with a short explanation and a next step on Home, Activity,
   Insights, Investments, Recurring, Rules, Tags, and account detail.
+- A String Catalog with Info.plist usage descriptions, so every user-facing
+  string is extractable and ready to translate.
 
 ### Changed
+
+- Shared components, core display labels, and sync banners now take
+  localization-ready string types instead of plain `String`.
+- Counts (transactions, rules, tags, accounts, and similar) use plural-aware
+  strings instead of hand-built singular/plural suffixes.
+- Amount entry parses the device locale's decimal separator, and percentage
+  trends format with `FormatStyle`, so comma-decimal locales behave correctly.
 
 - A sync that fails now stays visible as an actionable card with retry and
   diagnostics, and reads as "paused" rather than a failure while offline.

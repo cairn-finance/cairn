@@ -49,8 +49,7 @@ struct InvestmentsView: View {
                     GetStartedEmptyState(
                         systemImage: "chart.line.uptrend.xyaxis",
                         title: "No investments yet",
-                        message: "Accounts your bank reports as investments appear here after a sync. "
-                            + "You can also add one by hand and import a CSV.",
+                        message: "Accounts your bank reports as investments appear here after a sync. You can also add one by hand and import a CSV.",
                         manualAccountType: .investment
                     )
                 } else {
@@ -80,10 +79,17 @@ struct InvestmentsView: View {
         return HeroCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text(selectedPoint.map { $0.date.formatted(date: .abbreviated, time: .omitted) } ?? "Invested")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.75))
-                        .contentTransition(.opacity)
+                    if let selectedPoint {
+                        Text(selectedPoint.date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .contentTransition(.opacity)
+                    } else {
+                        Text("Invested")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .contentTransition(.opacity)
+                    }
                     Spacer()
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .font(.subheadline.weight(.semibold))
@@ -129,7 +135,7 @@ struct InvestmentsView: View {
         .animation(CairnTheme.Motion.quick, value: selectedIndex)
     }
 
-    private var asOfText: String {
+    private var asOfText: LocalizedStringKey {
         guard let asOf else { return "Waiting for the first sync" }
         return "Values as of \(asOf.formatted(date: .abbreviated, time: .shortened))"
     }
@@ -141,14 +147,14 @@ struct InvestmentsView: View {
         return VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
             ForEach(grouped.keys.sorted(), id: \.self) { name in
                 if let group = grouped[name] {
-                    accountGroup(title: name.isEmpty ? "Institution" : name, accounts: group)
+                    accountGroup(title: name.isEmpty ? "Institution" : LocalizedStringKey(name), accounts: group)
                 }
             }
         }
         .cairnAppear(delay: 0.05)
     }
 
-    private func accountGroup(title: String, accounts: [Account]) -> some View {
+    private func accountGroup(title: LocalizedStringKey, accounts: [Account]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: title, trailing: "\(accounts.count)")
             VStack(spacing: 12) {
@@ -195,8 +201,7 @@ struct InvestmentsView: View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 CardHeader("How these numbers work")
-                Text("Cairn shows the positions and value your bank reported at the last sync. "
-                    + "It does not fetch live market prices, so these figures are a snapshot — not a real-time portfolio value.")
+                Text("Cairn shows the positions and value your bank reported at the last sync. It does not fetch live market prices, so these figures are a snapshot — not a real-time portfolio value.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

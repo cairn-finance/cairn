@@ -53,8 +53,7 @@ struct RecurringView: View {
                     EmptyStateView(
                         systemImage: "repeat",
                         title: "No recurring payments yet",
-                        message: "Cairn looks for charges that repeat on a regular schedule. It needs at least "
-                            + "three similar charges on the same account before it calls something recurring.",
+                        message: "Cairn looks for charges that repeat on a regular schedule. It needs at least three similar charges on the same account before it calls something recurring.",
                         actionTitle: "Sync Now"
                     ) {
                         Task { await model.syncAll(force: true) }
@@ -97,7 +96,7 @@ struct RecurringView: View {
                 )
 
                 HStack(spacing: 8) {
-                    Text("\(outgoing.count) subscription\(outgoing.count == 1 ? "" : "s") & bills")
+                    Text("^[\(outgoing.count) subscription](inflect: true) & bills")
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.7))
                     if let next = nextCharge {
@@ -138,7 +137,7 @@ struct RecurringView: View {
 
     // MARK: - Sections
 
-    private func section(_ title: String, series: [RecurringSeries]) -> some View {
+    private func section(_ title: LocalizedStringKey, series: [RecurringSeries]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: title)
             RowGroup {
@@ -180,7 +179,7 @@ struct RecurringRow: View {
                     Text(nextText.text)
                         .foregroundStyle(nextText.isOverdue ? CairnTheme.warning : .secondary)
                     if let label = series.confidenceLabel {
-                        StatusPill(text: label, tint: .secondary)
+                        StatusPill(text: "\(label)", tint: .secondary)
                     }
                 }
                 .font(.caption)
@@ -210,7 +209,7 @@ struct RecurringRow: View {
         .contentShape(Rectangle())
     }
 
-    private var nextText: (text: String, isOverdue: Bool) {
+    private var nextText: (text: LocalizedStringKey, isOverdue: Bool) {
         let days = series.daysUntilNext()
         if days < 0 {
             return ("Was due \(series.nextExpectedDate.formatted(.dateTime.month(.abbreviated).day()))", true)
@@ -219,7 +218,7 @@ struct RecurringRow: View {
             return ("Due today", false)
         }
         if days <= 7 {
-            return ("Due in \(days) day\(days == 1 ? "" : "s")", false)
+            return ("Due in ^[\(days) day](inflect: true)", false)
         }
         return ("Next \(series.nextExpectedDate.formatted(.dateTime.month(.abbreviated).day()))", false)
     }
@@ -263,10 +262,10 @@ struct RecurringSummaryCard: View {
         }
     }
 
-    private var subtitle: String {
+    private var subtitle: LocalizedStringKey {
         guard !series.isEmpty else { return "None detected yet" }
         let subscriptions = series.filter(\.isSubscription).count
-        return "\(series.count) detected · \(subscriptions) subscription\(subscriptions == 1 ? "" : "s")"
+        return "\(series.count) detected · ^[\(subscriptions) subscription](inflect: true)"
     }
 }
 
@@ -322,7 +321,7 @@ struct RecurringDetailView: View {
                                 StatusPill(text: "Varies", tint: .secondary)
                             }
                             if let label = series.confidenceLabel {
-                                StatusPill(text: label, tint: .secondary)
+                                StatusPill(text: "\(label)", tint: .secondary)
                             }
                         }
                         .font(.subheadline)
@@ -338,8 +337,7 @@ struct RecurringDetailView: View {
                 )
                 .contentTransition(.numericText())
 
-                Text("\(series.cadence.displayName) · about "
-                    + "\(Money(minorUnits: series.monthlyEquivalentMinorUnits, currency: series.currency).formatted())/mo")
+                Text("\(series.cadence.displayName) · about \(Money(minorUnits: series.monthlyEquivalentMinorUnits, currency: series.currency).formatted())/mo")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -352,7 +350,7 @@ struct RecurringDetailView: View {
                 CardHeader("Details")
                 detailRow("Direction", series.direction == .outgoing ? "Money out" : "Money in")
                 detailRow("Charges seen", "\(series.occurrences)")
-                detailRow("Every", series.cadence.displayName)
+                detailRow("Every", String(localized: "\(series.cadence.displayName)"))
                 detailRow("First seen", series.firstDate.formatted(date: .abbreviated, time: .omitted))
                 detailRow("Most recent", series.lastDate.formatted(date: .abbreviated, time: .omitted))
                 detailRow(
@@ -367,7 +365,7 @@ struct RecurringDetailView: View {
         }
     }
 
-    private func detailRow(_ title: String, _ value: String) -> some View {
+    private func detailRow(_ title: LocalizedStringKey, _ value: String) -> some View {
         HStack {
             Text(title)
                 .foregroundStyle(.secondary)

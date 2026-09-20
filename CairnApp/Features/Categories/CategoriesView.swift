@@ -262,10 +262,10 @@ struct CategoriesView: View {
         let ruleCount = category.rules?.count ?? 0
         var parts: [String] = []
         if transactionCount > 0 {
-            parts.append("\(transactionCount) transaction\(transactionCount == 1 ? "" : "s")")
+            parts.append(String(localized: "^[\(transactionCount) transaction](inflect: true)"))
         }
         if ruleCount > 0 {
-            parts.append("\(ruleCount) rule\(ruleCount == 1 ? "" : "s")")
+            parts.append(String(localized: "^[\(ruleCount) rule](inflect: true)"))
         }
         return parts.isEmpty ? "Not used yet" : parts.joined(separator: " · ")
     }

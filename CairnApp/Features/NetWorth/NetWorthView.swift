@@ -93,12 +93,19 @@ struct NetWorthView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(selectedPoint.map { $0.date.formatted(date: .abbreviated, time: .omitted) } ?? "Today")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .contentTransition(.opacity)
+                        if let selectedPoint {
+                            Text(selectedPoint.date.formatted(date: .abbreviated, time: .omitted))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .contentTransition(.opacity)
+                        } else {
+                            Text("Today")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .contentTransition(.opacity)
+                        }
                         Spacer()
-                        SegmentedPicker(options: RangeOption.allCases, selection: $range) { $0.title }
+                        SegmentedPicker(options: RangeOption.allCases, selection: $range) { LocalizedStringKey($0.title) }
                             .frame(maxWidth: 220)
                     }
                     AmountText(

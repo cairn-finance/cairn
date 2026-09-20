@@ -8,8 +8,9 @@ extension AppModel {
     /// The calm explanation shown in place of a raw sync error while offline.
     /// Cached data keeps working, so this is not a failure.
     var offlineSyncExplanation: String {
-        "You’re offline, so Cairn can’t reach your bank right now. Your saved data still works, "
-            + "and sync resumes on its own when you’re back online."
+        String(
+            localized: "You’re offline, so Cairn can’t reach your bank right now. Your saved data still works, and sync resumes on its own when you’re back online."
+        )
     }
 
     /// Whether the last sync problem is explained by the device being offline.

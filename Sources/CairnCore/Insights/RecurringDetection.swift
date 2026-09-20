@@ -102,7 +102,7 @@ public enum RecurringCadence: String, Sendable, CaseIterable, Codable {
         }
     }
 
-    public var displayName: String {
+    public var displayName: LocalizedStringResource {
         switch self {
         case .weekly: "Weekly"
         case .biweekly: "Every 2 weeks"
@@ -157,7 +157,7 @@ public struct RecurringSeries: Sendable, Hashable, Identifiable {
     }
 
     /// Set when the evidence is thinner, so the UI can hedge.
-    public var confidenceLabel: String? {
+    public var confidenceLabel: LocalizedStringResource? {
         confidence < 0.7 ? "Possible" : nil
     }
 

@@ -49,7 +49,7 @@ private struct BannerView: View {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(CairnTheme.accent)
                 .padding(.top, 1)
-            Text(text)
+            Text(verbatim: text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -73,7 +73,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringKey {
         switch self {
         case .home: "Home"
         case .activity: "Activity"

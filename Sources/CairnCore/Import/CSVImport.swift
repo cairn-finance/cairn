@@ -58,7 +58,7 @@ public enum CSVImportPreset: String, Sendable, CaseIterable, Codable {
     case appleSavings
     case generic
 
-    public var displayName: String {
+    public var displayName: LocalizedStringResource {
         switch self {
         case .appleCard: "Apple Card"
         case .appleSavings: "Apple Savings"
@@ -66,7 +66,7 @@ public enum CSVImportPreset: String, Sendable, CaseIterable, Codable {
         }
     }
 
-    public var summary: String {
+    public var summary: LocalizedStringResource {
         switch self {
         case .appleCard:
             "Wallet → Apple Card → Statements → Export Transactions (CSV)."
