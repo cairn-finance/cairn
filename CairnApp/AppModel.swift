@@ -836,7 +836,7 @@ final class AppModel {
     }
 
     /// Fetches older transactions for a credential until the institution's
-    /// history runs out. Runs once per credential per device, two 89-day pages
+    /// history runs out. Runs once per credential per device, two 45-day pages
     /// per pass, and keeps the daily request budget in mind.
     private func backfillIfNeeded(
         institution: Institution,

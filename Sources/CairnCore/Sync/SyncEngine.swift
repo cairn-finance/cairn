@@ -58,6 +58,9 @@ public struct BackfillOutcome: Sendable, Equatable {
     public var budgetExhausted: Bool = false
     /// Set when a page failed; the backfill stops and can retry next time.
     public var failure: String?
+    /// Historical accounts the store no longer holds, so their rows were
+    /// dropped. Non-zero means the saved connections and the bridge disagree.
+    public var unresolvedAccounts: Int = 0
 
     public init() {}
 }
@@ -492,6 +495,12 @@ public actor SyncEngine {
             }
         }
 
+        if outcome.unresolvedAccounts > 0 {
+            await cairnLog(
+                .warning,
+                "Backfill skipped \(outcome.unresolvedAccounts) account(s) the store no longer holds."
+            )
+        }
         if outcome.failure == nil, !outcome.reachedFloor, outcome.pagesFetched >= maxPages {
             outcome.hitPageLimit = true
         }
@@ -519,7 +528,10 @@ public actor SyncEngine {
         let rules = try loadRuleSnapshots()
         var pageOutcome = SyncOutcome()
         for simpleAccount in accountSet.accounts where !simpleAccount.transactions.isEmpty {
-            guard let account = try accountByBankID(simpleAccount.id) else { continue }
+            guard let account = try accountByBankID(simpleAccount.id) else {
+                outcome.unresolvedAccounts += 1
+                continue
+            }
             try reconcileTransactions(
                 simpleAccount.transactions,
                 account: account,
