@@ -56,27 +56,32 @@ struct AccountDetailView: View {
                     holdingsCard
                         .cairnAppear(delay: 0.03)
                 }
-                if transactionCount > 1 {
-                    historyCard
-                        .cairnAppear(delay: 0.05)
-                }
-                if transactionCount == 0 {
-                    emptyTransactions
-                } else if let feed, !feed.rows.isEmpty {
-                    TransactionDayList(
-                        sections: feed.sections,
-                        showsAccount: false,
-                        onReachEnd: { feed.loadMore() },
-                        onEdit: account.isManual ? { row in
-                            if let model = model(for: row) { editingTransaction = model }
-                        } : nil,
-                        onDelete: account.isManual ? { row in
-                            if let model = model(for: row) { transactionToDelete = model }
-                        } : nil
-                    )
-                    .cairnAppear(delay: 0.1)
-                } else if feed != nil, !searchText.isEmpty {
-                    EmptyStateView(systemImage: "magnifyingglass", title: "Nothing matches", message: "Try a different search.")
+                // The feed is created on first task; until then there is no
+                // count to branch on, so nothing is shown rather than flashing
+                // the empty state.
+                if let feed {
+                    if transactionCount > 1 {
+                        historyCard
+                            .cairnAppear(delay: 0.05)
+                    }
+                    if transactionCount == 0 {
+                        emptyTransactions
+                    } else if !feed.rows.isEmpty {
+                        TransactionDayList(
+                            sections: feed.sections,
+                            showsAccount: false,
+                            onReachEnd: { feed.loadMore() },
+                            onEdit: account.isManual ? { row in
+                                if let model = model(for: row) { editingTransaction = model }
+                            } : nil,
+                            onDelete: account.isManual ? { row in
+                                if let model = model(for: row) { transactionToDelete = model }
+                            } : nil
+                        )
+                        .cairnAppear(delay: 0.1)
+                    } else if !searchText.isEmpty {
+                        EmptyStateView(systemImage: "magnifyingglass", title: "Nothing matches", message: "Try a different search.")
+                    }
                 }
             }
             .cairnScreen()

@@ -21,6 +21,9 @@ struct InsightsView: View {
     @State private var insightRows: [InsightTransaction] = []
     /// Bumped when the store changes so the background fetch re-runs.
     @State private var reloadToken = 0
+    /// False until the first background fetch lands, so the empty state does not
+    /// flash before the values arrive.
+    @State private var hasLoadedInsights = false
 
     var body: some View {
         let data = snapshot
@@ -34,6 +37,10 @@ struct InsightsView: View {
                         title: "No accounts to analyze",
                         message: "Connect a bank, add an account, or import a CSV to see spending insights."
                     )
+                } else if !hasLoadedInsights {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 24)
                 } else if !hasInsightData {
                     insufficientData
                 } else {
@@ -65,6 +72,7 @@ struct InsightsView: View {
         .onChange(of: month) { _, _ in
             paceSelection = nil
             trendSelection = nil
+            hasLoadedInsights = false
         }
         .sensoryFeedback(.selection, trigger: month)
     }
@@ -97,6 +105,7 @@ struct InsightsView: View {
         let values = await fetcher.insightTransactions(scopes: scopes, earliest: earliest)
         guard !Task.isCancelled else { return }
         insightRows = values
+        hasLoadedInsights = true
     }
 
     private var insufficientData: some View {
