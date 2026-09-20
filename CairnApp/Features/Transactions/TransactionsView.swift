@@ -6,7 +6,12 @@ import CairnCore
 struct TransactionsView: View {
     @Query(sort: [SortDescriptor(\LedgerTransaction.postedDate, order: .reverse)])
     private var allTransactions: [LedgerTransaction]
-    @Query(sort: [SortDescriptor(\CairnSchemaV1.Category.sortOrder)])
+    @Query(
+        sort: [
+            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+        ]
+    )
     private var categories: [CairnSchemaV1.Category]
     @Query(sort: \Tag.name)
     private var tags: [Tag]

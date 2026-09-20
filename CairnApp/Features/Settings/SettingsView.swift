@@ -10,6 +10,8 @@ struct SettingsView: View {
     private var walletAccounts: [Account]
     @Query(sort: \CategorizationRule.createdAt) private var rules: [CategorizationRule]
     @Query(sort: \Tag.name) private var tags: [Tag]
+    @Query(sort: [SortDescriptor(\CairnSchemaV1.Category.sortOrder)])
+    private var categories: [CairnSchemaV1.Category]
 
     @State private var storageMode: StoreMode = .local
     @State private var exportDocument: ExportFile?
@@ -357,6 +359,16 @@ struct SettingsView: View {
                     tint: Color(red: 0.20, green: 0.68, blue: 0.90)
                 )
             }
+            NavigationLink {
+                CategoriesView()
+            } label: {
+                IconRow(
+                    "Categories",
+                    subtitle: categoriesSubtitle,
+                    systemImage: "square.grid.2x2.fill",
+                    tint: Color(red: 0.98, green: 0.58, blue: 0.20)
+                )
+            }
         } header: {
             Text("Organization")
         } footer: {
@@ -374,6 +386,11 @@ struct SettingsView: View {
     private var tagsSubtitle: String {
         let count = tags.count
         return count == 0 ? "None yet" : "\(count) tag\(count == 1 ? "" : "s")"
+    }
+
+    private var categoriesSubtitle: String {
+        let count = categories.filter { !$0.isArchived }.count
+        return count == 1 ? "1 category" : "\(count) categories"
     }
 
     // MARK: - Storage
