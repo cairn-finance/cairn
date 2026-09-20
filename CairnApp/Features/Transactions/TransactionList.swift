@@ -9,6 +9,10 @@ struct TransactionDayList: View {
     var showsAccount: Bool = true
     /// Pin a month banner above the days that belong to it.
     var showsMonthHeaders: Bool = false
+    /// Offered on each row's context menu when set. Used for manual editing;
+    /// synced lists leave these nil so their rows stay read-only.
+    var onEdit: ((LedgerTransaction) -> Void)?
+    var onDelete: ((LedgerTransaction) -> Void)?
 
     private struct DayGroup: Identifiable {
         let day: Date
@@ -49,6 +53,11 @@ struct TransactionDayList: View {
                         TransactionRow(transaction: transaction, showsAccount: showsAccount)
                     }
                     .buttonStyle(.plain)
+                    .modifier(TransactionRowContextMenu(
+                        transaction: transaction,
+                        onEdit: onEdit,
+                        onDelete: onDelete
+                    ))
                     if index < group.transactions.count - 1 {
                         RowDivider(leadingInset: 66)
                     }
@@ -116,5 +125,29 @@ struct TransactionDayList: View {
         return byMonth
             .map { MonthGroup(month: $0.key, days: $0.value.sorted { $0.day > $1.day }) }
             .sorted { $0.month > $1.month }
+    }
+}
+
+/// Attaches an edit/delete context menu only when the list is editable, so
+/// read-only (synced) rows never show an empty menu.
+private struct TransactionRowContextMenu: ViewModifier {
+    let transaction: LedgerTransaction
+    let onEdit: ((LedgerTransaction) -> Void)?
+    let onDelete: ((LedgerTransaction) -> Void)?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if onEdit != nil || onDelete != nil {
+            content.contextMenu {
+                if let onEdit {
+                    Button("Edit…", systemImage: "pencil") { onEdit(transaction) }
+                }
+                if let onDelete {
+                    Button("Delete…", systemImage: "trash", role: .destructive) { onDelete(transaction) }
+                }
+            }
+        } else {
+            content
+        }
     }
 }

@@ -14,6 +14,8 @@ All notable changes to Cairn are documented here. This project follows
   builds and uploads to TestFlight.
 - Older transaction history is backfilled in 89-day pages, so a connection shows
   as much history as the institution exposes, not just the most recent window.
+- Manual accounts can now be edited in the app: add, edit, and delete single
+  transactions, and rename or delete the account itself.
 
 ### Changed
 

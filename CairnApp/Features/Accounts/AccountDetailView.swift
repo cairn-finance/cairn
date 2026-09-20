@@ -5,6 +5,7 @@ import CairnCore
 
 struct AccountDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var model
 
     let account: Account
@@ -14,6 +15,14 @@ struct AccountDetailView: View {
     @State private var importPayload: ImportPayload?
     @State private var searchText = ""
     @State private var historySelection: Int?
+
+    @State private var showingAddTransaction = false
+    @State private var editingTransaction: LedgerTransaction?
+    @State private var transactionToDelete: LedgerTransaction?
+
+    @State private var showingRename = false
+    @State private var renameText = ""
+    @State private var showingDeleteAccount = false
 
     private struct ImportPayload: Identifiable {
         let id = UUID()
@@ -60,8 +69,13 @@ struct AccountDetailView: View {
                 } else if visibleTransactions.isEmpty {
                     EmptyStateView(systemImage: "magnifyingglass", title: "Nothing matches", message: "Try a different search.")
                 } else {
-                    TransactionDayList(transactions: visibleTransactions, showsAccount: false)
-                        .cairnAppear(delay: 0.1)
+                    TransactionDayList(
+                        transactions: visibleTransactions,
+                        showsAccount: false,
+                        onEdit: account.isManual ? { editingTransaction = $0 } : nil,
+                        onDelete: account.isManual ? { transactionToDelete = $0 } : nil
+                    )
+                    .cairnAppear(delay: 0.1)
                 }
             }
             .cairnScreen()
@@ -72,31 +86,7 @@ struct AccountDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .searchable(text: $searchText, prompt: "Search this account")
-        .toolbar {
-            if account.isManual {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingImporter = true
-                    } label: {
-                        Label("Import CSV", systemImage: "square.and.arrow.down")
-                    }
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Toggle("Include in Net Worth", systemImage: "chart.line.uptrend.xyaxis", isOn: Binding(
-                        get: { account.includeInNetWorth },
-                        set: { account.includeInNetWorth = $0; try? modelContext.save() }
-                    ))
-                    Toggle("Hide Account", systemImage: "eye.slash", isOn: Binding(
-                        get: { account.isHidden },
-                        set: { account.isHidden = $0; try? modelContext.save() }
-                    ))
-                } label: {
-                    Label("Account Options", systemImage: "ellipsis.circle")
-                }
-            }
-        }
+        .toolbar { toolbarContent }
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: [.commaSeparatedText, .plainText],
@@ -108,6 +98,107 @@ struct AccountDetailView: View {
             ImportTransactionsSheet(account: account, text: payload.text)
                 .cairnLockCover()
         }
+        .sheet(isPresented: $showingAddTransaction) {
+            TransactionEditSheet(account: account)
+                .cairnLockCover()
+        }
+        .sheet(item: $editingTransaction) { transaction in
+            TransactionEditSheet(account: account, transaction: transaction)
+                .cairnLockCover()
+        }
+        .alert(
+            "Delete transaction?",
+            isPresented: Binding(
+                get: { transactionToDelete != nil },
+                set: { if !$0 { transactionToDelete = nil } }
+            )
+        ) {
+            Button("Delete", role: .destructive) {
+                if let transaction = transactionToDelete {
+                    let target = transaction
+                    transactionToDelete = nil
+                    Task { await model.deleteManualTransaction(target) }
+                }
+            }
+            Button("Cancel", role: .cancel) { transactionToDelete = nil }
+        } message: {
+            Text("This can’t be undone.")
+        }
+        .alert("Rename Account", isPresented: $showingRename) {
+            TextField("Name", text: $renameText)
+            Button("Save") {
+                let name = renameText
+                Task { await model.renameManualAccount(account, to: name) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Delete account?", isPresented: $showingDeleteAccount) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    if await model.deleteManualAccount(account) {
+                        dismiss()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the account and all of its transactions. This can’t be undone.")
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if account.isManual {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingAddTransaction = true
+                } label: {
+                    Label("Add Transaction", systemImage: "plus")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingImporter = true
+                } label: {
+                    Label("Import CSV", systemImage: "square.and.arrow.down")
+                }
+            }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            accountOptionsMenu
+        }
+    }
+
+    private var accountOptionsMenu: some View {
+        Menu {
+            accountVisibilityToggles
+            if account.isManual {
+                Divider()
+                Button("Rename Account…", systemImage: "pencil") {
+                    renameText = account.displayName
+                    showingRename = true
+                }
+                Button("Delete Account…", systemImage: "trash", role: .destructive) {
+                    showingDeleteAccount = true
+                }
+            }
+        } label: {
+            Label("Account Options", systemImage: "ellipsis.circle")
+        }
+    }
+
+    @ViewBuilder
+    private var accountVisibilityToggles: some View {
+        Toggle("Include in Net Worth", systemImage: "chart.line.uptrend.xyaxis", isOn: Binding(
+            get: { account.includeInNetWorth },
+            set: { account.includeInNetWorth = $0; try? modelContext.save() }
+        ))
+        Toggle("Hide Account", systemImage: "eye.slash", isOn: Binding(
+            get: { account.isHidden },
+            set: { account.isHidden = $0; try? modelContext.save() }
+        ))
     }
 
     // MARK: - Summary
