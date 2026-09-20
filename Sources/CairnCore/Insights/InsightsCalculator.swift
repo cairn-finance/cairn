@@ -8,6 +8,7 @@ public struct InsightTransaction: Sendable, Hashable {
     public let amountMinorUnits: Int64
     public let categoryName: String?
     public let categoryColorHex: String?
+    public let categorySymbolName: String?
     public let merchant: String
     public let accountName: String
     public let isTransfer: Bool
@@ -19,6 +20,7 @@ public struct InsightTransaction: Sendable, Hashable {
         amountMinorUnits: Int64,
         categoryName: String? = nil,
         categoryColorHex: String? = nil,
+        categorySymbolName: String? = nil,
         merchant: String = "",
         accountName: String = "",
         isTransfer: Bool = false,
@@ -29,6 +31,7 @@ public struct InsightTransaction: Sendable, Hashable {
         self.amountMinorUnits = amountMinorUnits
         self.categoryName = categoryName
         self.categoryColorHex = categoryColorHex
+        self.categorySymbolName = categorySymbolName
         self.merchant = merchant
         self.accountName = accountName
         self.isTransfer = isTransfer

@@ -154,6 +154,96 @@ struct TransactionRow: View {
     }
 }
 
+/// One transaction drawn from an immutable snapshot. This is the row the
+/// windowed lists use: it reads no SwiftData state while diffing, so a single
+/// categorized transaction cannot invalidate unrelated rows.
+struct TransactionValueRow: View {
+    let row: TransactionRowValue
+    var showsAccount: Bool = true
+    var showsChevron: Bool = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: CairnTheme.Spacing.m) {
+            CategoryBadge(
+                symbolName: row.countsAsTransfer && row.categoryName == nil
+                    ? "arrow.left.arrow.right"
+                    : row.categorySymbolName,
+                hex: row.categoryColorHex ?? (row.countsAsTransfer ? "#32ADE6" : nil),
+                size: 40
+            )
+            .opacity(row.isIgnored ? 0.5 : 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.payeeDescription.isEmpty ? "No description" : row.payeeDescription)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                    .strikethrough(row.isIgnored, color: .secondary)
+                    .foregroundStyle(row.isIgnored ? .secondary : .primary)
+
+                HStack(spacing: 5) {
+                    if row.isPending {
+                        StatusPill(text: "Pending", systemImage: "clock", tint: CairnTheme.warning)
+                    }
+                    if let label = categoryLabel {
+                        Text(label)
+                    }
+                    if showsAccount, let accountName = row.accountName {
+                        if categoryLabel != nil {
+                            Text("·").foregroundStyle(.tertiary)
+                        }
+                        Text(accountName)
+                    }
+                    if !row.tagNames.isEmpty {
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(tagSummary(row.tagNames))
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            AmountText(
+                money: row.amount,
+                showSign: true,
+                font: .body.weight(.semibold),
+                colorOverride: amountColor
+            )
+            .fixedSize(horizontal: true, vertical: false)
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 14)
+        .contentShape(Rectangle())
+    }
+
+    private var amountColor: Color? {
+        if row.isIgnored { return .secondary }
+        if row.countsAsTransfer { return .secondary }
+        return row.amountMinorUnits < 0 ? nil : CairnTheme.positive
+    }
+
+    /// The category, or "Transfer" when the row is money movement and has no
+    /// category of its own.
+    private var categoryLabel: String? {
+        if let name = row.categoryName { return name }
+        return row.countsAsTransfer ? "Transfer" : "Uncategorized"
+    }
+
+    /// Up to two tag names, then a count, so one row never grows unbounded.
+    private func tagSummary(_ names: [String]) -> String {
+        let shown = names.prefix(2).map { "#\($0)" }
+        let extra = names.count - shown.count
+        return shown.joined(separator: " ") + (extra > 0 ? " +\(extra)" : "")
+    }
+}
+
 /// A vertical stack of rows inside a card, separated by hairlines that stop
 /// short of the leading glyph, like a well-set table.
 struct RowGroup<Content: View>: View {

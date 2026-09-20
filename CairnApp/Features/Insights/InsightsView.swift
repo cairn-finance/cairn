@@ -16,6 +16,14 @@ struct InsightsView: View {
     @State private var showAllCategories = false
     @State private var paceSelection: Int?
     @State private var trendSelection: Date?
+    /// Calculator input, fetched and mapped on a background actor. The view
+    /// only ever reads these `Sendable` values.
+    @State private var insightRows: [InsightTransaction] = []
+    /// Bumped when the store changes so the background fetch re-runs.
+    @State private var reloadToken = 0
+    /// False until the first background fetch lands, so the empty state does not
+    /// flash before the values arrive.
+    @State private var hasLoadedInsights = false
 
     var body: some View {
         let data = snapshot
@@ -29,6 +37,10 @@ struct InsightsView: View {
                         title: "No accounts to analyze",
                         message: "Connect a bank, add an account, or import a CSV to see spending insights."
                     )
+                } else if !hasLoadedInsights {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 24)
                 } else if !hasInsightData {
                     insufficientData
                 } else {
@@ -49,9 +61,18 @@ struct InsightsView: View {
             await model.refreshCategorizationCounts()
             await model.refreshRecurring()
         }
+        .task(id: reloadKey) {
+            await loadInsightRows()
+        }
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: ModelContext.didSave) {
+                reloadToken &+= 1
+            }
+        }
         .onChange(of: month) { _, _ in
             paceSelection = nil
             trendSelection = nil
+            hasLoadedInsights = false
         }
         .sensoryFeedback(.selection, trigger: month)
     }
@@ -61,7 +82,30 @@ struct InsightsView: View {
     /// Whether there is any transaction to analyze at all. With none, every
     /// card would read zero, so an explanation is clearer than empty charts.
     private var hasInsightData: Bool {
-        currencyAccounts.contains { !($0.transactions ?? []).isEmpty }
+        !insightRows.isEmpty
+    }
+
+    private var reloadKey: String {
+        "\(reloadToken)-\(month.timeIntervalSince1970)"
+    }
+
+    /// Fetches the calculator input on a background `@ModelActor`, then hands
+    /// the `Sendable` values back to the main actor. The actor is created inside
+    /// the detached task because constructing it on the main actor would bind
+    /// its executor there.
+    private func loadInsightRows() async {
+        let container = model.container
+        let scopes = currencyAccounts.map {
+            InsightAccountScope(bankAccountID: $0.bankAccountID, displayName: $0.displayName)
+        }
+        let earliest = InsightsCalculator.earliestUsedDate(month: month)
+        let fetcher = await Task.detached(priority: .utility) {
+            InsightsFetcher(modelContainer: container)
+        }.value
+        let values = await fetcher.insightTransactions(scopes: scopes, earliest: earliest)
+        guard !Task.isCancelled else { return }
+        insightRows = values
+        hasLoadedInsights = true
     }
 
     private var insufficientData: some View {
@@ -90,37 +134,11 @@ struct InsightsView: View {
 
     private var snapshot: InsightsSnapshot {
         InsightsCalculator.snapshot(
-            transactions: insightTransactions,
+            transactions: insightRows,
             month: month,
             historyMonths: InsightsCalculator.defaultHistoryMonths,
             now: .now
         )
-    }
-
-    private var insightTransactions: [InsightTransaction] {
-        // Rows older than the snapshot's window cannot change any part of it, and
-        // on a long ledger they are most of the store, so they are dropped before
-        // a value is built for them.
-        let earliest = InsightsCalculator.earliestUsedDate(month: month)
-        return currencyAccounts.flatMap { account in
-            (account.transactions ?? [])
-                .filter { $0.effectiveDate >= earliest }
-                .map { transaction in
-                    InsightTransaction(
-                        date: transaction.effectiveDate,
-                        amountMinorUnits: transaction.amountMinorUnits,
-                        categoryName: transaction.effectiveCategory?.name,
-                        categoryColorHex: transaction.effectiveCategory?.colorHex,
-                        merchant: transaction.normalizedMerchant.isEmpty
-                            ? transaction.payeeDescription
-                            : transaction.normalizedMerchant,
-                        accountName: account.displayName,
-                        isTransfer: transaction.countsAsTransfer,
-                        isIgnored: transaction.isIgnored,
-                        isPending: transaction.isPending
-                    )
-                }
-        }
     }
 
     // MARK: - Month navigation
@@ -590,12 +608,8 @@ struct InsightsView: View {
     /// Insights only carries the category name; look the symbol up so rows
     /// match the transaction list.
     private func symbol(for categoryName: String) -> String? {
-        for account in currencyAccounts {
-            for transaction in account.transactions ?? [] {
-                if let category = transaction.effectiveCategory, category.name == categoryName {
-                    return category.symbolName
-                }
-            }
+        if let match = insightRows.first(where: { $0.categoryName == categoryName }) {
+            return match.categorySymbolName
         }
         return categoryName == InsightsCalculator.uncategorizedName ? "questionmark.circle" : nil
     }

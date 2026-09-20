@@ -9,13 +9,16 @@ struct AccountDetailView: View {
     @Environment(AppModel.self) private var model
 
     let account: Account
-    @Query private var transactions: [LedgerTransaction]
-
-    @State private var showingImporter = false
-    @State private var importPayload: ImportPayload?
+    @State private var feed: TransactionsFeed?
     @State private var searchText = ""
     @State private var historySelection: Int?
 
+    /// The account's total row count, from `fetchCount`, so the hero never has
+    /// to materialize the account's whole history.
+    private var transactionCount: Int { feed?.sqlCount ?? 0 }
+
+    @State private var showingImporter = false
+    @State private var importPayload: ImportPayload?
     @State private var showingAddTransaction = false
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionToDelete: LedgerTransaction?
@@ -31,24 +34,17 @@ struct AccountDetailView: View {
 
     init(account: Account) {
         self.account = account
-        let bankID = account.bankAccountID
-        _transactions = Query(
-            filter: #Predicate { $0.accountIDIndex == bankID },
-            sort: [SortDescriptor(\LedgerTransaction.postedDate, order: .reverse)]
-        )
     }
 
-    /// Pending transactions have no posted date, so sort by effective date to
-    /// keep them at the top.
-    private var visibleTransactions: [LedgerTransaction] {
-        let base = searchText.isEmpty
-            ? transactions
-            : transactions.filter {
-                $0.payeeDescription.localizedStandardContains(searchText)
-                    || ($0.effectiveCategory?.name.localizedStandardContains(searchText) ?? false)
-                    || ($0.note?.localizedStandardContains(searchText) ?? false)
-            }
-        return base.sorted { $0.effectiveDate > $1.effectiveDate }
+    private var accountFilter: TransactionFilter {
+        TransactionFilter(accountID: account.persistentModelID)
+    }
+
+    /// Resolves a row snapshot back to its model only when an edit or delete is
+    /// actually requested.
+    private func model(for row: TransactionRowValue) -> LedgerTransaction? {
+        guard let id = row.persistentID else { return nil }
+        return modelContext.model(for: id) as? LedgerTransaction
     }
 
     var body: some View {
@@ -60,22 +56,32 @@ struct AccountDetailView: View {
                     holdingsCard
                         .cairnAppear(delay: 0.03)
                 }
-                if transactions.count > 1 {
-                    historyCard
-                        .cairnAppear(delay: 0.05)
-                }
-                if transactions.isEmpty {
-                    emptyTransactions
-                } else if visibleTransactions.isEmpty {
-                    EmptyStateView(systemImage: "magnifyingglass", title: "Nothing matches", message: "Try a different search.")
-                } else {
-                    TransactionDayList(
-                        transactions: visibleTransactions,
-                        showsAccount: false,
-                        onEdit: account.isManual ? { editingTransaction = $0 } : nil,
-                        onDelete: account.isManual ? { transactionToDelete = $0 } : nil
-                    )
-                    .cairnAppear(delay: 0.1)
+                // The feed is created on first task; until then there is no
+                // count to branch on, so nothing is shown rather than flashing
+                // the empty state.
+                if let feed {
+                    if transactionCount > 1 {
+                        historyCard
+                            .cairnAppear(delay: 0.05)
+                    }
+                    if transactionCount == 0 {
+                        emptyTransactions
+                    } else if !feed.rows.isEmpty {
+                        TransactionDayList(
+                            sections: feed.sections,
+                            showsAccount: false,
+                            onReachEnd: { feed.loadMore() },
+                            onEdit: account.isManual ? { row in
+                                if let model = model(for: row) { editingTransaction = model }
+                            } : nil,
+                            onDelete: account.isManual ? { row in
+                                if let model = model(for: row) { transactionToDelete = model }
+                            } : nil
+                        )
+                        .cairnAppear(delay: 0.1)
+                    } else if !searchText.isEmpty {
+                        EmptyStateView(systemImage: "magnifyingglass", title: "Nothing matches", message: "Try a different search.")
+                    }
                 }
             }
             .cairnScreen()
@@ -87,6 +93,18 @@ struct AccountDetailView: View {
         #endif
         .searchable(text: $searchText, prompt: "Search this account")
         .toolbar { toolbarContent }
+        .task {
+            if feed == nil {
+                feed = TransactionsFeed(container: model.container, filter: accountFilter)
+            }
+        }
+        .task(id: searchText) {
+            try? await Task.sleep(for: SearchDebounce.interval)
+            guard !Task.isCancelled else { return }
+            var updated = accountFilter
+            updated.searchText = SearchDebounce.normalize(searchText)
+            feed?.filter = updated
+        }
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: [.commaSeparatedText, .plainText],
@@ -250,7 +268,7 @@ struct AccountDetailView: View {
                         Text("Transactions")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.6))
-                        Text("\(transactions.count)")
+                        Text("\(transactionCount)")
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                     }
@@ -305,9 +323,8 @@ struct AccountDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: "Positions", trailing: "\(holdings.count)")
             RowGroup {
-                ForEach(Array(holdings.enumerated()), id: \.element.persistentModelID) { index, holding in
-                    HoldingRow(holding: holding)
-                    if index < holdings.count - 1 { RowDivider() }
+                ForEach(holdings) { holding in
+                    HoldingEntry(holding: holding, isLast: holding.persistentModelID == holdings.last?.persistentModelID)
                 }
             }
         }
@@ -412,6 +429,21 @@ struct AccountDetailView: View {
             }
         case let .failure(error):
             model.banner = "Import cancelled: \(error.localizedDescription)"
+        }
+    }
+}
+
+/// One holding row plus its trailing hairline, emitted as a single view.
+private struct HoldingEntry: View {
+    let holding: Holding
+    let isLast: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HoldingRow(holding: holding)
+            if !isLast {
+                RowDivider()
+            }
         }
     }
 }

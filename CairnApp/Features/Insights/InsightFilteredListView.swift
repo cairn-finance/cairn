@@ -25,7 +25,7 @@ struct InsightFilteredListView: View {
                     EmptyStateView(systemImage: "checkmark.circle", title: "Nothing here", message: emptyMessage)
                 } else {
                     summary
-                    TransactionDayList(transactions: filtered)
+                    TransactionDayList(rows: filtered.map { $0.rowValue() })
                 }
             }
             .cairnScreen()
