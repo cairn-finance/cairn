@@ -29,7 +29,7 @@ public enum CloudAvailability {
     }
 
     public static var unavailableReason: String {
-        "iCloud is unavailable (not signed in, or this build isn’t signed with an iCloud entitlement), so data is stored on this device only."
+        "iCloud is unavailable (not signed in, or this build lacks an iCloud entitlement), so data stays on this device."
     }
 
     /// Xcode sets different variables depending on how tests are hosted; the

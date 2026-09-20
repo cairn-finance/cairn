@@ -83,8 +83,8 @@ struct InsightsCalculatorTests {
             calendar: Self.calendar
         )
         #expect(snapshot.previous.spendingMinorUnits == 9_000)
-        let change = try? #require(snapshot.spendingChangeRatio)
-        #expect(abs((change ?? 0) - (4_000.0 / 9_000.0)) < 0.0001)
+        let change = snapshot.spendingChangeRatio ?? 0
+        #expect(abs(change - (4_000.0 / 9_000.0)) < 0.0001)
     }
 
     @Test("Breaks spending out by category with the previous month")

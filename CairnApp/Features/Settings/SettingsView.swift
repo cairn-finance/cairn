@@ -85,7 +85,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes every account, transaction, category, and stored credential from this device and, if iCloud Sync is on, from iCloud. This cannot be undone. Export first for a copy.")
+            Text("This removes all your data from this device and, if iCloud Sync is on, from iCloud. It cannot be undone.")
         }
         .confirmationDialog(
             "Disconnect \(institutionToDisconnect?.name ?? "institution")?",
@@ -103,7 +103,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { institutionToDisconnect = nil }
         } message: {
-            Text("The stored credential is removed from the Keychain and local data is deleted. Banks that share this SimpleFIN connection disconnect too. Revoke access at SimpleFIN to be certain.")
+            Text("The stored credential is removed from the Keychain and local data is deleted. Shared banks disconnect too.")
         }
         .confirmationDialog(
             "Remove Apple Wallet data?",
@@ -115,7 +115,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes the Wallet accounts and transactions Cairn imported. It can’t revoke access; change that in Settings › Privacy & Security › Financial Data.")
+            Text("This deletes the Wallet accounts and transactions Cairn imported. To revoke access, change it in Settings.")
         }
         .confirmationDialog(
             "Forget the saved connection?",
@@ -131,7 +131,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { credentialToForget = nil }
         } message: {
-            Text("This removes the saved SimpleFIN connection from this device. Reconnecting it later will need a new setup token.")
+            Text("This removes the saved SimpleFIN connection from this device. Reconnecting needs a new setup token.")
         }
     }
 
@@ -163,7 +163,11 @@ struct SettingsView: View {
             Button {
                 Task { await model.syncAll(force: true) }
             } label: {
-                IconRow(model.syncState == .syncing ? "Syncing…" : "Sync Now", systemImage: "arrow.clockwise", tint: CairnTheme.accent) {
+                IconRow(
+                    model.syncState == .syncing ? "Syncing…" : "Sync Now",
+                    systemImage: "arrow.clockwise",
+                    tint: CairnTheme.accent
+                ) {
                     if model.syncState == .syncing {
                         ProgressView().controlSize(.small)
                     }
@@ -178,7 +182,7 @@ struct SettingsView: View {
         } header: {
             Text("Sync")
         } footer: {
-            Text("Each bank has its own SimpleFIN daily budget, shared across your devices. Cairn shows the smallest and refreshes conservatively."
+            Text("Each bank has its own SimpleFIN daily budget, shared across your devices. Cairn shows the smallest."
                 + (model.isOffline
                     ? " You’re offline right now, so sync is paused; your saved data still works and sync resumes automatically."
                     : ""))
@@ -191,7 +195,10 @@ struct SettingsView: View {
         Section {
             ForEach(visibleInstitutions) { institution in
                 HStack(spacing: 12) {
-                    SettingsIcon(systemImage: "building.columns.fill", tint: institution.lastSyncError == nil ? CairnTheme.accent : CairnTheme.negative)
+                    SettingsIcon(
+                        systemImage: "building.columns.fill",
+                        tint: institution.lastSyncError == nil ? CairnTheme.accent : CairnTheme.negative
+                    )
                     VStack(alignment: .leading, spacing: 3) {
                         Text(institution.name.isEmpty ? "Institution" : institution.name)
                         if let error = institution.lastSyncError {
@@ -330,7 +337,7 @@ struct SettingsView: View {
         } header: {
             Text("Categorization")
         } footer: {
-            Text("Rules and corrections run on-device after every sync and import. Apple Intelligence fills what they can’t, one merchant at a time, and pauses in Low Power Mode.")
+            Text("Rules and corrections run on-device after every sync. Apple Intelligence fills what they can’t.")
         }
     }
 
@@ -371,7 +378,7 @@ struct SettingsView: View {
         } header: {
             Text("Organization")
         } footer: {
-            Text("Rules assign a category by matching the bank description or amount. A rule beats an automatic guess but never a category you set. Tags are free-form labels for any transaction.")
+            Text("Rules match the bank description or amount and assign a category. Tags are free-form labels.")
         }
     }
 
@@ -398,7 +405,11 @@ struct SettingsView: View {
                 Text(StoreMode.cloud.displayName).tag(StoreMode.cloud)
                 Text(StoreMode.local.displayName).tag(StoreMode.local)
             } label: {
-                IconRow("Where data lives", systemImage: storageMode == .cloud ? "icloud.fill" : "internaldrive.fill", tint: storageMode == .cloud ? .blue : .gray)
+                IconRow(
+                    "Where data lives",
+                    systemImage: storageMode == .cloud ? "icloud.fill" : "internaldrive.fill",
+                    tint: storageMode == .cloud ? .blue : .gray
+                )
             }
             .onChange(of: storageMode) { _, newValue in
                 guard newValue != model.storeMode else { return }
@@ -422,7 +433,7 @@ struct SettingsView: View {
     /// uploaded, so there is nothing in iCloud to remove.
     private var deleteDataNote: String {
         if model.storeMode == .cloud {
-            "Delete All Data removes everything here and asks iCloud to remove what your other devices can see, which finishes once the deletion uploads."
+            "Delete All Data removes everything here and asks iCloud to remove it from your other devices."
         } else {
             "This device isn’t using iCloud, so Delete All Data removes everything here; nothing was uploaded to delete."
         }
@@ -462,7 +473,7 @@ struct SettingsView: View {
             return "Set a device passcode or password to use the app lock; until then it stays off."
         }
         let method = model.lock.biometryName.map { "\($0) or your device passcode" } ?? "your device passcode"
-        return "Cairn asks for \(method) when it opens or returns to the foreground. The SimpleFIN credential stays in the Keychain so a sync can run, and can be revoked any time from SimpleFIN."
+        return "Cairn asks for \(method) when it opens or resumes. The SimpleFIN credential stays in the Keychain."
     }
 
     // MARK: - Data
@@ -484,7 +495,7 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Exports include every transaction and your categories and notes. Nothing is uploaded; the file is saved where you choose.")
+            Text("Exports include every transaction, category, and note. Nothing is uploaded; you choose where it saves.")
         }
     }
 

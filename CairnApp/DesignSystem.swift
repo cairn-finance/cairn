@@ -302,7 +302,11 @@ struct CardHeader<Trailing: View>: View {
     var subtitle: LocalizedStringKey?
     @ViewBuilder var trailing: Trailing
 
-    init(_ title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+    init(
+        _ title: LocalizedStringKey,
+        subtitle: LocalizedStringKey? = nil,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) {
         self.title = title
         self.subtitle = subtitle
         self.trailing = trailing()
@@ -365,7 +369,11 @@ struct AccountGlyphStyle {
         case .investment: AccountGlyphStyle(symbol: "chart.line.uptrend.xyaxis", tint: Color(red: 0.62, green: 0.36, blue: 0.87))
         case .loan: AccountGlyphStyle(symbol: "building.2.fill", tint: Color(red: 0.86, green: 0.53, blue: 0.20))
         case .cash: AccountGlyphStyle(symbol: "dollarsign.circle.fill", tint: Color(red: 0.24, green: 0.66, blue: 0.62))
-        case .other: AccountGlyphStyle(symbol: account.isManual ? "square.and.pencil" : "building.columns.fill", tint: CairnTheme.accent)
+        case .other:
+            AccountGlyphStyle(
+                symbol: account.isManual ? "square.and.pencil" : "building.columns.fill",
+                tint: CairnTheme.accent
+            )
         }
     }
 }

@@ -176,7 +176,12 @@ struct BalanceHistoryTests {
         // Balance today = current - everything posted after today.
         #expect(BalanceHistory.balance(asOf: today, currentBalanceMinorUnits: 10_000, transactions: entries) == 9_500)
         // Going back before yesterday adds both the negative and positive back.
-        #expect(BalanceHistory.balance(asOf: base.addingTimeInterval(-2 * 86_400), currentBalanceMinorUnits: 10_000, transactions: entries) == 11_500)
+        let asOf = base.addingTimeInterval(-2 * 86_400)
+        #expect(
+            BalanceHistory.balance(
+                asOf: asOf, currentBalanceMinorUnits: 10_000, transactions: entries
+            ) == 11_500
+        )
     }
 
     @Test("Daily series is inclusive and ordered ascending")

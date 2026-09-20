@@ -40,15 +40,23 @@ guard let rep = NSBitmapImageRep(
     fatalError("Could not create bitmap")
 }
 rep.size = size
-let graphicsContext = NSGraphicsContext(bitmapImageRep: rep)!
+guard let graphicsContext = NSGraphicsContext(bitmapImageRep: rep) else {
+    fatalError("Could not create the graphics context")
+}
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = graphicsContext
 
 // Background: the hero gradient, then a soft teal glow in the top-right.
-NSGradient(starting: ink, ending: inkLight)!.draw(in: NSRect(x: 0, y: 0, width: width, height: height), angle: -35)
-NSGradient(
+guard let backgroundGradient = NSGradient(starting: ink, ending: inkLight) else {
+    fatalError("Could not create the background gradient")
+}
+backgroundGradient.draw(in: NSRect(x: 0, y: 0, width: width, height: height), angle: -35)
+guard let glow = NSGradient(
     colors: [inkGlow.withAlphaComponent(0.32), inkGlow.withAlphaComponent(0)]
-)!.draw(
+) else {
+    fatalError("Could not create the glow gradient")
+}
+glow.draw(
     fromCenter: NSPoint(x: width - 150, y: height - 120), radius: 0,
     toCenter: NSPoint(x: width - 150, y: height - 120), radius: 520,
     options: []
@@ -60,7 +68,7 @@ func roundedRect(_ rect: NSRect, radius: CGFloat) -> NSBezierPath {
 
 func drawImage(_ path: String, in rect: NSRect, cornerRadius: CGFloat, shadow: Bool, border: Bool) {
     guard let img = NSImage(contentsOfFile: path) else {
-        FileHandle.standardError.write("Missing image: \(path)\n".data(using: .utf8)!)
+        FileHandle.standardError.write(Data("Missing image: \(path)\n".utf8))
         exit(1)
     }
     NSGraphicsContext.saveGraphicsState()

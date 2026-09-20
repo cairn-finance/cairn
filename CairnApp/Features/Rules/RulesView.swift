@@ -40,7 +40,7 @@ struct RulesView: View {
                     EmptyStateView(
                         systemImage: "slider.horizontal.3",
                         title: "No rules yet",
-                        message: "A rule matches a bank description and assigns a category. Rules run on-device after every sync and always beat an automatic guess.",
+                        message: "A rule matches the bank description or amount and assigns a category.",
                         actionTitle: "New Rule"
                     ) {
                         editorTarget = .create
@@ -55,7 +55,7 @@ struct RulesView: View {
                     .onDelete(perform: delete)
                     .onMove(perform: move)
                 } footer: {
-                    Text("Drag to reorder. The topmost matching rule wins. Turning a rule off or deleting it re-evaluates the transactions it had categorized.")
+                    Text("Drag to reorder. The topmost matching rule wins. Turning a rule off re-checks its transactions.")
                 }
             }
         }

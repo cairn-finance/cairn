@@ -134,9 +134,9 @@ struct ImportTransactionsSheet: View {
         let count = parsed?.transactions.count ?? 0
         let skipped = parsed?.skippedRows ?? 0
         if skipped > 0 {
-            Text("^[\(count) transaction](inflect: true) ready to import, ^[\(skipped) row](inflect: true) skipped. Duplicates already in the account are skipped automatically.")
+            Text("^[\(count) transaction](inflect: true) ready to import, ^[\(skipped) row](inflect: true) skipped.")
         } else {
-            Text("^[\(count) transaction](inflect: true) ready to import. Duplicates already in the account are skipped automatically.")
+            Text("^[\(count) transaction](inflect: true) ready to import. Duplicates are skipped automatically.")
         }
     }
 
@@ -149,7 +149,9 @@ struct ImportTransactionsSheet: View {
             if let outcome {
                 let skipped = outcome.duplicatesSkipped
                 if skipped > 0 {
-                    model.banner = String(localized: "Imported ^[\(outcome.inserted) transaction](inflect: true), skipped ^[\(skipped) duplicate](inflect: true).")
+                    model.banner = String(
+                        localized: "Imported ^[\(outcome.inserted) transaction](inflect: true), skipped \(skipped)."
+                    )
                 } else {
                     model.banner = String(localized: "Imported ^[\(outcome.inserted) transaction](inflect: true).")
                 }

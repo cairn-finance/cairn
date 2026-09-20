@@ -131,7 +131,10 @@ struct ManualAccountSheet: View {
             .padding(.vertical, 9)
             .frame(maxWidth: .infinity)
             .foregroundStyle(selected ? Color.white : style.tint)
-            .background(selected ? style.tint : style.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .background(
+                selected ? style.tint : style.tint.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
             .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)

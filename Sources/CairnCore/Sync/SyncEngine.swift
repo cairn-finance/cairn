@@ -1058,7 +1058,7 @@ public actor SyncEngine {
     /// the survivor already knows. Names and URLs are bank-owned data, not
     /// credentials, so adopting a missing one is safe.
     private func adoptMetadata(from duplicate: Institution, into survivor: Institution, changed: inout Bool) {
-        if (survivor.name.isEmpty || survivor.name == "Connecting…"), !duplicate.name.isEmpty {
+        if survivor.name.isEmpty || survivor.name == "Connecting…", !duplicate.name.isEmpty {
             survivor.name = duplicate.name
             changed = true
         }
@@ -1149,7 +1149,7 @@ public actor SyncEngine {
         }
         // Keep the fresher bank-owned balance.
         if let incoming = duplicate.lastSyncedAt,
-           survivor.lastSyncedAt == nil || incoming > survivor.lastSyncedAt! {
+           survivor.lastSyncedAt.map({ incoming > $0 }) ?? true {
             survivor.balanceMinorUnits = duplicate.balanceMinorUnits
             survivor.availableBalanceMinorUnits = duplicate.availableBalanceMinorUnits
             survivor.hasAvailableBalance = duplicate.hasAvailableBalance
@@ -1199,7 +1199,7 @@ public actor SyncEngine {
         target.isTransferUserSet = target.isTransferUserSet || source.isTransferUserSet
         target.isIgnored = target.isIgnored || source.isIgnored
         if let reviewed = source.reviewedAt,
-           target.reviewedAt == nil || reviewed > target.reviewedAt! {
+           target.reviewedAt.map({ reviewed > $0 }) ?? true {
             target.reviewedAt = reviewed
         }
         if let tags = source.tags, !tags.isEmpty {
@@ -2575,6 +2575,13 @@ public actor SyncEngine {
 
     // MARK: - Categories
 
+    /// One seeded default category, kept as a named value instead of a tuple.
+    private struct DefaultCategory {
+        let name: String
+        let symbol: String
+        let color: String
+    }
+
     /// Seeds a small, sensible default set once, so categorization works before
     /// the user creates anything. New built-in categories are added to existing
     /// installs through `categorySeedVersion`, exactly once, without resurrecting
@@ -2586,40 +2593,40 @@ public actor SyncEngine {
             existing.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
         )
 
-        let defaults: [(String, String, String)] = [
-            ("Income", "arrow.down.circle.fill", "#34C759"),
-            ("Groceries", "cart.fill", "#30B0C7"),
-            ("Dining", "fork.knife", "#FF9F0A"),
-            ("Transport", "car.fill", "#5E5CE6"),
-            ("Housing", "house.fill", "#8E8E93"),
-            ("Utilities", "bolt.fill", "#FFD60A"),
-            ("Shopping", "bag.fill", "#FF375F"),
-            ("Health", "heart.fill", "#FF2D55"),
-            ("Entertainment", "play.circle.fill", "#BF5AF2"),
-            ("Travel", "airplane", "#64D2FF"),
-            ("Fees", "percent", "#A2845E"),
-            ("Transfers", "arrow.left.arrow.right", "#32ADE6"),
-            ("Uncategorized", "questionmark.circle", "#8E8E93"),
+        let defaults: [DefaultCategory] = [
+            DefaultCategory(name: "Income", symbol: "arrow.down.circle.fill", color: "#34C759"),
+            DefaultCategory(name: "Groceries", symbol: "cart.fill", color: "#30B0C7"),
+            DefaultCategory(name: "Dining", symbol: "fork.knife", color: "#FF9F0A"),
+            DefaultCategory(name: "Transport", symbol: "car.fill", color: "#5E5CE6"),
+            DefaultCategory(name: "Housing", symbol: "house.fill", color: "#8E8E93"),
+            DefaultCategory(name: "Utilities", symbol: "bolt.fill", color: "#FFD60A"),
+            DefaultCategory(name: "Shopping", symbol: "bag.fill", color: "#FF375F"),
+            DefaultCategory(name: "Health", symbol: "heart.fill", color: "#FF2D55"),
+            DefaultCategory(name: "Entertainment", symbol: "play.circle.fill", color: "#BF5AF2"),
+            DefaultCategory(name: "Travel", symbol: "airplane", color: "#64D2FF"),
+            DefaultCategory(name: "Fees", symbol: "percent", color: "#A2845E"),
+            DefaultCategory(name: "Transfers", symbol: "arrow.left.arrow.right", color: "#32ADE6"),
+            DefaultCategory(name: "Uncategorized", symbol: "questionmark.circle", color: "#8E8E93"),
         ]
 
         // Categories added after the first generation, given to existing installs
         // once. Money movement keeps its own labels instead of a generic Transfer.
-        let paymentDefaults: [(String, String, String)] = [
-            ("Credit Card Payments", "creditcard.fill", "#0A84FF"),
-            ("Loan Payments", "building.columns.fill", "#5AC8FA"),
+        let paymentDefaults: [DefaultCategory] = [
+            DefaultCategory(name: "Credit Card Payments", symbol: "creditcard.fill", color: "#0A84FF"),
+            DefaultCategory(name: "Loan Payments", symbol: "building.columns.fill", color: "#5AC8FA"),
         ]
         let currentSeedVersion = 2
 
         var didChange = false
 
         if !settings.hasSeededDefaultCategories {
-            for (index, item) in defaults.enumerated() where !existingNames.contains(item.0.lowercased()) {
+            for (index, item) in defaults.enumerated() where !existingNames.contains(item.name.lowercased()) {
                 let category = Category(
-                    name: item.0,
-                    symbolName: item.1,
-                    colorHex: item.2,
+                    name: item.name,
+                    symbolName: item.symbol,
+                    colorHex: item.color,
                     sortOrder: index,
-                    isSystem: CategoryManagement.isSystemCategoryName(item.0)
+                    isSystem: CategoryManagement.isSystemCategoryName(item.name)
                 )
                 modelContext.insert(category)
             }
@@ -2629,13 +2636,13 @@ public actor SyncEngine {
 
         if settings.categorySeedVersion < currentSeedVersion {
             for (offset, item) in paymentDefaults.enumerated()
-            where !existingNames.contains(item.0.lowercased()) {
+            where !existingNames.contains(item.name.lowercased()) {
                 let category = Category(
-                    name: item.0,
-                    symbolName: item.1,
-                    colorHex: item.2,
+                    name: item.name,
+                    symbolName: item.symbol,
+                    colorHex: item.color,
                     sortOrder: defaults.count + offset,
-                    isSystem: CategoryManagement.isSystemCategoryName(item.0)
+                    isSystem: CategoryManagement.isSystemCategoryName(item.name)
                 )
                 modelContext.insert(category)
             }

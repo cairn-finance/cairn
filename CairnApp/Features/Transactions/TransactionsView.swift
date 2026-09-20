@@ -117,7 +117,11 @@ struct TransactionsView: View {
                     .buttonStyle(.plain)
                 }
                 if let categoryFilter {
-                    activeFilterChip(categoryFilter.name, systemImage: categoryFilter.symbolName, tint: CairnTheme.color(hex: categoryFilter.colorHex)) {
+                    activeFilterChip(
+                        categoryFilter.name,
+                        systemImage: categoryFilter.symbolName,
+                        tint: CairnTheme.color(hex: categoryFilter.colorHex)
+                    ) {
                         filter.categoryID = nil
                     }
                 }

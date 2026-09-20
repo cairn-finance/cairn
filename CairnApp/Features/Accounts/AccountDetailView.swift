@@ -80,7 +80,11 @@ struct AccountDetailView: View {
                         )
                         .cairnAppear(delay: 0.1)
                     } else if !searchText.isEmpty {
-                        EmptyStateView(systemImage: "magnifyingglass", title: "Nothing matches", message: "Try a different search.")
+                        EmptyStateView(
+                            systemImage: "magnifyingglass",
+                            title: "Nothing matches",
+                            message: "Try a different search."
+                        )
                     }
                 }
             }
@@ -303,7 +307,9 @@ struct AccountDetailView: View {
             parts.append(String(localized: "Updates on your iPhone"))
         }
         parts.append(String(localized: "\(account.accountType.displayName)"))
-        if account.currency.code != "USD" || account.currency.isCustom { parts.append(String(localized: "\(account.currency.displayLabel)")) }
+        if account.currency.code != "USD" || account.currency.isCustom {
+            parts.append(String(localized: "\(account.currency.displayLabel)"))
+        }
         return parts.joined(separator: " · ")
     }
 

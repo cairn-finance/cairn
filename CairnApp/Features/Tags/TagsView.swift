@@ -67,7 +67,7 @@ struct TagsView: View {
                     EmptyStateView(
                         systemImage: "tag",
                         title: "No tags yet",
-                        message: "Tags are labels you can add to any transaction and search for later. They are separate from categories.",
+                        message: "Tags are labels you can add to any transaction and search for later.",
                         actionTitle: "New Tag"
                     ) {
                         editorTarget = .create

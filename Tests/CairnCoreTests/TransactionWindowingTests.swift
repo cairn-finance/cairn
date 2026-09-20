@@ -209,10 +209,18 @@ struct TransactionFetchTests {
         other.postedDate = Date(timeIntervalSince1970: 1_000)
         context.insert(other)
         try context.save()
-        return Seeded(container: container, accountA: accountA, accountB: accountB, groceries: groceries, transfers: transfers, tag: tag)
+        return Seeded(
+            container: container, accountA: accountA, accountB: accountB,
+            groceries: groceries, transfers: transfers, tag: tag
+        )
     }
 
-    private func ids(_ container: ModelContainer, filter: TransactionFilter, pending: Bool? = nil, limit: Int? = nil) throws -> [String] {
+    private func ids(
+        _ container: ModelContainer,
+        filter: TransactionFilter,
+        pending: Bool? = nil,
+        limit: Int? = nil
+    ) throws -> [String] {
         try container.mainContext
             .fetch(TransactionFetch.descriptor(filter: filter, pending: pending, limit: limit))
             .map(\.bankTransactionID)

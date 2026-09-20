@@ -60,7 +60,7 @@ struct OnboardingView: View {
             }
             Button("Cancel", role: .cancel) { credentialToForget = nil }
         } message: {
-            Text("This removes the saved SimpleFIN connection from this device. Reconnecting it later will need a new setup token.")
+            Text("This removes the saved SimpleFIN connection from this device. Reconnecting needs a new setup token.")
         }
     }
 
@@ -79,7 +79,7 @@ struct OnboardingView: View {
             }
             ForEach(model.recoverableCredentials) { credential in
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("\(credential.host) is still in this device’s Keychain. Reconnect it without creating a new setup token.")
+                    Text("\(credential.host) is still in this device’s Keychain. Reconnect it without a new token.")
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.66))
                         .fixedSize(horizontal: false, vertical: true)
@@ -169,7 +169,7 @@ struct OnboardingView: View {
             promise(
                 icon: "eye.slash.fill",
                 title: "iCloud sync is opt-in",
-                detail: "Off by default: nothing leaves this device unless you turn on iCloud, and amounts and descriptions are encrypted before it sees them."
+                detail: "Off by default. Amounts and descriptions are encrypted before they reach iCloud."
             )
             promise(
                 icon: "server.rack",
@@ -295,7 +295,7 @@ struct OnboardingView: View {
 
     private var storageDetail: LocalizedStringKey {
         model.useCloudKit
-            ? "Syncs through your private iCloud database, with amounts and descriptions encrypted first. Takes effect when you reopen Cairn."
+            ? "Syncs through your iCloud database, with amounts and descriptions encrypted. Applies when you reopen Cairn."
             : "Nothing leaves this device. You can turn on iCloud Sync later in Settings."
     }
 

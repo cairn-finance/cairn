@@ -228,7 +228,10 @@ struct NetWorthView: View {
                         AmountText(money: Money(minorUnits: split.assets, currency: currency), font: .callout.weight(.semibold))
                     }
                     StatTile(title: "Liabilities", systemImage: "arrow.down.right", tint: CairnTheme.negative) {
-                        AmountText(money: Money(minorUnits: split.liabilities, currency: currency), font: .callout.weight(.semibold))
+                        AmountText(
+                            money: Money(minorUnits: split.liabilities, currency: currency),
+                            font: .callout.weight(.semibold)
+                        )
                     }
                 }
             }

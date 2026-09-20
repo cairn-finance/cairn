@@ -76,6 +76,13 @@ struct DuplicateConnectionTests {
         return child
     }
 
+    /// One seeded transaction for `insertAccount`, kept as a named value.
+    private struct SeedTransaction {
+        let id: String
+        let amount: Int64
+        let note: String?
+    }
+
     @discardableResult
     private func insertAccount(
         in context: ModelContext,
@@ -83,7 +90,7 @@ struct DuplicateConnectionTests {
         institution: Institution,
         displayName: String? = nil,
         balance: Int64 = 0,
-        transactions: [(id: String, amount: Int64, note: String?)] = []
+        transactions: [SeedTransaction] = []
     ) -> Account {
         let account = Account(bankAccountID: bankAccountID, name: bankAccountID, currency: .usd)
         account.customDisplayName = displayName
@@ -453,8 +460,8 @@ struct DuplicateConnectionTests {
         insertAccount(
             in: context, bankAccountID: "1", institution: childA,
             transactions: [
-                ("T1", -100, "shared"),
-                ("T2", -200, "kept on A"),
+                SeedTransaction(id: "T1", amount: -100, note: "shared"),
+                SeedTransaction(id: "T2", amount: -200, note: "kept on A"),
             ]
         )
         insertHolder(in: context, credentialID: seed.credentialB, createdAt: Date(timeIntervalSince1970: 20))
@@ -466,8 +473,8 @@ struct DuplicateConnectionTests {
         insertAccount(
             in: context, bankAccountID: "1", institution: childB,
             transactions: [
-                ("T1", -100, nil),
-                ("T3", -300, "kept on B"),
+                SeedTransaction(id: "T1", amount: -100, note: nil),
+                SeedTransaction(id: "T3", amount: -300, note: "kept on B"),
             ]
         )
         try context.save()

@@ -454,7 +454,7 @@ final class AppModel {
             )
             if case .ambiguous = adoption {
                 banner = String(
-                    localized: "This SimpleFIN account matches more than one saved connection. Cairn left both and will combine the duplicates automatically."
+                    localized: "This account matches more than one saved connection. Cairn left both and will combine them."
                 )
             }
             return true
@@ -462,7 +462,7 @@ final class AppModel {
             let message: String
             if error is CredentialStoreError {
                 message = String(
-                    localized: "Cairn couldn’t save this credential to the Keychain, so the connection wasn’t completed. Create a new SimpleFIN token and try again."
+                    localized: "Cairn couldn’t save the credential to the Keychain, so the connection wasn’t completed."
                 )
             } else {
                 message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -548,7 +548,7 @@ final class AppModel {
             )
             if case .ambiguous = adoption {
                 banner = String(
-                    localized: "This saved connection’s banks match more than one saved connection. Cairn left both and will combine the duplicates automatically."
+                    localized: "This saved connection’s banks match more than one saved connection. Cairn left both."
                 )
             }
             removeRecoverable(id: id)
@@ -759,13 +759,18 @@ final class AppModel {
                 case .budgetExhausted:
                     await cairnLog(.warning, "\(name): daily request budget exhausted.")
                     if !reportedBudget {
-                        banner = String(localized: "\(name) has reached today’s SimpleFIN request limit. It will sync again tomorrow.")
+                        banner = String(
+                            localized: "\(name) has reached today’s SimpleFIN request limit. It will sync again tomorrow."
+                        )
                         reportedBudget = true
                     }
                 case let .throttled(until):
                     await cairnLog(.info, "\(name): throttled until \(until.formatted(date: .omitted, time: .shortened)).")
                     if force, !reportedThrottle {
-                        banner = String(localized: "Just synced. Next automatic refresh after \(until.formatted(date: .omitted, time: .shortened)).")
+                        let refreshTime = until.formatted(date: .omitted, time: .shortened)
+                        banner = String(
+                            localized: "Just synced. Next automatic refresh after \(refreshTime)."
+                        )
                         reportedThrottle = true
                     }
                 case .proceed:
@@ -1249,7 +1254,7 @@ final class AppModel {
         banner = cloud
             ? String(localized: "iCloud Sync will be enabled the next time you open Cairn.")
             : String(
-                localized: "This Device Only takes effect the next time you open Cairn. Cairn now reads the credential from this device; the copy in iCloud Keychain is left for your other devices."
+                localized: "Takes effect when you next open Cairn. The iCloud Keychain copy stays for your other devices."
             )
     }
 
@@ -1262,7 +1267,9 @@ final class AppModel {
         } catch let syncError {
             do {
                 try credentials.store(secret, id: id, synchronizable: false)
-                banner = String(localized: "iCloud Keychain sync isn’t available here, so the credential is stored on this device only.")
+                banner = String(
+                    localized: "iCloud Keychain sync isn’t available, so the credential is stored on this device only."
+                )
             } catch {
                 throw syncError
             }

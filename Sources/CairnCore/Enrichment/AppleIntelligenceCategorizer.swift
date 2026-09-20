@@ -18,7 +18,7 @@ public enum CategoryNameMatcher {
         var best: (name: String, score: Double)?
         for category in categories {
             let score = TextSimilarity.ratio(trimmed, category)
-            if best == nil || score > best!.score {
+            if score > (best?.score ?? -Double.infinity) {
                 best = (category, score)
             }
         }

@@ -49,7 +49,7 @@ struct InvestmentsView: View {
                     GetStartedEmptyState(
                         systemImage: "chart.line.uptrend.xyaxis",
                         title: "No investments yet",
-                        message: "Accounts your bank reports as investments appear here after a sync. You can also add one by hand and import a CSV.",
+                        message: "Accounts your bank reports as investments appear here after a sync.",
                         manualAccountType: .investment
                     )
                 } else {
@@ -201,7 +201,7 @@ struct InvestmentsView: View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 CardHeader("How these numbers work")
-                Text("Cairn shows the positions and value your bank reported at the last sync. It does not fetch live market prices, so these are a snapshot — not a real-time value.")
+                Text("Cairn shows the positions and value your bank reported at the last sync. It does not fetch live prices.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

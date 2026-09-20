@@ -31,7 +31,7 @@ struct WalletConnectView: View {
                     feature(
                         icon: "hand.raised.fill",
                         title: "You choose what to share",
-                        detail: "Apple’s picker decides the accounts and how far back to share. Change it any time in Settings › Privacy & Security › Financial Data."
+                        detail: "Apple’s picker decides the accounts and how far back to share. You can change it in Settings."
                     )
                 }
             }

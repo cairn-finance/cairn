@@ -267,7 +267,8 @@ struct TagPersistenceTests {
         try context.save()
 
         refreshed = try context.fetch(FetchDescriptor<LedgerTransaction>()).first
-        #expect((refreshed?.tags ?? []).isEmpty)
+        let tags = try #require(refreshed?.tags)
+        #expect(tags.isEmpty)
         _ = container
     }
 
@@ -297,7 +298,8 @@ struct TagPersistenceTests {
 
         let refreshed = try context.fetch(FetchDescriptor<LedgerTransaction>()).first
         #expect(refreshed != nil)
-        #expect((refreshed?.tags ?? []).isEmpty)
+        let tags = try #require(refreshed?.tags)
+        #expect(tags.isEmpty)
         #expect((try context.fetch(FetchDescriptor<CairnCore.Tag>())).isEmpty)
         _ = container
     }

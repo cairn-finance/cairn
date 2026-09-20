@@ -9,6 +9,13 @@ import CairnCore
 enum SampleData {
     static let launchArgument = "--cairn-sample-data"
 
+    /// One sample wallet line, kept as a named value instead of a tuple.
+    private struct WalletSample {
+        let vendor: String
+        let amount: Int64
+        let daysAgo: Int
+    }
+
     static func populate(context: ModelContext) {
         // Seed only once, even if the app is relaunched with the flag.
         let existing = (try? context.fetchCount(FetchDescriptor<Institution>())) ?? 0
@@ -126,23 +133,23 @@ enum SampleData {
         appleSavings.lastSyncedAt = now
         context.insert(appleSavings)
 
-        let walletSamples: [(String, Int64, Int)] = [
-            ("Apple Store", -24_900, -2),
-            ("Uber", -1_840, -4),
+        let walletSamples: [WalletSample] = [
+            WalletSample(vendor: "Apple Store", amount: -24_900, daysAgo: -2),
+            WalletSample(vendor: "Uber", amount: -1_840, daysAgo: -4),
         ]
         for (index, item) in walletSamples.enumerated() {
             let transaction = LedgerTransaction(
                 bankTransactionID: "wallet-TXN-\(index)",
-                payeeDescription: item.0,
-                amountMinorUnits: item.1
+                payeeDescription: item.vendor,
+                amountMinorUnits: item.amount
             )
             transaction.account = appleCard
             transaction.accountIDIndex = appleCard.bankAccountID
             transaction.currencyExponent = 2
-            transaction.postedDate = calendar.date(byAdding: .day, value: item.2, to: now)
+            transaction.postedDate = calendar.date(byAdding: .day, value: item.daysAgo, to: now)
             transaction.createdAt = transaction.effectiveDate
             transaction.modifiedAt = transaction.createdAt
-            transaction.normalizedMerchant = MerchantNormalizer.normalize(item.0)
+            transaction.normalizedMerchant = MerchantNormalizer.normalize(item.vendor)
             context.insert(transaction)
         }
 
@@ -299,8 +306,8 @@ enum SampleData {
         try? context.save()
     }
 
-    /// Creates one sample position. `cost` is the total cost basis; both values
-    /// are in the position's currency (USD unless stated otherwise).
+    // Creates one sample position. `cost` is the total cost basis; both values
+    // are in the position's currency (USD unless stated otherwise).
     // swiftlint:disable:next function_parameter_count
     private static func insertHolding(
         into account: Account,

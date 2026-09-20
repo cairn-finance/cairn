@@ -9,7 +9,7 @@ extension AppModel {
     /// Cached data keeps working, so this is not a failure.
     var offlineSyncExplanation: String {
         String(
-            localized: "You’re offline, so Cairn can’t reach your bank right now. Your saved data still works, and sync resumes on its own when you’re back online."
+            localized: "You’re offline, so sync is paused. Your data still works and sync resumes when you reconnect."
         )
     }
 

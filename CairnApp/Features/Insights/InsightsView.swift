@@ -178,7 +178,9 @@ struct InsightsView: View {
                                 withAnimation(CairnTheme.Motion.quick) { month = candidate }
                             } label: {
                                 Chip(
-                                    title: LocalizedStringKey(candidate.formatted(.dateTime.month(.abbreviated).year(.twoDigits))),
+                                     title: LocalizedStringKey(
+                                         candidate.formatted(.dateTime.month(.abbreviated).year(.twoDigits))
+                                     ),
                                     isSelected: isSelected(candidate),
                                     tint: CairnTheme.ink
                                 )
@@ -287,7 +289,11 @@ struct InsightsView: View {
 
                 HStack(alignment: .top, spacing: 16) {
                     heroMetric("Income", data.current.incomeMinorUnits)
-                    heroMetric("Net", data.current.netMinorUnits, tint: data.current.netMinorUnits >= 0 ? CairnTheme.inkGlow : Color(red: 1, green: 0.62, blue: 0.58))
+                    heroMetric(
+                        "Net",
+                        data.current.netMinorUnits,
+                        tint: data.current.netMinorUnits >= 0 ? CairnTheme.inkGlow : Color(red: 1, green: 0.62, blue: 0.58)
+                    )
                     heroMetric("Avg / day", data.averageDailySpending())
                 }
             }
@@ -329,7 +335,9 @@ struct InsightsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 CardHeader(
                     "Spending pace",
-                    subtitle: selected.map { LocalizedStringKey("Day \($0.day): \(moneyText($0.amountMinorUnits)) spent") } ?? paceSubtitle(data)
+                     subtitle: selected.map {
+                         LocalizedStringKey("Day \($0.day): \(moneyText($0.amountMinorUnits)) spent")
+                     } ?? paceSubtitle(data)
                 )
 
                 if data.cumulative.isEmpty {
@@ -412,7 +420,9 @@ struct InsightsView: View {
                         AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                             AxisGridLine().foregroundStyle(CairnTheme.hairline)
                             AxisValueLabel {
-                                if let amount = value.as(Double.self) { Text(shortCurrency(amount)).foregroundStyle(Color.secondary) }
+                                 if let amount = value.as(Double.self) {
+                                     Text(shortCurrency(amount)).foregroundStyle(Color.secondary)
+                                 }
                             }
                         }
                     }
@@ -466,7 +476,8 @@ struct InsightsView: View {
     // MARK: - Trend
 
     private func trendCard(_ data: InsightsSnapshot) -> some View {
-        let average = data.months.isEmpty ? 0 : data.months.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.spendingMinorUnits) } / Int64(data.months.count)
+         let total = data.months.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.spendingMinorUnits) }
+         let average = data.months.isEmpty ? 0 : total / Int64(data.months.count)
         let selected = trendSelection.flatMap { date in
             data.months.first { Calendar.current.isDate($0.monthStart, equalTo: date, toGranularity: .month) }
         }
@@ -475,7 +486,9 @@ struct InsightsView: View {
                 CardHeader(
                     "Six-month trend",
                     subtitle: selected.map {
-                        LocalizedStringKey("\($0.monthStart.formatted(.dateTime.month(.wide))): \(moneyText($0.spendingMinorUnits)) spent")
+                         LocalizedStringKey(
+                             "\($0.monthStart.formatted(.dateTime.month(.wide))): \(moneyText($0.spendingMinorUnits)) spent"
+                         )
                     } ?? "Average \(moneyText(average)) per month"
                 )
 
@@ -640,7 +653,12 @@ struct InsightsView: View {
                                     .monospacedDigit()
                                     .foregroundStyle(index == 0 ? Color.white : .secondary)
                                     .frame(width: 24, height: 24)
-                                    .background(index == 0 ? AnyShapeStyle(CairnTheme.inkGradient) : AnyShapeStyle(CairnTheme.surfaceInset), in: Circle())
+                                     .background(
+                                         index == 0
+                                             ? AnyShapeStyle(CairnTheme.inkGradient)
+                                             : AnyShapeStyle(CairnTheme.surfaceInset),
+                                         in: Circle()
+                                     )
                                 Text(merchant.name.capitalized)
                                     .font(.callout.weight(index == 0 ? .semibold : .regular))
                                     .lineLimit(1)
@@ -746,7 +764,11 @@ struct InsightsView: View {
             if model.categorizationCounts.total == 0 {
                 allCategorizedLabel(categorized: 0)
             } else if automaticModelEnabled {
-                statusLabel("\(model.categorizationCounts.total) will be categorized automatically.", systemImage: "clock", tint: .secondary)
+                 statusLabel(
+                     "\(model.categorizationCounts.total) will be categorized automatically.",
+                     systemImage: "clock",
+                     tint: .secondary
+                 )
             } else {
                 needsCategoryLabel(count: model.categorizationCounts.total)
             }

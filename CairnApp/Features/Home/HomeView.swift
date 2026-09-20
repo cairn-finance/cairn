@@ -188,7 +188,7 @@ struct HomeView: View {
                     Text("Welcome to Cairn")
                         .font(.title2.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
-                    Text("Connect a bank through SimpleFIN, read Apple Wallet, or add an account by hand. Everything stays on your devices.")
+                    Text("Connect a bank, read Apple Wallet, or add an account by hand. Everything stays on your devices.")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.78))
                         .fixedSize(horizontal: false, vertical: true)
@@ -393,4 +393,3 @@ struct NetWorthHero: View {
         return "\(delta > 0 ? "+" : "")\(money.formatted()) in 30 days"
     }
 }
-
