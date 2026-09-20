@@ -61,6 +61,10 @@ All notable changes to Cairn are documented here. This project follows
   macOS when the screen locks.
 - Regex rules run under a deadline, custom-currency lookups are cached and
   capped, and money sums clamp instead of trapping.
+- Sync paused by a lost connection resumes on its own when the network returns,
+  and the offline explanation keeps the original error alongside it.
+- A picked CSV is read off the main thread, so importing a large export no
+  longer stalls the interface.
 
 ### Security
 

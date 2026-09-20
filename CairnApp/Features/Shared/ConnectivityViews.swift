@@ -38,14 +38,20 @@ struct SyncIssueCard: View {
     private struct Issue {
         let title: String
         let detail: String
+        var hint: String?
         let isFailure: Bool
     }
 
     private var issue: Issue? {
         switch model.syncState {
         case let .failed(message):
-            if model.isOffline {
-                return Issue(title: "Sync paused", detail: model.offlineSyncExplanation, isFailure: false)
+            if model.syncProblemIsJustOffline {
+                return Issue(
+                    title: "Sync paused",
+                    detail: model.offlineSyncExplanation,
+                    hint: message,
+                    isFailure: false
+                )
             }
             return Issue(title: "Last sync didn’t finish", detail: message, isFailure: true)
         case let .waiting(title, detail, _):
@@ -76,6 +82,12 @@ struct SyncIssueCard: View {
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if let hint = issue.hint {
+                                Text(hint)
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
 

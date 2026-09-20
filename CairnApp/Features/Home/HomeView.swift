@@ -79,7 +79,7 @@ struct HomeView: View {
                 ProgressView().controlSize(.mini)
                 Text("Syncing…")
             case let .failed(message):
-                if model.isOffline {
+                if model.syncProblemIsJustOffline {
                     Image(systemName: "wifi.slash")
                         .foregroundStyle(CairnTheme.warning)
                     Text("Sync paused while offline")
@@ -189,8 +189,10 @@ struct HomeView: View {
                     Image(systemName: "mountain.2.fill")
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(CairnTheme.inkGlow)
+                        .accessibilityHidden(true)
                     Text("Welcome to Cairn")
                         .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
                     Text("Connect a bank through SimpleFIN, read Apple Wallet, or add an account by hand. Everything stays on your devices.")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.78))

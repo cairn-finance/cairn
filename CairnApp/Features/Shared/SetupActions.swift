@@ -92,6 +92,7 @@ struct GetStartedEmptyState: View {
             VStack(spacing: 6) {
                 Text(title)
                     .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
                 Text(message)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

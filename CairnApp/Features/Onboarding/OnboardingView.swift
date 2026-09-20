@@ -40,8 +40,11 @@ struct OnboardingView: View {
             .cairnLockCover()
         }
         .sheet(isPresented: $showingUseWithoutBank) {
-            UseWithoutBankSheet { model.completeOnboarding() }
-                .cairnLockCover()
+            UseWithoutBankSheet {
+                showingUseWithoutBank = false
+                model.completeOnboarding()
+            }
+            .cairnLockCover()
         }
         .confirmationDialog(
             "Forget the saved connection?",
@@ -70,6 +73,7 @@ struct OnboardingView: View {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .foregroundStyle(CairnTheme.inkGlow)
+                    .accessibilityHidden(true)
                 Text("Found a saved SimpleFIN connection")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
@@ -142,6 +146,7 @@ struct OnboardingView: View {
                 Image(systemName: "mountain.2.fill")
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(CairnTheme.inkGlow)
+                    .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Cairn")
@@ -194,6 +199,7 @@ struct OnboardingView: View {
                 .foregroundStyle(CairnTheme.inkGlow)
                 .frame(width: 30, height: 30)
                 .background(CairnTheme.inkGlow.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))

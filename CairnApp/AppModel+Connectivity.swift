@@ -19,4 +19,19 @@ extension AppModel {
         if case .failed = syncState { return true }
         return false
     }
+
+    /// Resumes a sync the network interrupted. Called when reachability comes
+    /// back, so the copy promising an automatic resume is actually wired. Only
+    /// a pass that ended in a failure is resumed, and never a second pass while
+    /// one is already in flight, so a flapping path cannot pile up syncs.
+    func resumeSyncAfterReconnect() {
+        guard storeFailure == nil, !isResumingAfterReconnect, syncState != .syncing else { return }
+        guard case .failed = syncState else { return }
+        isResumingAfterReconnect = true
+        Task { [weak self] in
+            guard let self else { return }
+            await self.syncAll(force: false)
+            self.isResumingAfterReconnect = false
+        }
+    }
 }
