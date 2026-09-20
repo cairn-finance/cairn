@@ -135,8 +135,12 @@ NSGraphicsContext.restoreGraphicsState()
 guard let png = rep.representation(using: .png, properties: [:]) else {
     fatalError("Could not encode banner")
 }
-try! FileManager.default.createDirectory(
-    atPath: "\(root)/docs/images", withIntermediateDirectories: true
-)
-try! png.write(to: URL(fileURLWithPath: outputPath))
+do {
+    try FileManager.default.createDirectory(
+        atPath: "\(root)/docs/images", withIntermediateDirectories: true
+    )
+    try png.write(to: URL(fileURLWithPath: outputPath))
+} catch {
+    fatalError("Could not write banner: \(error)")
+}
 print("Wrote \(outputPath)")
