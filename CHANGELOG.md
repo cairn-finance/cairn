@@ -34,6 +34,9 @@ All notable changes to Cairn are documented here. This project follows
   anything is stored in iCloud.
 - Removing Wallet data is offered on iPhone and iPad only.
 - Documentation, Info.plist, and the background task now match the app.
+- Activity and account history load a bounded window of rows and extend it as
+  you scroll, instead of loading the whole ledger up front. Insights builds its
+  figures off the main thread.
 
 ### Fixed
 
