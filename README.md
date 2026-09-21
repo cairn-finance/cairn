@@ -10,7 +10,7 @@
 Cairn is a privacy-first personal finance app for iPhone, iPad, and Mac, for
 people who want to see their whole financial picture without a Cairn-operated
 backend. It reads the bank accounts you authorize through
-[SimpleFIN](https://www.simplefin.org) and Apple Wallet, enriches everything on
+[SimpleFIN](https://www.simplefin.org) ($1.5/month or $15/year) and Apple Wallet, enriches everything on
 your device, and — if you choose — syncs between your devices through your own
 private iCloud database. There is no Cairn backend. Ever.
 
