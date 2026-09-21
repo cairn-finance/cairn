@@ -202,6 +202,7 @@ struct NetWorthView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Net worth over time"))
         .accessibilityValue(Text(verbatim: summary(points)))
+        .accessibilityChartDescriptor(chartDescriptor(points))
         .accessibilityAdjustableAction { direction in
             let dates = points.map(\.date)
             guard !dates.isEmpty else { return }
@@ -220,6 +221,32 @@ struct NetWorthView: View {
         let start = Money(minorUnits: first.balanceMinorUnits, currency: currency).formatted()
         let end = Money(minorUnits: last.balanceMinorUnits, currency: currency).formatted()
         return "\(start) to \(end)"
+    }
+
+    /// The VoiceOver chart rotor and audio graph for the net-worth line.
+    private func chartDescriptor(
+        _ points: [(date: Date, balanceMinorUnits: Int64)]
+    ) -> AccessibleChart {
+        AccessibleChart(
+            title: String(localized: "Net worth over time"),
+            summary: summary(points),
+            xTitle: String(localized: "Date"),
+            yTitle: String(localized: "Balance"),
+            lines: [
+                .init(
+                    name: String(localized: "Net worth"),
+                    isContinuous: true,
+                    points: points.map {
+                        (
+                            x: $0.date.timeIntervalSince1970,
+                            y: NetWorthMath.doubleValue($0.balanceMinorUnits, currency: currency)
+                        )
+                    }
+                )
+            ],
+            describesX: { Date(timeIntervalSince1970: $0).formatted(date: .abbreviated, time: .omitted) },
+            describesY: { $0.formatted(.currency(code: currency.code)) }
+        )
     }
 
     // MARK: - Breakdown

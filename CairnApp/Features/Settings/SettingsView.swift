@@ -220,6 +220,9 @@ struct SettingsView: View {
                     Text("\(institution.accounts?.count ?? 0)")
                         .font(.footnote.monospacedDigit())
                         .foregroundStyle(.tertiary)
+                    destructiveMenu("Disconnect", systemImage: "xmark.circle") {
+                        institutionToDisconnect = institution
+                    }
                 }
                 .swipeActions {
                     Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {
@@ -250,6 +253,9 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+                    }
+                    destructiveMenu("Forget", systemImage: "trash") {
+                        credentialToForget = credential
                     }
                 }
                 .swipeActions {
@@ -535,6 +541,29 @@ struct SettingsView: View {
         } footer: {
             Text("Cairn is not affiliated with SimpleFIN or any bank. It reads data you authorize and never moves money.")
         }
+    }
+
+    /// A focusable overflow menu for a destructive row action, so it is
+    /// reachable by keyboard on macOS. Macs have no swipe actions, and a
+    /// context menu is not part of the Tab order.
+    @ViewBuilder
+    private func destructiveMenu(
+        _ title: LocalizedStringKey,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        #if os(macOS)
+        Menu {
+            Button(title, systemImage: systemImage, role: .destructive, action: action)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel(Text(title))
+        #else
+        EmptyView()
+        #endif
     }
 
     private var appVersion: String {

@@ -27,8 +27,10 @@ All notable changes to Cairn are documented here. This project follows
 - A String Catalog with Info.plist usage descriptions, so every user-facing
   string is extractable and ready to translate.
 - Accessibility: labeled controls, buttons, and charts; headline figures scale
-  with Dynamic Type; Reduce Motion and Reduce Transparency are honored; and
-  chips, swatches, and segmented controls report their selected state.
+  with Dynamic Type; Reduce Motion and Reduce Transparency are honored; chips,
+  swatches, and segmented controls report their selected state; charts offer
+  VoiceOver chart details and an audio graph; and destructive connection actions
+  are reachable by keyboard on the Mac.
 
 ### Changed
 
