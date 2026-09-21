@@ -136,4 +136,4 @@ git push origin "v$next"
 
 echo
 echo "Pushed v$next. CI is now building, uploading to TestFlight, and creating"
-echo "the GitHub Release: https://github.com/sehejjain/cairn/actions"
+echo "the GitHub Release: https://github.com/cairn-finance/cairn/actions"

@@ -1,15 +1,15 @@
 # Privacy Policy
 
-_Last updated: September 18, 2026_
+_Last updated: September 20, 2026_
 
-Cairn is a personal finance app that runs on your device. **The Cairn project
-operates no servers and collects no personal data.**
+Cairn is a personal finance app that runs on your device. **Cairn has no
+backend, and the Cairn developer does not collect your personal data.**
 
 ## What Cairn collects
 
-Nothing. There is no analytics, no crash reporting, no advertising identifier,
-and no third-party SDK. Cairn does not create an account for you and cannot see
-your data.
+Nothing for Cairn or its developer. There is no analytics, crash reporting,
+advertising identifier, or third-party runtime SDK. Cairn does not create an
+account for you and cannot see your data.
 
 ## Where your data goes
 
@@ -43,7 +43,9 @@ your data.
   a merchant; that work happens locally, and transaction text is not sent to a
   server. Rule-based categorization and merchant memory never leave the device
   at all.
-- **No one else.** There is no Cairn backend, and no data is sold or shared.
+- **No Cairn backend.** Cairn does not sell data or share it with the Cairn
+  developer. The direct SimpleFIN and optional iCloud transfers above are the
+  only exceptions to data staying on your device.
 
 ## Credentials
 
@@ -74,4 +76,5 @@ Material changes will be noted in the repository's release history.
 
 ## Contact
 
-Open an issue at https://github.com/sehejjain/cairn.
+See the [Cairn support page](https://cairn-finance.github.io/cairn/support.html)
+or open an issue at https://github.com/cairn-finance/cairn.

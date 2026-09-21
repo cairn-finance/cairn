@@ -1,15 +1,15 @@
 ![Cairn — Your money. Your data. No account, no server, no tracking.](docs/images/banner.png)
 
-[![CI](https://github.com/sehejjain/cairn/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sehejjain/cairn/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/sehejjain/cairn)](https://github.com/sehejjain/cairn/releases/latest)
-[![License](https://img.shields.io/github/license/sehejjain/cairn)](LICENSE)
+[![CI](https://github.com/cairn-finance/cairn/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/cairn-finance/cairn/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/cairn-finance/cairn)](https://github.com/cairn-finance/cairn/releases/latest)
+[![License](https://img.shields.io/github/license/cairn-finance/cairn)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2026%20%C2%B7%20iPadOS%2026%20%C2%B7%20macOS%2026-blue)](#requirements)
 [![Swift 6](https://img.shields.io/badge/Swift-6-orange)](#build)
 [![TestFlight](https://img.shields.io/badge/TestFlight-join%20the%20beta-0D96F6?logo=apple&logoColor=white)](https://testflight.apple.com/join/zcmwDyef)
 
 Cairn is a privacy-first personal finance app for iPhone, iPad, and Mac, for
-people who want to see their whole financial picture without handing it to a
-company. It reads the bank accounts you authorize through
+people who want to see their whole financial picture without a Cairn-operated
+backend. It reads the bank accounts you authorize through
 [SimpleFIN](https://www.simplefin.org) and Apple Wallet, enriches everything on
 your device, and — if you choose — syncs between your devices through your own
 private iCloud database. There is no Cairn backend. Ever.
@@ -35,9 +35,13 @@ no budgets, reports, or exchange rates yet.
 ## Try it
 
 - Join the public beta: **https://testflight.apple.com/join/zcmwDyef**
-- Bank sync needs a [SimpleFIN Bridge](https://www.simplefin.org) account, which
-  is a separate paid service. Cairn talks to it directly; there is no Cairn
-  server in between.
+- **Cairn is free:** it has no subscription, account, or Cairn service fee.
+  Automatic bank sync needs your own [SimpleFIN Bridge](https://www.simplefin.org)
+  account, a separate paid service billed by SimpleFIN — not Cairn. Cairn talks
+  to it directly; there is no Cairn server in between.
+- Thank you to SimpleFIN for the Bridge service and SimpleFIN protocol that make
+  direct, read-only bank connections possible. SimpleFIN is independent; its
+  pricing, institution coverage, and terms are its own.
 - You can use Cairn without SimpleFIN: add manual accounts and import CSV
   exports from your bank or another app.
 - Apple Wallet import (Apple Card, Apple Cash, Savings) works on iPhone and
@@ -72,11 +76,12 @@ no budgets, reports, or exchange rates yet.
 
 ## Privacy
 
-- **No server, no analytics, no third-party SDKs.** The only network traffic is
-  to the SimpleFIN server you configure, plus your own iCloud database if you
-  turn sync on. Nothing is sent to us. If a bank reports a custom currency
-  (miles, points), Cairn fetches that descriptor once from the HTTPS URL the
-  SimpleFIN response names, and caches it.
+- **No Cairn backend, analytics, advertising, or third-party runtime SDKs.**
+  The only network traffic is to the SimpleFIN server you configure, plus your
+  own iCloud database if you turn sync on. Nothing is sent to the Cairn
+  developer. If a bank reports a custom currency (miles, points), Cairn fetches
+  that descriptor once from the HTTPS URL the SimpleFIN response names, and
+  caches it.
 - Apple Wallet data is read through FinanceKit on-device and mirrored into the
   same store as everything else, so it follows the same storage choice.
 - Categorization runs on-device. When Apple Intelligence is used, transaction
@@ -92,7 +97,10 @@ no budgets, reports, or exchange rates yet.
 - Financial amounts are stored as integer minor units — exact, and never a float.
 
 See [`docs/threat-model.md`](docs/threat-model.md) and
-[`docs/privacy-policy.md`](docs/privacy-policy.md).
+[`docs/privacy-policy.md`](docs/privacy-policy.md). The app's public
+[Privacy Policy](https://cairn-finance.github.io/cairn/privacy.html) and
+[Support](https://cairn-finance.github.io/cairn/support.html) pages are hosted
+on GitHub Pages.
 
 ## Requirements
 

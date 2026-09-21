@@ -6,22 +6,29 @@ else, so they sync through CloudKit with the rest of the ledger. FinanceKit
 authorization, on the other hand, is granted **per device**: an iPhone can read
 Apple Card while a Mac cannot read Wallet at all.
 
-Those two facts disagree, and this note records the disagreement, the options,
-and what still needs deciding.
+Those two facts create a cross-device limitation. This note records the current
+behavior, the options, and what still needs deciding.
 
-## What goes wrong today
+## The original Mac removal failure
 
-1. On the Mac, "Remove Apple Wallet data" deletes the Wallet rows locally.
+Earlier builds offered "Remove Apple Wallet data" on the Mac. That led to this
+failure mode:
+
+1. On the Mac, the action deleted the Wallet rows locally.
 2. Those deletions sync to every device, so the iPhone loses the same rows.
 3. The iPhone still has FinanceKit access and Wallet sync on, so its next Wallet
    sync imports the same cards again — as new rows, with new identities, because
    CloudKit record names are per object.
 4. The re-imported rows sync back to the Mac.
 
-So the Mac's removal does not stick, and every cycle throws away anything the
+So the Mac's removal did not stick, and every cycle threw away anything the
 person attached to those rows — a corrected category, a note, a tag — because the
 rows are new objects each time. The same mechanism can duplicate a card if two
 authorized devices import it with different account keys.
+
+The Mac action has since been removed. The equivalent limitation still applies
+when one authorized iPhone or iPad removes Wallet data while another authorized
+iPhone or iPad continues importing it.
 
 ## Why the obvious fixes do not work
 
@@ -80,11 +87,11 @@ durable store is the right home for it.
   produce different keys for one card, design B still leaves two accounts in the
   ledger unless the key is derived from something stable (issuer, display name,
   last four digits). Worth checking before relying on the keys: authorize Wallet
-  on the iPhone, note the account key or the account's displayed balance, and
-  compare with what a Mac sees in `Account.bankAccountID` for the same card.
-- Whether the Wallet "Remove" affordance should exist on a Mac at all. Under
-  design A it should not; under design B it is the natural place to turn the
-  shared intent off.
+  on an iPhone and iPad, then compare the account keys each device imports for
+  the same card.
+- Whether a future shared Wallet-tracking preference should be controllable on
+  the Mac. Under design A it should not; under design B it could be the natural
+  place to turn the shared intent off.
 
 ## Interim decision
 

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Cairn privacy policy.">
+    <title>Privacy Policy — Cairn</title>
+    <link rel="stylesheet" href="site.css">
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow"><a href="index.html">Cairn</a></p>
+      <h1>Privacy Policy</h1>
+      <p class="muted">Last updated: September 20, 2026</p>
+      <p>Cairn is a personal finance app that runs on your device. <strong>Cairn has no backend, and the Cairn developer does not collect your personal data.</strong></p>
+
+      <h2>What Cairn collects</h2>
+      <p>Nothing for Cairn or its developer. There is no analytics, crash reporting, advertising identifier, or third-party runtime SDK. Cairn does not create an account for you and cannot see your data.</p>
+
+      <h2>Where your data goes</h2>
+      <ul>
+        <li><strong>SimpleFIN.</strong> When you connect an institution, Cairn requests balances and transactions from the SimpleFIN server you choose, such as the SimpleFIN Bridge or your bank's own server. The request goes directly from your device to that server, authorized by credentials you provide.</li>
+        <li><strong>Custom-currency descriptors.</strong> If a bank reports a custom currency such as miles or points, Cairn fetches the HTTPS descriptor URL named in that SimpleFIN response once and caches it. That host sees your device's IP address; the request carries no financial data.</li>
+        <li><strong>iCloud, only if you enable iCloud Sync.</strong> Your data is stored in your private CloudKit database. Amounts, balances, names, descriptions, notes, merchant names, and dates use CloudKit encrypted fields. Apple can see record existence, change times, and structural metadata, but not that financial content. With “This Device Only,” nothing is sent to iCloud.</li>
+        <li><strong>Apple Wallet, on-device.</strong> If you connect Apple Wallet, Cairn reads Apple Card, Apple Cash, and Savings through FinanceKit on your device. The data stays on-device with “This Device Only” and joins your private iCloud database only if you enable iCloud Sync.</li>
+        <li><strong>On-device categorization.</strong> Categorization, including supported Apple Intelligence suggestions, happens locally. Transaction text is not sent to a server.</li>
+      </ul>
+
+      <h2>Credentials</h2>
+      <p>Your SimpleFIN Access URL is a bearer credential. Cairn stores it only in the device Keychain. With iCloud Sync on, it syncs through iCloud Keychain; with it off, it is stored non-synchronizably with device-only protection.</p>
+
+      <h2>Your control</h2>
+      <ul>
+        <li>Export every transaction to CSV or JSON at any time.</li>
+        <li>Delete All Data removes local data and, if sync is enabled, your private iCloud data.</li>
+        <li>Revoke Cairn's access at your SimpleFIN Bridge whenever you choose.</li>
+      </ul>
+
+      <h2>Children</h2>
+      <p>Cairn is not directed at children and does not collect data from anyone.</p>
+
+      <h2>Contact</h2>
+      <p>See <a href="support.html">Cairn Support</a> or open an issue at <a href="https://github.com/cairn-finance/cairn">github.com/cairn-finance/cairn</a>.</p>
+    </main>
+  </body>
+</html>

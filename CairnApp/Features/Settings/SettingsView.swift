@@ -512,7 +512,7 @@ struct SettingsView: View {
             IconRow("Version", systemImage: "mountain.2.fill", tint: CairnTheme.ink) {
                 Text(appVersion).foregroundStyle(.secondary)
             }
-            Link(destination: URL(string: "https://github.com/sehejjain/cairn")!) {
+            Link(destination: URL(string: "https://github.com/cairn-finance/cairn")!) {
                 IconRow("Source Code", systemImage: "chevron.left.forwardslash.chevron.right", tint: .gray) {
                     Image(systemName: "arrow.up.right")
                         .font(.caption.weight(.semibold))
@@ -520,7 +520,7 @@ struct SettingsView: View {
                         .accessibilityHidden(true)
                 }
             }
-            Link(destination: URL(string: "https://sehejjain.github.io/cairn/privacy.html")!) {
+            Link(destination: URL(string: "https://cairn-finance.github.io/cairn/privacy.html")!) {
                 IconRow("Privacy Policy", systemImage: "hand.raised.fill", tint: .gray) {
                     Image(systemName: "arrow.up.right")
                         .font(.caption.weight(.semibold))
@@ -528,7 +528,7 @@ struct SettingsView: View {
                         .accessibilityHidden(true)
                 }
             }
-            Link(destination: URL(string: "https://sehejjain.github.io/cairn/support.html")!) {
+            Link(destination: URL(string: "https://cairn-finance.github.io/cairn/support.html")!) {
                 IconRow("Support", systemImage: "questionmark.circle.fill", tint: .gray) {
                     Image(systemName: "arrow.up.right")
                         .font(.caption.weight(.semibold))
