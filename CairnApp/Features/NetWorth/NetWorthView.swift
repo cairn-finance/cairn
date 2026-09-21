@@ -201,6 +201,16 @@ struct NetWorthView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Net worth over time"))
         .accessibilityValue(Text(verbatim: summary(points)))
+        .accessibilityAdjustableAction { direction in
+            let dates = points.map(\.date)
+            guard !dates.isEmpty else { return }
+            let index = selectedDate.flatMap { selected in dates.firstIndex(of: selected) }
+            switch direction {
+            case .increment: selectedDate = dates[min((index ?? -1) + 1, dates.count - 1)]
+            case .decrement: selectedDate = dates[max((index ?? dates.count) - 1, 0)]
+            @unknown default: break
+            }
+        }
     }
 
     /// A spoken summary of the range, since the line itself is visual.

@@ -438,6 +438,16 @@ struct InsightsView: View {
                     .accessibilityValue(
                         Text(verbatim: data.cumulative.last.map { moneyText($0.amountMinorUnits) } ?? "")
                     )
+                    .accessibilityAdjustableAction { direction in
+                        let days = data.cumulative.map(\.day)
+                        guard !days.isEmpty else { return }
+                        let index = paceSelection.flatMap { days.firstIndex(of: $0) }
+                        switch direction {
+                        case .increment: paceSelection = days[min((index ?? -1) + 1, days.count - 1)]
+                        case .decrement: paceSelection = days[max((index ?? days.count) - 1, 0)]
+                        @unknown default: break
+                        }
+                    }
 
                     HStack(spacing: 14) {
                         legend("This month", color: CairnTheme.accent, dashed: false)
@@ -543,6 +553,18 @@ struct InsightsView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text("Monthly spending"))
                 .accessibilityValue(Text("Average \(moneyText(average)) per month"))
+                .accessibilityAdjustableAction { direction in
+                    let months = data.months.map(\.monthStart)
+                    guard !months.isEmpty else { return }
+                    let index = trendSelection.flatMap { selected in
+                        months.firstIndex { Calendar.current.isDate($0, equalTo: selected, toGranularity: .month) }
+                    }
+                    switch direction {
+                    case .increment: trendSelection = months[min((index ?? -1) + 1, months.count - 1)]
+                    case .decrement: trendSelection = months[max((index ?? months.count) - 1, 0)]
+                    @unknown default: break
+                    }
+                }
             }
         }
     }
