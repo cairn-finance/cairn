@@ -435,6 +435,9 @@ struct InsightsView: View {
                     .sensoryFeedback(.selection, trigger: paceSelection)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text("Spending pace"))
+                    .accessibilityValue(
+                        Text(verbatim: data.cumulative.last.map { moneyText($0.amountMinorUnits) } ?? "")
+                    )
 
                     HStack(spacing: 14) {
                         legend("This month", color: CairnTheme.accent, dashed: false)
@@ -539,6 +542,7 @@ struct InsightsView: View {
                 .sensoryFeedback(.selection, trigger: trendSelection)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text("Monthly spending"))
+                .accessibilityValue(Text("Average \(moneyText(average)) per month"))
             }
         }
     }

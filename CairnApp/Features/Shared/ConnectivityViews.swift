@@ -7,7 +7,7 @@ struct OfflineNoticeView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "wifi.slash")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(CairnTheme.warning)
                 .frame(width: 30, height: 30)
                 .background(CairnTheme.warning.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -67,7 +67,7 @@ struct SyncIssueCard: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: issue.isFailure ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(issue.isFailure ? CairnTheme.warning : .secondary)
                             .frame(width: 30, height: 30)
                             .background(

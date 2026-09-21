@@ -332,7 +332,7 @@ struct HoldingRow: View {
                     .padding(.horizontal, 3)
             } else {
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(CairnTheme.accent)
             }
         }
