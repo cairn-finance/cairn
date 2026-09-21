@@ -4,6 +4,128 @@ All notable changes to Cairn are documented here. This project follows
 [Semantic Versioning](https://semver.org) and
 [Keep a Changelog](https://keepachangelog.com).
 
+## [1.0.0] - 2026-09-21
+
+- docs: note public support pages
+- docs: publish support and privacy pages
+- Catalog the chart descriptor strings
+- Add VoiceOver chart details and a Mac action menu
+- Honor Reduce Motion in the remaining animations
+- Hide decorative icons from VoiceOver
+- Let VoiceOver step through the charts
+- Scale the remaining fixed fonts and label chart values
+- Make headline figures and charts accessible
+- Label controls, charts, and state for VoiceOver
+- Check in the extracted String Catalog
+- Add a Sync Cairn App Intent and pin chart label anchors
+- Clear every Swift compiler and SwiftLint warning
+- Keep merged localization strings within the lint limit
+- Note windowed lists and off-main Insights in the changelog
+- Avoid empty-state flashes while windowed lists load
+- Build Insights input on a background model actor
+- Feed transaction lists from a bounded window
+- Add windowed transaction snapshots and list-window policy
+- Add localization scaffolding and plural-aware UI strings
+- Replace force tries in the banner script
+- Fix manual-entry and category data integrity
+- Resume sync automatically when the network returns
+- Add category management to Settings
+- Show clear empty, offline, and sync-failure states
+- Add manual-account transaction editing
+- Log backfill rows dropped for accounts the store lost
+- Accept a range warning that arrives with rows
+- Backfill older transaction history on connect and first sync
+- Note the duplicate-connection repair in the changelog
+- Fix a crash when a repair invalidates rows the UI still maps
+- Add a Debug-only flag to preview credential re-keying
+- Describe the duplicate banner in visible terms
+- Skip a connection the repair merged away mid-sync
+- Match a stored connection that has no organization id
+- Keep the working Access URL when re-keying a merged credential
+- Import to a duplicate connection's survivor during sync
+- Test connection matching, repair, removal, and re-keying
+- Wire claim matching and the duplicate repair into the app
+- Match SimpleFIN connections by identity across credentials
+- Rewrite the changelog for users
+- Add CI and release workflows
+- Point the README at the public TestFlight beta
+- Use the maintainer email for security reports
+- Say the TestFlight beta is coming, not live
+- Match the architecture doc's encryption notes to the schema
+- Hide the TestFlight placeholder until the link exists
+- Say which fields CloudKit encrypts and which stay plaintext
+- Fit the README screenshots on a phone screen
+- Point About at the public privacy and support pages
+- Date the privacy policy and clarify Wallet and iCloud
+- State the trademark carve-out in NOTICE
+- Point security reports at a placeholder contact
+- Add issue and pull request templates
+- Rewrite the README as a landing page
+- Add landing-page screenshots
+- Add a banner generator and its output
+- Set the sample institution's last successful sync
+- Set syncing only once a reconnect will proceed
+- Record that iPad Wallet removal is not authoritative
+- Categorize the sample ledger in sample mode
+- Wait for the import before offering a reconnect
+- Finish onboarding after reconnecting on it
+- Guard a reconnect against double taps
+- Give new source files a trailing newline
+- Reconnect an orphaned SimpleFIN credential
+- Never replace a failed store with an empty one
+- Show the sample account as healthy and trending up
+- Wrap long lines and drop an unused test binding
+- Isolate battery reads to the main actor
+- Surface export failures through the banner
+- Keep Wallet removal off the Mac, where it can't stick
+- Let the sandboxed Mac app open the picked file
+- Raise the regex deadline to two seconds and test it via budget
+- Work from merchants and a window, not the whole ledger
+- Record why a Wallet disconnect cannot stick
+- Bound a regex rule's work
+- Record the CloudKit promotion
+- Make the schema initializer print CloudKit rule violations
+- Keep the encrypted date out of the index
+- Give the initializer a runnable example
+- Warn that the container setting repoints every build
+- Say what a bad container actually does
+- Hash the schema declarations rather than the file text
+- Declare the whole schema in one pass
+- Encrypt dates, the account type, and balance days
+- Point the contributor docs at the container setting
+- Add a schema hash check and the CloudKit promotions record
+- Resolve the CloudKit container from one setting
+- Encrypt every field that reveals financial detail
+- Do not prompt while the screen is away
+- Judge each Keychain copy on its own
+- Ask the store for the last two cached lookups
+- Clamp the projected-spend conversion
+- Serve cached currencies after the lookup cap
+- Stop treating a card shop as a card issuer
+- Re-engage the Mac lock when the screen locks
+- Rewrite a credential only when it differs
+- Ask the store before writing to an institution
+- Complete a background task through one gate
+- Cover the card-payment path through the bank name
+- Ask about storage before the connect buttons
+- Clear Wallet bookkeeping on Delete All Data
+- Preserve the screen across a lock
+- Fix Keychain copies and bound custom-currency lookups
+- Keep card payments out of spending
+- Make the post-await crash guard store-backed
+- Clamp the remaining money sums
+- Match counterparty names on word boundaries
+- Ignore local screenshot captures
+- Align the docs, Info.plist, and background task with the app
+- Fix the changelog, the release script, and custom currencies
+- Default iCloud sync to off and ask during onboarding
+- Harden the diagnostics log, Keychain, lock, regex, and money math
+- Clear holdings, logs, and preferences in Delete All Data
+- Restrict Wallet account removal to accounts this device has seen
+- Re-resolve rows after model calls during categorization
+- Stop treating bill payments as transfers
+- Match institution names on word boundaries
+
 ## [Unreleased]
 
 ### Added
