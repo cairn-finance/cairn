@@ -10,6 +10,8 @@ struct SettingsView: View {
     private var walletAccounts: [Account]
     @Query(sort: \CategorizationRule.createdAt) private var rules: [CategorizationRule]
     @Query(sort: \Tag.name) private var tags: [Tag]
+    @Query(sort: [SortDescriptor(\CairnSchemaV1.Category.sortOrder)])
+    private var categories: [CairnSchemaV1.Category]
 
     @State private var storageMode: StoreMode = .local
     @State private var exportDocument: ExportFile?
@@ -34,13 +36,12 @@ struct SettingsView: View {
 
     /// Wallet accounts are written by FinanceKit on iPhone/iPad and reach other
     /// devices through iCloud, so the count alone understates how they update.
-    private var walletSubtitle: String {
+    private var walletSubtitle: LocalizedStringKey {
         let count = walletAccounts.count
-        let base = "\(count) \(count == 1 ? "account" : "accounts")"
         #if os(macOS)
-        return base + " · Updates on your iPhone"
+        return "^[\(count) account](inflect: true) · Updates on your iPhone"
         #else
-        return base
+        return "^[\(count) account](inflect: true)"
         #endif
     }
 
@@ -84,11 +85,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(
-                "This removes every account, transaction, category, and stored credential from this device and, "
-                + "if iCloud Sync is on, from your iCloud database. This cannot be undone. "
-                + "Export first if you want a copy."
-            )
+            Text("This removes all your data from this device and, if iCloud Sync is on, from iCloud. It cannot be undone.")
         }
         .confirmationDialog(
             "Disconnect \(institutionToDisconnect?.name ?? "institution")?",
@@ -106,9 +103,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { institutionToDisconnect = nil }
         } message: {
-            Text("The stored credential is removed from the Keychain and local data is deleted. "
-                + "Banks that share this SimpleFIN connection are disconnected too. "
-                + "Revoke access at SimpleFIN as well if you want to be certain.")
+            Text("The stored credential is removed from the Keychain and local data is deleted. Shared banks disconnect too.")
         }
         .confirmationDialog(
             "Remove Apple Wallet data?",
@@ -120,8 +115,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes the Wallet accounts and transactions Cairn imported. "
-                + "It can’t revoke access; change that in Settings › Privacy & Security › Financial Data.")
+            Text("This deletes the Wallet accounts and transactions Cairn imported. To revoke access, change it in Settings.")
         }
         .confirmationDialog(
             "Forget the saved connection?",
@@ -137,8 +131,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { credentialToForget = nil }
         } message: {
-            Text("This removes the saved SimpleFIN connection from this device. "
-                + "Reconnecting it later will need a new setup token.")
+            Text("This removes the saved SimpleFIN connection from this device. Reconnecting needs a new setup token.")
         }
     }
 
@@ -146,6 +139,14 @@ struct SettingsView: View {
 
     private var syncSection: some View {
         Section {
+            IconRow(
+                "Connection",
+                systemImage: model.isOffline ? "wifi.slash" : "wifi",
+                tint: model.isOffline ? CairnTheme.warning : CairnTheme.positive
+            ) {
+                Text(model.isOffline ? "Offline" : "Online")
+                    .foregroundStyle(.secondary)
+            }
             IconRow("Last successful sync", systemImage: "arrow.triangle.2.circlepath", tint: CairnTheme.accent) {
                 if let date = lastSuccessfulSync {
                     Text(date, format: .relative(presentation: .named))
@@ -162,7 +163,11 @@ struct SettingsView: View {
             Button {
                 Task { await model.syncAll(force: true) }
             } label: {
-                IconRow(model.syncState == .syncing ? "Syncing…" : "Sync Now", systemImage: "arrow.clockwise", tint: CairnTheme.accent) {
+                IconRow(
+                    model.syncState == .syncing ? "Syncing…" : "Sync Now",
+                    systemImage: "arrow.clockwise",
+                    tint: CairnTheme.accent
+                ) {
                     if model.syncState == .syncing {
                         ProgressView().controlSize(.small)
                     }
@@ -177,7 +182,10 @@ struct SettingsView: View {
         } header: {
             Text("Sync")
         } footer: {
-            Text("Each bank has its own SimpleFIN daily budget, shared across your devices. Cairn shows the smallest and refreshes conservatively.")
+            Text("Each bank has its own SimpleFIN daily budget, shared across your devices. Cairn shows the smallest."
+                + (model.isOffline
+                    ? " You’re offline right now, so sync is paused; your saved data still works and sync resumes automatically."
+                    : ""))
         }
     }
 
@@ -187,7 +195,10 @@ struct SettingsView: View {
         Section {
             ForEach(visibleInstitutions) { institution in
                 HStack(spacing: 12) {
-                    SettingsIcon(systemImage: "building.columns.fill", tint: institution.lastSyncError == nil ? CairnTheme.accent : CairnTheme.negative)
+                    SettingsIcon(
+                        systemImage: "building.columns.fill",
+                        tint: institution.lastSyncError == nil ? CairnTheme.accent : CairnTheme.negative
+                    )
                     VStack(alignment: .leading, spacing: 3) {
                         Text(institution.name.isEmpty ? "Institution" : institution.name)
                         if let error = institution.lastSyncError {
@@ -304,7 +315,7 @@ struct SettingsView: View {
             )) {
                 IconRow(
                     "Use Apple Intelligence",
-                    subtitle: AppleIntelligenceCategorizer.deviceProfile.summary,
+                    subtitle: "\(AppleIntelligenceCategorizer.deviceProfile.summary)",
                     systemImage: "sparkles",
                     tint: Color(red: 0.62, green: 0.36, blue: 0.87)
                 )
@@ -326,10 +337,7 @@ struct SettingsView: View {
         } header: {
             Text("Categorization")
         } footer: {
-            Text("Rules and your past corrections always run on-device, automatically after every sync and import. "
-                + "Apple Intelligence is used only for what they can’t place — one merchant at a time rather than one "
-                + "transaction at a time — and only its on-device model, never the cloud. The model pauses when your "
-                + "device is hot or in Low Power Mode.")
+            Text("Rules and corrections run on-device after every sync. Apple Intelligence fills what they can’t.")
         }
     }
 
@@ -357,23 +365,36 @@ struct SettingsView: View {
                     tint: Color(red: 0.20, green: 0.68, blue: 0.90)
                 )
             }
+            NavigationLink {
+                CategoriesView()
+            } label: {
+                IconRow(
+                    "Categories",
+                    subtitle: categoriesSubtitle,
+                    systemImage: "square.grid.2x2.fill",
+                    tint: Color(red: 0.98, green: 0.58, blue: 0.20)
+                )
+            }
         } header: {
             Text("Organization")
         } footer: {
-            Text("Rules assign a category by matching the bank description or amount. A rule always "
-                + "beats an automatic guess but never overrides a category you set. Tags are free-form "
-                + "labels you can add to any transaction and search for.")
+            Text("Rules match the bank description or amount and assign a category. Tags are free-form labels.")
         }
     }
 
-    private var rulesSubtitle: String {
+    private var rulesSubtitle: LocalizedStringKey {
         let count = rules.count
-        return count == 0 ? "None yet" : "\(count) rule\(count == 1 ? "" : "s")"
+        return count == 0 ? "None yet" : "^[\(count) rule](inflect: true)"
     }
 
-    private var tagsSubtitle: String {
+    private var tagsSubtitle: LocalizedStringKey {
         let count = tags.count
-        return count == 0 ? "None yet" : "\(count) tag\(count == 1 ? "" : "s")"
+        return count == 0 ? "None yet" : "^[\(count) tag](inflect: true)"
+    }
+
+    private var categoriesSubtitle: LocalizedStringKey {
+        let count = categories.filter { !$0.isArchived }.count
+        return "^[\(count) category](inflect: true)"
     }
 
     // MARK: - Storage
@@ -384,7 +405,11 @@ struct SettingsView: View {
                 Text(StoreMode.cloud.displayName).tag(StoreMode.cloud)
                 Text(StoreMode.local.displayName).tag(StoreMode.local)
             } label: {
-                IconRow("Where data lives", systemImage: storageMode == .cloud ? "icloud.fill" : "internaldrive.fill", tint: storageMode == .cloud ? .blue : .gray)
+                IconRow(
+                    "Where data lives",
+                    systemImage: storageMode == .cloud ? "icloud.fill" : "internaldrive.fill",
+                    tint: storageMode == .cloud ? .blue : .gray
+                )
             }
             .onChange(of: storageMode) { _, newValue in
                 guard newValue != model.storeMode else { return }
@@ -408,7 +433,7 @@ struct SettingsView: View {
     /// uploaded, so there is nothing in iCloud to remove.
     private var deleteDataNote: String {
         if model.storeMode == .cloud {
-            "Delete All Data removes everything here and asks iCloud to remove what your other devices can see, which finishes once the deletion uploads."
+            "Delete All Data removes everything here and asks iCloud to remove it from your other devices."
         } else {
             "This device isn’t using iCloud, so Delete All Data removes everything here; nothing was uploaded to delete."
         }
@@ -443,14 +468,12 @@ struct SettingsView: View {
         }
     }
 
-    private var appLockFooter: String {
+    private var appLockFooter: LocalizedStringKey {
         guard model.lock.canAuthenticate else {
             return "Set a device passcode or password to use the app lock; until then it stays off."
         }
         let method = model.lock.biometryName.map { "\($0) or your device passcode" } ?? "your device passcode"
-        return "Cairn asks for \(method) when it opens or returns to the foreground. "
-            + "The SimpleFIN credential stays in the Keychain so a sync can run, "
-            + "and can be revoked any time from your SimpleFIN Bridge."
+        return "Cairn asks for \(method) when it opens or resumes. The SimpleFIN credential stays in the Keychain."
     }
 
     // MARK: - Data
@@ -472,7 +495,7 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Exports include every transaction and your categories and notes. Nothing is uploaded; the file is saved where you choose.")
+            Text("Exports include every transaction, category, and note. Nothing is uploaded; you choose where it saves.")
         }
     }
 
@@ -485,17 +508,26 @@ struct SettingsView: View {
             }
             Link(destination: URL(string: "https://github.com/sehejjain/cairn")!) {
                 IconRow("Source Code", systemImage: "chevron.left.forwardslash.chevron.right", tint: .gray) {
-                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
             }
             Link(destination: URL(string: "https://sehejjain.github.io/cairn/privacy.html")!) {
                 IconRow("Privacy Policy", systemImage: "hand.raised.fill", tint: .gray) {
-                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
             }
             Link(destination: URL(string: "https://sehejjain.github.io/cairn/support.html")!) {
                 IconRow("Support", systemImage: "questionmark.circle.fill", tint: .gray) {
-                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
             }
         } header: {

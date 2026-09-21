@@ -7,6 +7,9 @@ struct ManualAccountSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
+    /// Called with the created account, so a caller can continue a flow.
+    var onCreated: ((Account) -> Void)?
+
     @State private var name = ""
     @State private var type: AccountType = .checking
     @State private var currencyCode = "USD"
@@ -14,11 +17,29 @@ struct ManualAccountSheet: View {
     @State private var errorMessage: String?
     @FocusState private var nameFocused: Bool
 
+    init(initialType: AccountType = .checking, onCreated: ((Account) -> Void)? = nil) {
+        self.onCreated = onCreated
+        _type = State(initialValue: initialType)
+    }
+
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private let typeColumns = [GridItem(.adaptive(minimum: 96), spacing: 8)]
+
+    /// "0.00" or "0,00" depending on the locale, so the example matches what the
+    /// keyboard and parser expect.
+    private var decimalPlaceholder: String {
+        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
+        return "0\(separator)00"
+    }
+
+    /// "1250.00" / "1250,00" used in the liability footer example.
+    private var negativeExample: String {
+        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
+        return "-1250\(separator)00"
+    }
 
     var body: some View {
         NavigationStack {
@@ -38,7 +59,7 @@ struct ManualAccountSheet: View {
 
                 Section {
                     HStack {
-                        TextField("0.00", text: $openingBalance)
+                        TextField(decimalPlaceholder, text: $openingBalance)
                             .font(.title3.weight(.semibold).monospacedDigit())
                             #if os(iOS)
                             .keyboardType(.numbersAndPunctuation)
@@ -56,9 +77,11 @@ struct ManualAccountSheet: View {
                 } header: {
                     Text("Opening balance")
                 } footer: {
-                    Text(type.isLiability
-                         ? "Enter what you currently owe as a negative number, e.g. -1250.00."
-                         : "The balance right now. You can import transactions afterwards.")
+                    if type.isLiability {
+                        Text("Enter what you currently owe as a negative number, e.g. \(negativeExample).")
+                    } else {
+                        Text("The balance right now. You can import transactions afterwards.")
+                    }
                 }
 
                 if let errorMessage {
@@ -108,7 +131,10 @@ struct ManualAccountSheet: View {
             .padding(.vertical, 9)
             .frame(maxWidth: .infinity)
             .foregroundStyle(selected ? Color.white : style.tint)
-            .background(selected ? style.tint : style.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .background(
+                selected ? style.tint : style.tint.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
             .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -131,12 +157,13 @@ struct ManualAccountSheet: View {
         let trimmedBalance = openingBalance.trimmingCharacters(in: .whitespacesAndNewlines)
         let balance = trimmedBalance.isEmpty ? 0 : (MinorUnits.parse(trimmedBalance, exponent: currency.exponent) ?? 0)
 
-        model.createManualAccount(
+        let account = model.createManualAccount(
             name: trimmedName,
             type: type,
             openingBalanceMinorUnits: balance,
             currency: currency
         )
+        onCreated?(account)
         dismiss()
     }
 }

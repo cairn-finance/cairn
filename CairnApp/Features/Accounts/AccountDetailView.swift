@@ -5,15 +5,27 @@ import CairnCore
 
 struct AccountDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var model
 
     let account: Account
-    @Query private var transactions: [LedgerTransaction]
+    @State private var feed: TransactionsFeed?
+    @State private var searchText = ""
+    @State private var historySelection: Int?
+
+    /// The account's total row count, from `fetchCount`, so the hero never has
+    /// to materialize the account's whole history.
+    private var transactionCount: Int { feed?.sqlCount ?? 0 }
 
     @State private var showingImporter = false
     @State private var importPayload: ImportPayload?
-    @State private var searchText = ""
-    @State private var historySelection: Int?
+    @State private var showingAddTransaction = false
+    @State private var editingTransaction: LedgerTransaction?
+    @State private var transactionToDelete: LedgerTransaction?
+
+    @State private var showingRename = false
+    @State private var renameText = ""
+    @State private var showingDeleteAccount = false
 
     private struct ImportPayload: Identifiable {
         let id = UUID()
@@ -22,24 +34,17 @@ struct AccountDetailView: View {
 
     init(account: Account) {
         self.account = account
-        let bankID = account.bankAccountID
-        _transactions = Query(
-            filter: #Predicate { $0.accountIDIndex == bankID },
-            sort: [SortDescriptor(\LedgerTransaction.postedDate, order: .reverse)]
-        )
     }
 
-    /// Pending transactions have no posted date, so sort by effective date to
-    /// keep them at the top.
-    private var visibleTransactions: [LedgerTransaction] {
-        let base = searchText.isEmpty
-            ? transactions
-            : transactions.filter {
-                $0.payeeDescription.localizedStandardContains(searchText)
-                    || ($0.effectiveCategory?.name.localizedStandardContains(searchText) ?? false)
-                    || ($0.note?.localizedStandardContains(searchText) ?? false)
-            }
-        return base.sorted { $0.effectiveDate > $1.effectiveDate }
+    private var accountFilter: TransactionFilter {
+        TransactionFilter(accountID: account.persistentModelID)
+    }
+
+    /// Resolves a row snapshot back to its model only when an edit or delete is
+    /// actually requested.
+    private func model(for row: TransactionRowValue) -> LedgerTransaction? {
+        guard let id = row.persistentID else { return nil }
+        return modelContext.model(for: id) as? LedgerTransaction
     }
 
     var body: some View {
@@ -51,17 +56,36 @@ struct AccountDetailView: View {
                     holdingsCard
                         .cairnAppear(delay: 0.03)
                 }
-                if transactions.count > 1 {
-                    historyCard
-                        .cairnAppear(delay: 0.05)
-                }
-                if transactions.isEmpty {
-                    emptyTransactions
-                } else if visibleTransactions.isEmpty {
-                    EmptyStateView(systemImage: "magnifyingglass", title: "Nothing matches", message: "Try a different search.")
-                } else {
-                    TransactionDayList(transactions: visibleTransactions, showsAccount: false)
+                // The feed is created on first task; until then there is no
+                // count to branch on, so nothing is shown rather than flashing
+                // the empty state.
+                if let feed {
+                    if transactionCount > 1 {
+                        historyCard
+                            .cairnAppear(delay: 0.05)
+                    }
+                    if transactionCount == 0 {
+                        emptyTransactions
+                    } else if !feed.rows.isEmpty {
+                        TransactionDayList(
+                            sections: feed.sections,
+                            showsAccount: false,
+                            onReachEnd: { feed.loadMore() },
+                            onEdit: account.isManual ? { row in
+                                if let model = model(for: row) { editingTransaction = model }
+                            } : nil,
+                            onDelete: account.isManual ? { row in
+                                if let model = model(for: row) { transactionToDelete = model }
+                            } : nil
+                        )
                         .cairnAppear(delay: 0.1)
+                    } else if !searchText.isEmpty {
+                        EmptyStateView(
+                            systemImage: "magnifyingglass",
+                            title: "Nothing matches",
+                            message: "Try a different search."
+                        )
+                    }
                 }
             }
             .cairnScreen()
@@ -72,30 +96,18 @@ struct AccountDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .searchable(text: $searchText, prompt: "Search this account")
-        .toolbar {
-            if account.isManual {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingImporter = true
-                    } label: {
-                        Label("Import CSV", systemImage: "square.and.arrow.down")
-                    }
-                }
+        .toolbar { toolbarContent }
+        .task {
+            if feed == nil {
+                feed = TransactionsFeed(container: model.container, filter: accountFilter)
             }
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Toggle("Include in Net Worth", systemImage: "chart.line.uptrend.xyaxis", isOn: Binding(
-                        get: { account.includeInNetWorth },
-                        set: { account.includeInNetWorth = $0; try? modelContext.save() }
-                    ))
-                    Toggle("Hide Account", systemImage: "eye.slash", isOn: Binding(
-                        get: { account.isHidden },
-                        set: { account.isHidden = $0; try? modelContext.save() }
-                    ))
-                } label: {
-                    Label("Account Options", systemImage: "ellipsis.circle")
-                }
-            }
+        }
+        .task(id: searchText) {
+            try? await Task.sleep(for: SearchDebounce.interval)
+            guard !Task.isCancelled else { return }
+            var updated = accountFilter
+            updated.searchText = SearchDebounce.normalize(searchText)
+            feed?.filter = updated
         }
         .fileImporter(
             isPresented: $showingImporter,
@@ -108,6 +120,107 @@ struct AccountDetailView: View {
             ImportTransactionsSheet(account: account, text: payload.text)
                 .cairnLockCover()
         }
+        .sheet(isPresented: $showingAddTransaction) {
+            TransactionEditSheet(account: account)
+                .cairnLockCover()
+        }
+        .sheet(item: $editingTransaction) { transaction in
+            TransactionEditSheet(account: account, transaction: transaction)
+                .cairnLockCover()
+        }
+        .alert(
+            "Delete transaction?",
+            isPresented: Binding(
+                get: { transactionToDelete != nil },
+                set: { if !$0 { transactionToDelete = nil } }
+            )
+        ) {
+            Button("Delete", role: .destructive) {
+                if let transaction = transactionToDelete {
+                    let target = transaction
+                    transactionToDelete = nil
+                    Task { await model.deleteManualTransaction(target) }
+                }
+            }
+            Button("Cancel", role: .cancel) { transactionToDelete = nil }
+        } message: {
+            Text("This can’t be undone.")
+        }
+        .alert("Rename Account", isPresented: $showingRename) {
+            TextField("Name", text: $renameText)
+            Button("Save") {
+                let name = renameText
+                Task { await model.renameManualAccount(account, to: name) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Delete account?", isPresented: $showingDeleteAccount) {
+            Button("Delete", role: .destructive) {
+                // Capture identity, dismiss, then delete off-screen: the detail
+                // view must never read a model that has been removed.
+                let accountID = account.persistentModelID
+                dismiss()
+                Task { await model.deleteManualAccount(id: accountID) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the account and all of its transactions. This can’t be undone.")
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if account.isManual {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingAddTransaction = true
+                } label: {
+                    Label("Add Transaction", systemImage: "plus")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingImporter = true
+                } label: {
+                    Label("Import CSV", systemImage: "square.and.arrow.down")
+                }
+            }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            accountOptionsMenu
+        }
+    }
+
+    private var accountOptionsMenu: some View {
+        Menu {
+            accountVisibilityToggles
+            if account.isManual {
+                Divider()
+                Button("Rename Account…", systemImage: "pencil") {
+                    renameText = account.displayName
+                    showingRename = true
+                }
+                Button("Delete Account…", systemImage: "trash", role: .destructive) {
+                    showingDeleteAccount = true
+                }
+            }
+        } label: {
+            Label("Account Options", systemImage: "ellipsis.circle")
+        }
+    }
+
+    @ViewBuilder
+    private var accountVisibilityToggles: some View {
+        Toggle("Include in Net Worth", systemImage: "chart.line.uptrend.xyaxis", isOn: Binding(
+            get: { account.includeInNetWorth },
+            set: { account.includeInNetWorth = $0; try? modelContext.save() }
+        ))
+        Toggle("Hide Account", systemImage: "eye.slash", isOn: Binding(
+            get: { account.isHidden },
+            set: { account.isHidden = $0; try? modelContext.save() }
+        ))
     }
 
     // MARK: - Summary
@@ -159,7 +272,7 @@ struct AccountDetailView: View {
                         Text("Transactions")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.6))
-                        Text("\(transactions.count)")
+                        Text("\(transactionCount)")
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                     }
@@ -191,17 +304,19 @@ struct AccountDetailView: View {
         // Wallet data is only ever refreshed on iPhone/iPad; elsewhere say so
         // instead of implying the local device keeps it current.
         if account.isWallet, !WalletAvailability.isSupported {
-            parts.append("Updates on your iPhone")
+            parts.append(String(localized: "Updates on your iPhone"))
         }
-        parts.append(account.accountType.displayName)
-        if account.currency.code != "USD" || account.currency.isCustom { parts.append(account.currency.displayLabel) }
+        parts.append(String(localized: "\(account.accountType.displayName)"))
+        if account.currency.code != "USD" || account.currency.isCustom {
+            parts.append(String(localized: "\(account.currency.displayLabel)"))
+        }
         return parts.joined(separator: " · ")
     }
 
     /// What the account is "from", shown in the hero header.
     private var sourceLabel: String {
-        if account.isWallet { return AccountSource.financeKit.displayName }
-        return account.isManual ? "Manual account" : "Account"
+        if account.isWallet { return String(localized: "\(AccountSource.financeKit.displayName)") }
+        return account.isManual ? String(localized: "Manual account") : String(localized: "Account")
     }
 
     // MARK: - History
@@ -214,9 +329,8 @@ struct AccountDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: "Positions", trailing: "\(holdings.count)")
             RowGroup {
-                ForEach(Array(holdings.enumerated()), id: \.element.persistentModelID) { index, holding in
-                    HoldingRow(holding: holding)
-                    if index < holdings.count - 1 { RowDivider() }
+                ForEach(holdings) { holding in
+                    HoldingEntry(holding: holding, isLast: holding.persistentModelID == holdings.last?.persistentModelID)
                 }
             }
         }
@@ -271,10 +385,19 @@ struct AccountDetailView: View {
             systemImage: emptyStateIcon,
             title: "No transactions yet",
             message: emptyStateMessage,
-            actionTitle: account.isManual ? "Import CSV" : nil
+            actionTitle: emptyActionTitle
         ) {
-            showingImporter = true
+            if account.isManual {
+                showingImporter = true
+            } else {
+                Task { await model.syncAll(force: true) }
+            }
         }
+    }
+
+    private var emptyActionTitle: LocalizedStringKey? {
+        if account.isWallet { return nil }
+        return account.isManual ? "Import CSV" : "Sync Now"
     }
 
     private var emptyStateIcon: String {
@@ -282,7 +405,7 @@ struct AccountDetailView: View {
         return account.isManual ? "square.and.arrow.down" : "arrow.triangle.2.circlepath"
     }
 
-    private var emptyStateMessage: String {
+    private var emptyStateMessage: LocalizedStringKey {
         if account.isWallet {
             return "Wallet activity appears here after Cairn refreshes on your iPhone."
         }
@@ -316,12 +439,32 @@ struct AccountDetailView: View {
     }
 }
 
+/// One holding row plus its trailing hairline, emitted as a single view.
+private struct HoldingEntry: View {
+    let holding: Holding
+    let isLast: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HoldingRow(holding: holding)
+            if !isLast {
+                RowDivider()
+            }
+        }
+    }
+}
+
 // MARK: - Transaction detail
 
 struct TransactionDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppModel.self) private var model
-    @Query(sort: \CairnSchemaV1.Category.sortOrder) private var categories: [CairnSchemaV1.Category]
+    @Query(
+        sort: [
+            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+        ]
+    ) private var categories: [CairnSchemaV1.Category]
     @Query(sort: \Tag.name) private var allTags: [Tag]
 
     let transaction: LedgerTransaction
@@ -378,9 +521,15 @@ struct TransactionDetailView: View {
                         size: 52
                     )
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(transaction.payeeDescription.isEmpty ? "No description" : transaction.payeeDescription)
-                            .font(.title3.weight(.semibold))
-                            .fixedSize(horizontal: false, vertical: true)
+                        if transaction.payeeDescription.isEmpty {
+                            Text("No description")
+                                .font(.title3.weight(.semibold))
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text(transaction.payeeDescription)
+                                .font(.title3.weight(.semibold))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         HStack(spacing: 6) {
                             Text(transaction.effectiveDate, format: .dateTime.weekday(.wide).month(.wide).day())
                             if transaction.isPending {
@@ -439,7 +588,9 @@ struct TransactionDetailView: View {
                 }
 
                 LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(categories.filter { !$0.isArchived }) { category in
+                    ForEach(categories.filter {
+                        !$0.isArchived || $0.uuid == transaction.effectiveCategory?.uuid
+                    }) { category in
                         let selected = transaction.effectiveCategory?.uuid == category.uuid
                         Button {
                             select(category)
@@ -487,7 +638,7 @@ struct TransactionDetailView: View {
         .animation(CairnTheme.Motion.quick, value: selected)
     }
 
-    private var categorySubtitle: String {
+    private var categorySubtitle: LocalizedStringKey {
         if transaction.isCategorizedByUser {
             return "Set by you. Automatic rules won't change it."
         }
@@ -657,7 +808,9 @@ struct TransactionDetailView: View {
                     detailRow("Transacted", transacted.formatted(date: .abbreviated, time: .shortened))
                 }
                 detailRow("Institution", transaction.account?.institution?.name ?? "—")
-                if transaction.isImported {
+                if transaction.bankTransactionID.hasPrefix("manual-") {
+                    detailRow("Source", "Manual")
+                } else if transaction.bankTransactionID.hasPrefix("import-") {
                     detailRow("Source", "CSV import")
                 }
                 VStack(alignment: .leading, spacing: 3) {

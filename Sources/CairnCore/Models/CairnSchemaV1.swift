@@ -625,7 +625,7 @@ public enum AccountType: String, Sendable, CaseIterable, Codable {
     case cash
     case other
 
-    public var displayName: String {
+    public var displayName: LocalizedStringResource {
         switch self {
         case .checking: "Checking"
         case .savings: "Savings"

@@ -12,17 +12,44 @@ All notable changes to Cairn are documented here. This project follows
   refreshed privacy and support pages.
 - CI checks (tests and the schema hash) and a tag-driven release process that
   builds and uploads to TestFlight.
-- Older transaction history is backfilled in 89-day pages, so a connection shows
+- Older transaction history is backfilled in 45-day pages, so a connection shows
   as much history as the institution exposes, not just the most recent window.
+- Manual accounts can now be edited in the app: add, edit, and delete single
+  transactions, and rename or delete the account itself.
+- Categories can be added, renamed, recolored, reordered, and archived, and a
+  category that nothing uses can be deleted.
+- An offline indicator on Home and Settings explains that sync is paused and
+  cached data still works, and onboarding offers a clear path to create a manual
+  account or import a CSV without connecting a bank.
+- Empty states with a short explanation and a next step on Home, Activity,
+  Insights, Investments, Recurring, Rules, Tags, and account detail.
+- A "Sync Cairn" action for Siri, Shortcuts, and Spotlight.
+- A String Catalog with Info.plist usage descriptions, so every user-facing
+  string is extractable and ready to translate.
+- Accessibility: labeled controls, buttons, and charts; headline figures scale
+  with Dynamic Type; Reduce Motion and Reduce Transparency are honored; and
+  chips, swatches, and segmented controls report their selected state.
 
 ### Changed
 
+- Shared components, core display labels, and sync banners now take
+  localization-ready string types instead of plain `String`.
+- Counts (transactions, rules, tags, accounts, and similar) use plural-aware
+  strings instead of hand-built singular/plural suffixes.
+- Amount entry parses the device locale's decimal separator, and percentage
+  trends format with `FormatStyle`, so comma-decimal locales behave correctly.
+
+- A sync that fails now stays visible as an actionable card with retry and
+  diagnostics, and reads as "paused" rather than a failure while offline.
 - Sync now uses a new CloudKit container, so data synced by earlier builds
   won't show up through it.
 - Cloud sync now defaults to off on new installs; onboarding asks before
   anything is stored in iCloud.
 - Removing Wallet data is offered on iPhone and iPad only.
 - Documentation, Info.plist, and the background task now match the app.
+- Activity and account history load a bounded window of rows and extend it as
+  you scroll, instead of loading the whole ledger up front. Insights builds its
+  figures off the main thread.
 
 ### Fixed
 
@@ -50,6 +77,10 @@ All notable changes to Cairn are documented here. This project follows
   macOS when the screen locks.
 - Regex rules run under a deadline, custom-currency lookups are cached and
   capped, and money sums clamp instead of trapping.
+- Sync paused by a lost connection resumes on its own when the network returns,
+  and the offline explanation keeps the original error alongside it.
+- A picked CSV is read off the main thread, so importing a large export no
+  longer stalls the interface.
 
 ### Security
 

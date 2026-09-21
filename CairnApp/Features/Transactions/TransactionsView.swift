@@ -3,26 +3,33 @@ import SwiftData
 import CairnCore
 
 /// Every transaction across every account, with search and one-tap filters.
+///
+/// The list is fed by ``TransactionsFeed``: a bounded window fetched with
+/// `fetchLimit`, snapshotted to value rows, and expanded as the reader scrolls.
+/// Search is debounced and the filter runs before the window is drawn.
 struct TransactionsView: View {
-    @Query(sort: [SortDescriptor(\LedgerTransaction.postedDate, order: .reverse)])
-    private var allTransactions: [LedgerTransaction]
-    @Query(sort: [SortDescriptor(\CairnSchemaV1.Category.sortOrder)])
+    @Environment(AppModel.self) private var model
+
+    @Query(
+        sort: [
+            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+        ]
+    )
     private var categories: [CairnSchemaV1.Category]
     @Query(sort: \Tag.name)
     private var tags: [Tag]
     @Query(sort: [SortDescriptor(\Account.displayOrder)])
     private var accounts: [Account]
 
+    @State private var feed: TransactionsFeed?
+    @State private var filter = TransactionFilter()
     @State private var searchText = ""
-    @State private var quickFilter: QuickFilter = .all
-    @State private var categoryFilter: CairnSchemaV1.Category?
-    @State private var accountFilter: Account?
-    @State private var tagFilter: Tag?
 
     enum QuickFilter: String, CaseIterable, Identifiable {
         case all, spending, income, pending, uncategorized
         var id: String { rawValue }
-        var title: String {
+        var title: LocalizedStringKey {
             switch self {
             case .all: "All"
             case .spending: "Spending"
@@ -40,27 +47,36 @@ struct TransactionsView: View {
             case .uncategorized: "questionmark.circle"
             }
         }
+
+        var query: TransactionFilter.Quick {
+            switch self {
+            case .all: .all
+            case .spending: .spending
+            case .income: .income
+            case .pending: .pending
+            case .uncategorized: .uncategorized
+            }
+        }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.l) {
                 filterBar
-                if filtered.isEmpty {
-                    EmptyStateView(
-                        systemImage: allTransactions.isEmpty ? "list.bullet.rectangle" : "magnifyingglass",
-                        title: allTransactions.isEmpty ? "No activity yet" : "Nothing matches",
-                        message: emptyMessage,
-                        actionTitle: hasAnyFilter ? "Clear filters" : nil
-                    ) {
-                        clearFilters()
+                if let feed {
+                    if feed.rows.isEmpty {
+                        emptyState(feed)
+                    } else {
+                        TransactionDayList(
+                            sections: feed.sections,
+                            showsMonthHeaders: true,
+                            onReachEnd: { feed.loadMore() }
+                        )
                     }
-                } else {
-                    TransactionDayList(transactions: filtered, showsMonthHeaders: true)
                 }
             }
             .cairnScreen()
-            .animation(CairnTheme.Motion.standard, value: filtered.count)
+            .animation(CairnTheme.Motion.standard, value: feed?.rows.count ?? 0)
         }
         .cairnCanvas()
         .navigationTitle("Activity")
@@ -70,6 +86,21 @@ struct TransactionsView: View {
                 filtersMenu
             }
         }
+        .task {
+            if feed == nil {
+                feed = TransactionsFeed(container: model.container, filter: filter)
+            }
+        }
+        // Debounce typing: cancel the pending update when the text changes
+        // again, so the query only rebuilds after a pause.
+        .task(id: searchText) {
+            try? await Task.sleep(for: SearchDebounce.interval)
+            guard !Task.isCancelled else { return }
+            filter.searchText = SearchDebounce.normalize(searchText)
+        }
+        .onChange(of: filter) { _, newValue in
+            feed?.filter = newValue
+        }
     }
 
     // MARK: - Filters
@@ -77,27 +108,31 @@ struct TransactionsView: View {
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(QuickFilter.allCases) { filter in
+                ForEach(QuickFilter.allCases) { quick in
                     Button {
-                        withAnimation(CairnTheme.Motion.quick) { quickFilter = filter }
+                        withAnimation(CairnTheme.Motion.quick) { filter.quick = quick.query }
                     } label: {
-                        Chip(title: filter.title, systemImage: filter.systemImage, isSelected: quickFilter == filter)
+                        Chip(title: quick.title, systemImage: quick.systemImage, isSelected: filter.quick == quick.query)
                     }
                     .buttonStyle(.plain)
                 }
                 if let categoryFilter {
-                    activeFilterChip(categoryFilter.name, systemImage: categoryFilter.symbolName, tint: CairnTheme.color(hex: categoryFilter.colorHex)) {
-                        self.categoryFilter = nil
+                    activeFilterChip(
+                        categoryFilter.name,
+                        systemImage: categoryFilter.symbolName,
+                        tint: CairnTheme.color(hex: categoryFilter.colorHex)
+                    ) {
+                        filter.categoryID = nil
                     }
                 }
                 if let accountFilter {
                     activeFilterChip(accountFilter.displayName, systemImage: "building.columns", tint: CairnTheme.accent) {
-                        self.accountFilter = nil
+                        filter.accountID = nil
                     }
                 }
                 if let tagFilter {
                     activeFilterChip(tagFilter.name, systemImage: "tag.fill", tint: CairnTheme.color(hex: tagFilter.colorHex)) {
-                        self.tagFilter = nil
+                        filter.tagID = nil
                     }
                 }
             }
@@ -105,7 +140,7 @@ struct TransactionsView: View {
             .padding(.vertical, 2)
         }
         .scrollClipDisabled()
-        .sensoryFeedback(.selection, trigger: quickFilter)
+        .sensoryFeedback(.selection, trigger: filter.quick)
     }
 
     private func activeFilterChip(_ title: String, systemImage: String, tint: Color, clear: @escaping () -> Void) -> some View {
@@ -124,16 +159,28 @@ struct TransactionsView: View {
         .transition(.scale(scale: 0.9).combined(with: .opacity))
     }
 
+    private var categoryFilter: CairnSchemaV1.Category? {
+        categories.first { $0.persistentModelID == filter.categoryID }
+    }
+
+    private var accountFilter: Account? {
+        accounts.first { $0.persistentModelID == filter.accountID }
+    }
+
+    private var tagFilter: Tag? {
+        tags.first { $0.persistentModelID == filter.tagID }
+    }
+
     private var filtersMenu: some View {
         Menu {
-            Picker("Category", selection: $categoryFilter) {
+            Picker("Category", selection: categorySelection) {
                 Text("All Categories").tag(CairnSchemaV1.Category?.none)
                 ForEach(categories.filter { !$0.isArchived }) { category in
                     Label(category.name, systemImage: category.symbolName).tag(CairnSchemaV1.Category?.some(category))
                 }
             }
             .pickerStyle(.menu)
-            Picker("Account", selection: $accountFilter) {
+            Picker("Account", selection: accountSelection) {
                 Text("All Accounts").tag(Account?.none)
                 ForEach(accounts) { account in
                     Text(account.displayName).tag(Account?.some(account))
@@ -141,7 +188,7 @@ struct TransactionsView: View {
             }
             .pickerStyle(.menu)
             if !tags.isEmpty {
-                Picker("Tag", selection: $tagFilter) {
+                Picker("Tag", selection: tagSelection) {
                     Text("All Tags").tag(Tag?.none)
                     ForEach(tags) { tag in
                         Text(tag.name).tag(Tag?.some(tag))
@@ -149,7 +196,7 @@ struct TransactionsView: View {
                 }
                 .pickerStyle(.menu)
             }
-            if hasAnyFilter {
+            if filter.isActive {
                 Divider()
                 Button("Clear Filters", systemImage: "xmark.circle") { clearFilters() }
             }
@@ -163,62 +210,57 @@ struct TransactionsView: View {
         }
     }
 
-    private var hasAnyFilter: Bool {
-        quickFilter != .all || categoryFilter != nil || accountFilter != nil || tagFilter != nil || !searchText.isEmpty
+    private var categorySelection: Binding<CairnSchemaV1.Category?> {
+        Binding(
+            get: { categoryFilter },
+            set: { filter.categoryID = $0?.persistentModelID }
+        )
+    }
+
+    private var accountSelection: Binding<Account?> {
+        Binding(
+            get: { accountFilter },
+            set: { filter.accountID = $0?.persistentModelID }
+        )
+    }
+
+    private var tagSelection: Binding<Tag?> {
+        Binding(
+            get: { tagFilter },
+            set: { filter.tagID = $0?.persistentModelID }
+        )
     }
 
     private func clearFilters() {
         withAnimation(CairnTheme.Motion.quick) {
-            quickFilter = .all
-            categoryFilter = nil
-            accountFilter = nil
-            tagFilter = nil
+            filter = TransactionFilter()
             searchText = ""
         }
     }
 
-    private var emptyMessage: String {
-        if allTransactions.isEmpty {
-            return "Sync a bank or import a CSV to see transactions here."
-        }
-        return "Try a different search or clear the filters."
+    private var emptyMessage: LocalizedStringKey {
+        "Try a different search or clear the filters."
     }
 
-    // MARK: - Filtering
+    // MARK: - Empty states
 
-    private var filtered: [LedgerTransaction] {
-        var result = allTransactions
-        switch quickFilter {
-        case .all: break
-        case .spending: result = result.filter { $0.amountMinorUnits < 0 && !$0.countsAsTransfer }
-        case .income: result = result.filter { $0.amountMinorUnits > 0 && !$0.countsAsTransfer }
-        case .pending: result = result.filter(\.isPending)
-        case .uncategorized: result = result.filter { $0.effectiveCategory == nil && !$0.countsAsTransfer && !$0.isIgnored }
-        }
-        if let categoryFilter {
-            result = result.filter { $0.effectiveCategory?.persistentModelID == categoryFilter.persistentModelID }
-        }
-        if let accountFilter {
-            result = result.filter { $0.account?.persistentModelID == accountFilter.persistentModelID }
-        }
-        if let tagFilter {
-            result = result.filter { transaction in
-                (transaction.tags ?? []).contains { $0.persistentModelID == tagFilter.persistentModelID }
+    @ViewBuilder
+    private func emptyState(_ feed: TransactionsFeed) -> some View {
+        if feed.isStoreEmpty {
+            GetStartedEmptyState(
+                systemImage: "list.bullet.rectangle",
+                title: "No activity yet",
+                message: "Sync a bank, add a manual account, or import a CSV to see transactions here."
+            )
+        } else {
+            EmptyStateView(
+                systemImage: "magnifyingglass",
+                title: "Nothing matches",
+                message: emptyMessage,
+                actionTitle: filter.isActive ? "Clear filters" : nil
+            ) {
+                clearFilters()
             }
         }
-        if !searchText.isEmpty {
-            result = result.filter { transaction in
-                transaction.payeeDescription.localizedStandardContains(searchText)
-                    || (transaction.account?.displayName.localizedStandardContains(searchText) ?? false)
-                    || (transaction.effectiveCategory?.name.localizedStandardContains(searchText) ?? false)
-                    || (transaction.note?.localizedStandardContains(searchText) ?? false)
-                    || (transaction.tags ?? []).contains {
-                        $0.name.localizedStandardContains(searchText)
-                    }
-            }
-        }
-        // Pending transactions have no posted date, so sort by the effective
-        // date to keep them at the top instead of the bottom.
-        return result.sorted { $0.effectiveDate > $1.effectiveDate }
     }
 }

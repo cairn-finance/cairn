@@ -7,6 +7,7 @@ struct OnboardingView: View {
     @Environment(AppModel.self) private var model
     @State private var connection: AddConnectionSheet.ConnectionKind?
     @State private var credentialToForget: AppModel.RecoverableCredential?
+    @State private var showingUseWithoutBank = false
 
     var body: some View {
         ZStack {
@@ -38,6 +39,13 @@ struct OnboardingView: View {
             }
             .cairnLockCover()
         }
+        .sheet(isPresented: $showingUseWithoutBank) {
+            UseWithoutBankSheet {
+                showingUseWithoutBank = false
+                model.completeOnboarding()
+            }
+            .cairnLockCover()
+        }
         .confirmationDialog(
             "Forget the saved connection?",
             isPresented: Binding(
@@ -52,8 +60,7 @@ struct OnboardingView: View {
             }
             Button("Cancel", role: .cancel) { credentialToForget = nil }
         } message: {
-            Text("This removes the saved SimpleFIN connection from this device. "
-                + "Reconnecting it later will need a new setup token.")
+            Text("This removes the saved SimpleFIN connection from this device. Reconnecting needs a new setup token.")
         }
     }
 
@@ -65,14 +72,14 @@ struct OnboardingView: View {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .foregroundStyle(CairnTheme.inkGlow)
+                    .accessibilityHidden(true)
                 Text("Found a saved SimpleFIN connection")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
             }
             ForEach(model.recoverableCredentials) { credential in
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("\(credential.host) is still in this device’s Keychain. "
-                        + "Reconnect it without creating a new setup token.")
+                    Text("\(credential.host) is still in this device’s Keychain. Reconnect it without a new token.")
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.66))
                         .fixedSize(horizontal: false, vertical: true)
@@ -137,10 +144,11 @@ struct OnboardingView: View {
                 Image(systemName: "mountain.2.fill")
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(CairnTheme.inkGlow)
+                    .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Cairn")
-                    .font(.system(size: 44, weight: .bold))
+                    .font(.system(.largeTitle, design: .default, weight: .bold))
                     .tracking(-1)
                 Text("Your money. Your data.\nNo account, no server, no tracking.")
                     .font(.title3)
@@ -161,7 +169,7 @@ struct OnboardingView: View {
             promise(
                 icon: "eye.slash.fill",
                 title: "iCloud sync is opt-in",
-                detail: "Off by default: nothing leaves this device unless you turn on iCloud, and amounts and descriptions are encrypted before it sees them."
+                detail: "Off by default. Amounts and descriptions are encrypted before they reach iCloud."
             )
             promise(
                 icon: "server.rack",
@@ -182,13 +190,14 @@ struct OnboardingView: View {
         )
     }
 
-    private func promise(icon: String, title: String, detail: String) -> some View {
+    private func promise(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(CairnTheme.inkGlow)
                 .frame(width: 30, height: 30)
                 .background(CairnTheme.inkGlow.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
@@ -227,9 +236,9 @@ struct OnboardingView: View {
             #endif
 
             Button {
-                model.completeOnboarding()
+                showingUseWithoutBank = true
             } label: {
-                Text("Continue without a bank")
+                Text("Use without a bank")
             }
             .buttonStyle(OnboardingSecondaryStyle())
 
@@ -248,7 +257,7 @@ struct OnboardingView: View {
 
         var id: String { rawValue }
 
-        var title: String {
+        var title: LocalizedStringKey {
             switch self {
             case .local: "This Device Only"
             case .cloud: "iCloud Sync"
@@ -284,9 +293,9 @@ struct OnboardingView: View {
         )
     }
 
-    private var storageDetail: String {
+    private var storageDetail: LocalizedStringKey {
         model.useCloudKit
-            ? "Syncs through your private iCloud database, with amounts and descriptions encrypted first. Takes effect when you reopen Cairn."
+            ? "Syncs through your iCloud database, with amounts and descriptions encrypted. Applies when you reopen Cairn."
             : "Nothing leaves this device. You can turn on iCloud Sync later in Settings."
     }
 

@@ -40,9 +40,11 @@ struct RulesView: View {
                     EmptyStateView(
                         systemImage: "slider.horizontal.3",
                         title: "No rules yet",
-                        message: "A rule matches a bank description and assigns a category. "
-                            + "Rules run on-device after every sync and always beat an automatic guess."
-                    )
+                        message: "A rule matches the bank description or amount and assigns a category.",
+                        actionTitle: "New Rule"
+                    ) {
+                        editorTarget = .create
+                    }
                     .listRowBackground(Color.clear)
                 }
             } else {
@@ -53,8 +55,7 @@ struct RulesView: View {
                     .onDelete(perform: delete)
                     .onMove(perform: move)
                 } footer: {
-                    Text("Drag to reorder. The topmost matching rule wins. "
-                        + "Turning a rule off or deleting it re-evaluates the transactions it had categorized.")
+                    Text("Drag to reorder. The topmost matching rule wins. Turning a rule off re-checks its transactions.")
                 }
             }
         }
@@ -119,6 +120,7 @@ struct RulesView: View {
 
             Toggle("", isOn: enabledBinding(rule))
                 .labelsHidden()
+                .accessibilityLabel(Text(verbatim: ruleTitle(rule)))
         }
     }
 
@@ -194,7 +196,12 @@ struct RuleEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(AppModel.self) private var model
-    @Query(sort: \CairnSchemaV1.Category.sortOrder) private var categories: [CairnSchemaV1.Category]
+    @Query(
+        sort: [
+            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+        ]
+    ) private var categories: [CairnSchemaV1.Category]
     @Query private var allTransactions: [LedgerTransaction]
     @Query private var settings: [AppSettings]
 
@@ -215,6 +222,12 @@ struct RuleEditorView: View {
     @State private var isEnabled = true
 
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
+
+    /// "-0.00" or "-0,00" depending on the locale, matching the parser.
+    private var negativeDecimalPlaceholder: String {
+        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
+        return "-0\(separator)00"
+    }
 
     private var activeCategories: [CairnSchemaV1.Category] {
         categories.filter { !$0.isArchived }
@@ -253,8 +266,7 @@ struct RuleEditorView: View {
                 } header: {
                     Text("Amount")
                 } footer: {
-                    Text("Optional. Amounts are signed: spending is negative (for example -12.34), "
-                        + "income is positive.")
+                    Text("Optional. Amounts are signed: spending is negative (for example -12.34), income is positive.")
                 }
 
                 Section("Category") {
@@ -290,11 +302,11 @@ struct RuleEditorView: View {
     }
 
     @ViewBuilder
-    private func amountField(_ title: String, text: Binding<String>) -> some View {
+    private func amountField(_ title: LocalizedStringKey, text: Binding<String>) -> some View {
         HStack {
             Text(title)
             Spacer()
-            TextField("-0.00", text: text)
+            TextField(negativeDecimalPlaceholder, text: text)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: 140)
                 #if os(iOS)
@@ -317,10 +329,13 @@ struct RuleEditorView: View {
         } else {
             let matches = previewMatches
             VStack(alignment: .leading, spacing: 6) {
-                Text(matches.isEmpty
-                    ? "No existing transactions match yet."
-                    : "Matches \(matches.count) existing transaction\(matches.count == 1 ? "" : "s").")
-                    .font(.subheadline.weight(.medium))
+                if matches.isEmpty {
+                    Text("No existing transactions match yet.")
+                        .font(.subheadline.weight(.medium))
+                } else {
+                    Text("Matches ^[\(matches.count) existing transaction](inflect: true).")
+                        .font(.subheadline.weight(.medium))
+                }
                 ForEach(matches.prefix(3), id: \.persistentModelID) { transaction in
                     Text(transaction.payeeDescription)
                         .font(.caption)

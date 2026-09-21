@@ -5,8 +5,13 @@ import Foundation
 public enum MinorUnits {
     /// Parses a numeric string such as `"-33293.43"` into minor units.
     ///
+    /// The decimal separator is taken from `locale`, so `"12,34"` parses in a
+    /// comma-decimal locale. A `.` is always accepted as a fallback, which keeps
+    /// machine-generated amounts (SimpleFIN payloads always use `.`) working
+    /// regardless of the device locale.
+    ///
     /// - Returns: `nil` when the string is not a well-formed decimal number.
-    public static func parse(_ string: String, exponent: Int) -> Int64? {
+    public static func parse(_ string: String, exponent: Int, locale: Locale = .autoupdatingCurrent) -> Int64? {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -18,7 +23,7 @@ public enum MinorUnits {
         }
         guard !digits.isEmpty else { return nil }
 
-        let parts = digits.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        let parts = splitOnDecimalSeparator(digits, locale: locale)
         let wholePart = parts[0]
         let fractionPart = parts.count > 1 ? parts[1] : ""
         guard !wholePart.isEmpty || !fractionPart.isEmpty else { return nil }
@@ -43,6 +48,16 @@ public enum MinorUnits {
         // Any digits beyond the exponent are truncated toward zero. SimpleFIN
         // amounts are already expressed at the currency's precision.
         return negative ? -combined : combined
+    }
+
+    /// Splits a digit string at the locale's decimal separator, falling back to
+    /// `.` when the locale separator is absent. At most one split is performed;
+    /// a second separator leaves the fraction non-numeric and the parse fails.
+    private static func splitOnDecimalSeparator(_ digits: Substring, locale: Locale) -> [Substring] {
+        if let separator = locale.decimalSeparator?.first, digits.contains(separator) {
+            return digits.split(separator: separator, maxSplits: 1, omittingEmptySubsequences: false)
+        }
+        return digits.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
     }
 
     /// Converts minor units back into an exact `Decimal`, for formatting.

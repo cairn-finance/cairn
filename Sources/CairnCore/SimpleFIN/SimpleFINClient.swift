@@ -91,7 +91,10 @@ public actor SimpleFINClient {
             throw SimpleFINError.httpStatus(http.statusCode)
         }
 
-        let body = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let decoded = String(bytes: data, encoding: .utf8) else {
+            throw SimpleFINError.invalidToken
+        }
+        let body = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let accessURL = URL(string: body),
               accessURL.scheme?.lowercased() == "https",
               accessURL.host != nil else {

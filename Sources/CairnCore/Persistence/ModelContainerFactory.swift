@@ -8,14 +8,14 @@ public enum StoreMode: String, Sendable, CaseIterable, Codable {
     /// Keep everything on this device only.
     case local
 
-    public var displayName: String {
+    public var displayName: LocalizedStringResource {
         switch self {
         case .cloud: "iCloud Sync"
         case .local: "This Device Only"
         }
     }
 
-    public var summary: String {
+    public var summary: LocalizedStringResource {
         switch self {
         case .cloud:
             "Data syncs through your private iCloud database."

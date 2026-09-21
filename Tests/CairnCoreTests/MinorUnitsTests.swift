@@ -34,6 +34,22 @@ struct MinorUnitsTests {
         #expect(MinorUnits.parse("1.239", exponent: 2) == 123)
     }
 
+    @Test("Parses the locale's decimal separator")
+    func parsesLocaleDecimalSeparator() {
+        let german = Locale(identifier: "de_DE")
+        #expect(MinorUnits.parse("12,34", exponent: 2, locale: german) == 1_234)
+        #expect(MinorUnits.parse("-1250,00", exponent: 2, locale: german) == -125_000)
+        #expect(MinorUnits.parse(",5", exponent: 2, locale: german) == 50)
+        #expect(MinorUnits.parse("1,2,3", exponent: 2, locale: german) == nil)
+    }
+
+    @Test("Accepts a dot regardless of the locale")
+    func dotFallbackInCommaLocale() {
+        let german = Locale(identifier: "de_DE")
+        #expect(MinorUnits.parse("12.34", exponent: 2, locale: german) == 1_234)
+        #expect(MinorUnits.parse("-33293.43", exponent: 2, locale: german) == -3_329_343)
+    }
+
     @Test("Round-trips through string")
     func roundTrips() {
         #expect(MinorUnits.string(10_023, exponent: 2) == "100.23")

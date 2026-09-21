@@ -39,6 +39,7 @@ struct CairnApp: App {
                 }
             }
             .environment(model)
+            .task { IntentBridge.shared.register(model) }
             .onChange(of: scenePhase) { _, phase in
                 #if os(iOS)
                 // Never schedule a background pass against a store that failed

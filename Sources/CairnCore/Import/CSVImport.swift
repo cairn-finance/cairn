@@ -58,7 +58,7 @@ public enum CSVImportPreset: String, Sendable, CaseIterable, Codable {
     case appleSavings
     case generic
 
-    public var displayName: String {
+    public var displayName: LocalizedStringResource {
         switch self {
         case .appleCard: "Apple Card"
         case .appleSavings: "Apple Savings"
@@ -66,7 +66,7 @@ public enum CSVImportPreset: String, Sendable, CaseIterable, Codable {
         }
     }
 
-    public var summary: String {
+    public var summary: LocalizedStringResource {
         switch self {
         case .appleCard:
             "Wallet → Apple Card → Statements → Export Transactions (CSV)."
@@ -197,10 +197,12 @@ public enum CSVImportParser {
 
             let amount = amountMinorUnits(
                 row: row,
-                amountIndex: amountIndex,
-                debitIndex: debitIndex,
-                creditIndex: creditIndex,
-                flipsSign: mapping.flipsSign,
+                columns: AmountColumns(
+                    amountIndex: amountIndex,
+                    debitIndex: debitIndex,
+                    creditIndex: creditIndex,
+                    flipsSign: mapping.flipsSign
+                ),
                 exponent: currency.exponent
             )
             guard let amount else {
@@ -234,22 +236,31 @@ public enum CSVImportParser {
         return text.isEmpty ? nil : text
     }
 
+    /// The signed-amount columns for one CSV preset.
+    private struct AmountColumns {
+        let amountIndex: Int?
+        let debitIndex: Int?
+        let creditIndex: Int?
+        let flipsSign: Bool
+    }
+
     private static func amountMinorUnits(
         row: [String],
-        amountIndex: Int?,
-        debitIndex: Int?,
-        creditIndex: Int?,
-        flipsSign: Bool,
+        columns: AmountColumns,
         exponent: Int
     ) -> Int64? {
-        if let debitIndex, let debit = value(row, debitIndex), let magnitude = parseMagnitude(debit, exponent: exponent) {
-            return flipsSign ? abs(magnitude) : -abs(magnitude)
+        if let debitIndex = columns.debitIndex,
+           let debit = value(row, debitIndex),
+           let magnitude = parseMagnitude(debit, exponent: exponent) {
+            return columns.flipsSign ? abs(magnitude) : -abs(magnitude)
         }
-        if let creditIndex, let credit = value(row, creditIndex), let magnitude = parseMagnitude(credit, exponent: exponent) {
-            return flipsSign ? -abs(magnitude) : abs(magnitude)
+        if let creditIndex = columns.creditIndex,
+           let credit = value(row, creditIndex),
+           let magnitude = parseMagnitude(credit, exponent: exponent) {
+            return columns.flipsSign ? -abs(magnitude) : abs(magnitude)
         }
-        if let amountIndex, let raw = value(row, amountIndex) {
-            return parseAmount(raw, flipsSign: flipsSign, exponent: exponent)
+        if let amountIndex = columns.amountIndex, let raw = value(row, amountIndex) {
+            return parseAmount(raw, flipsSign: columns.flipsSign, exponent: exponent)
         }
         return nil
     }

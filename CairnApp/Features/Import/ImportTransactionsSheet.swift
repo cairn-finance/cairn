@@ -8,14 +8,17 @@ struct ImportTransactionsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let account: Account
+    /// Called after a successful import, so a caller can continue or close.
+    var onImported: (() -> Void)?
 
     @State private var document: CSVParser.Document
     @State private var preset: CSVImportPreset
     @State private var flipsSign = false
     @State private var isImporting = false
 
-    init(account: Account, text: String) {
+    init(account: Account, text: String, onImported: (() -> Void)? = nil) {
         self.account = account
+        self.onImported = onImported
         let parsedDocument = CSVParser.parse(text)
         _document = State(initialValue: parsedDocument)
         // Pick the Apple Card preset automatically when its headers are present.
@@ -130,11 +133,11 @@ struct ImportTransactionsSheet: View {
     private var summaryFooter: some View {
         let count = parsed?.transactions.count ?? 0
         let skipped = parsed?.skippedRows ?? 0
-        Text(
-            "\(count) transaction\(count == 1 ? "" : "s") ready to import"
-            + (skipped > 0 ? ", \(skipped) row\(skipped == 1 ? "" : "s") skipped." : ".")
-            + " Duplicates already in the account are skipped automatically."
-        )
+        if skipped > 0 {
+            Text("^[\(count) transaction](inflect: true) ready to import, ^[\(skipped) row](inflect: true) skipped.")
+        } else {
+            Text("^[\(count) transaction](inflect: true) ready to import. Duplicates are skipped automatically.")
+        }
     }
 
     private func performImport() {
@@ -145,9 +148,20 @@ struct ImportTransactionsSheet: View {
             isImporting = false
             if let outcome {
                 let skipped = outcome.duplicatesSkipped
-                model.banner = "Imported \(outcome.inserted) transaction\(outcome.inserted == 1 ? "" : "s")"
-                    + (skipped > 0 ? ", skipped \(skipped) duplicate\(skipped == 1 ? "" : "s")." : ".")
-                dismiss()
+                if skipped > 0 {
+                    model.banner = String(
+                        localized: "Imported ^[\(outcome.inserted) transaction](inflect: true), skipped \(skipped)."
+                    )
+                } else {
+                    model.banner = String(localized: "Imported ^[\(outcome.inserted) transaction](inflect: true).")
+                }
+                // A caller that supplies a callback owns dismissal, so the
+                // sheet is not told to close twice.
+                if let onImported {
+                    onImported()
+                } else {
+                    dismiss()
+                }
             }
         }
     }

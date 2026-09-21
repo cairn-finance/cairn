@@ -174,7 +174,9 @@ public actor WalletSyncEngine {
         if let available {
             // Available credit/spending power is always a positive capacity, even
             // for a liability account.
-            account.availableBalanceMinorUnits = abs(Self.signedMinorUnits(available.amount, indicator: available.creditDebitIndicator))
+            account.availableBalanceMinorUnits = abs(
+                Self.signedMinorUnits(available.amount, indicator: available.creditDebitIndicator)
+            )
             account.hasAvailableBalance = true
         } else {
             account.availableBalanceMinorUnits = account.balanceMinorUnits

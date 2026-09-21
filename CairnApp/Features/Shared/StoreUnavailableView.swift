@@ -13,7 +13,7 @@ struct StoreUnavailableView: View {
     var body: some View {
         VStack(spacing: CairnTheme.Spacing.l) {
             Image(systemName: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 44, weight: .semibold))
+                .font(.system(.largeTitle, design: .default, weight: .semibold))
                 .foregroundStyle(CairnTheme.warning)
 
             VStack(spacing: 10) {

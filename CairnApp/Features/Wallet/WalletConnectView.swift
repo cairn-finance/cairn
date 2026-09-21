@@ -31,8 +31,7 @@ struct WalletConnectView: View {
                     feature(
                         icon: "hand.raised.fill",
                         title: "You choose what to share",
-                        detail: "Apple’s picker decides the accounts and how far back to share. "
-                            + "Change it any time in Settings › Privacy & Security › Financial Data."
+                        detail: "Apple’s picker decides the accounts and how far back to share. You can change it in Settings."
                     )
                 }
             }
@@ -53,7 +52,13 @@ struct WalletConnectView: View {
                     if isWorking {
                         ProgressView().controlSize(.small).tint(.white)
                     }
-                    Text(isWorking ? "Connecting…" : (alreadyConnected ? "Refresh Apple Wallet" : "Connect Apple Wallet"))
+                    if isWorking {
+                        Text("Connecting…")
+                    } else if alreadyConnected {
+                        Text("Refresh Apple Wallet")
+                    } else {
+                        Text("Connect Apple Wallet")
+                    }
                 }
             }
             .buttonStyle(.cairnProminent)
@@ -68,13 +73,14 @@ struct WalletConnectView: View {
         .animation(CairnTheme.Motion.quick, value: errorMessage)
     }
 
-    private func feature(icon: String, title: String, detail: String) -> some View {
+    private func feature(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(CairnTheme.accent)
                 .frame(width: 30, height: 30)
                 .background(CairnTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))

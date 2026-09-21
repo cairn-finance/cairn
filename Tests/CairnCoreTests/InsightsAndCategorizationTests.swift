@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import CairnCore
 
@@ -82,8 +83,8 @@ struct InsightsCalculatorTests {
             calendar: Self.calendar
         )
         #expect(snapshot.previous.spendingMinorUnits == 9_000)
-        let change = try? #require(snapshot.spendingChangeRatio)
-        #expect(abs((change ?? 0) - (4_000.0 / 9_000.0)) < 0.0001)
+        let change = snapshot.spendingChangeRatio ?? 0
+        #expect(abs(change - (4_000.0 / 9_000.0)) < 0.0001)
     }
 
     @Test("Breaks spending out by category with the previous month")
@@ -368,5 +369,54 @@ struct CategoryNameMatcherTests {
     func reject() {
         #expect(CategoryNameMatcher.match("Transfer", to: ["Dining", "Groceries"]) == nil)
         #expect(CategoryNameMatcher.match("", to: ["Dining"]) == nil)
+    }
+}
+
+@Suite("Insights fetcher")
+@MainActor
+struct InsightsFetcherTests {
+    @Test("Maps and windows transactions off the main actor")
+    func mapsAndWindows() async throws {
+        let container = try ModelContainerFactory.make(mode: .local, inMemory: true).container
+        let context = container.mainContext
+        let account = Account(bankAccountID: "A1", name: "Checking")
+        context.insert(account)
+        let category = Category(name: "Groceries", symbolName: "cart")
+        context.insert(category)
+        let now = Date()
+        let recent = LedgerTransaction(
+            bankTransactionID: "recent",
+            payeeDescription: "Coffee",
+            amountMinorUnits: -500
+        )
+        recent.account = account
+        recent.accountIDIndex = "A1"
+        recent.postedDate = now
+        recent.userCategory = category
+        context.insert(recent)
+
+        let old = LedgerTransaction(
+            bankTransactionID: "old",
+            payeeDescription: "Old Charge",
+            amountMinorUnits: -100
+        )
+        old.account = account
+        old.accountIDIndex = "A1"
+        old.postedDate = now.addingTimeInterval(-400 * 86_400)
+        context.insert(old)
+        try context.save()
+
+        let earliest = now.addingTimeInterval(-30 * 86_400)
+        let fetcher = await Task.detached { InsightsFetcher(modelContainer: container) }.value
+        let rows = await fetcher.insightTransactions(
+            scopes: [InsightAccountScope(bankAccountID: "A1", displayName: "Checking")],
+            earliest: earliest
+        )
+        #expect(rows.count == 1)
+        #expect(rows.first?.merchant == "Coffee")
+        #expect(rows.first?.categoryName == "Groceries")
+        #expect(rows.first?.categorySymbolName == "cart")
+        #expect(rows.first?.accountName == "Checking")
+        #expect(rows.first?.amountMinorUnits == -500)
     }
 }

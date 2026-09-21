@@ -13,7 +13,7 @@ struct AccountRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.displayName)
                     .font(.body.weight(.medium))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -32,6 +32,7 @@ struct AccountRow: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 10)
@@ -43,10 +44,10 @@ struct AccountRow: View {
     /// so the line under the name always says something useful.
     private var subtitle: String {
         var parts: [String] = []
-        if account.isManual { parts.append("Manual") }
-        if account.accountType != .other { parts.append(account.accountType.displayName) }
+        if account.isManual { parts.append(String(localized: "Manual")) }
+        if account.accountType != .other { parts.append(String(localized: "\(account.accountType.displayName)")) }
         if account.accountType == .other || account.currency.code != "USD" || account.currency.isCustom {
-            parts.append(account.currency.displayLabel)
+            parts.append(String(localized: "\(account.currency.displayLabel)"))
         }
         return parts.joined(separator: " · ")
     }
@@ -74,11 +75,19 @@ struct TransactionRow: View {
             .opacity(transaction.isIgnored ? 0.5 : 1)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(transaction.payeeDescription.isEmpty ? "No description" : transaction.payeeDescription)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                    .strikethrough(transaction.isIgnored, color: .secondary)
-                    .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
+                if transaction.payeeDescription.isEmpty {
+                    Text("No description")
+                        .font(.body.weight(.medium))
+                        .lineLimit(2)
+                        .strikethrough(transaction.isIgnored, color: .secondary)
+                        .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
+                } else {
+                    Text(transaction.payeeDescription)
+                        .font(.body.weight(.medium))
+                        .lineLimit(2)
+                        .strikethrough(transaction.isIgnored, color: .secondary)
+                        .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
+                }
 
                 HStack(spacing: 5) {
                     if transaction.isPending {
@@ -116,6 +125,7 @@ struct TransactionRow: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 9)
@@ -131,9 +141,9 @@ struct TransactionRow: View {
 
     /// The category, or "Transfer" when the row is money movement and has no
     /// category of its own.
-    private var categoryLabel: String? {
+    private var categoryLabel: LocalizedStringKey? {
         if let category = transaction.effectiveCategory {
-            return category.name
+            return LocalizedStringKey(category.name)
         }
         return transaction.countsAsTransfer ? "Transfer" : "Uncategorized"
     }
@@ -142,6 +152,97 @@ struct TransactionRow: View {
     private func tagSummary(_ tags: [Tag]) -> String {
         let shown = tags.prefix(2).map { "#\($0.name)" }
         let extra = tags.count - shown.count
+        return shown.joined(separator: " ") + (extra > 0 ? " +\(extra)" : "")
+    }
+}
+
+/// One transaction drawn from an immutable snapshot. This is the row the
+/// windowed lists use: it reads no SwiftData state while diffing, so a single
+/// categorized transaction cannot invalidate unrelated rows.
+struct TransactionValueRow: View {
+    let row: TransactionRowValue
+    var showsAccount: Bool = true
+    var showsChevron: Bool = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: CairnTheme.Spacing.m) {
+            CategoryBadge(
+                symbolName: row.countsAsTransfer && row.categoryName == nil
+                    ? "arrow.left.arrow.right"
+                    : row.categorySymbolName,
+                hex: row.categoryColorHex ?? (row.countsAsTransfer ? "#32ADE6" : nil),
+                size: 40
+            )
+            .opacity(row.isIgnored ? 0.5 : 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.payeeDescription.isEmpty ? "No description" : row.payeeDescription)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                    .strikethrough(row.isIgnored, color: .secondary)
+                    .foregroundStyle(row.isIgnored ? .secondary : .primary)
+
+                HStack(spacing: 5) {
+                    if row.isPending {
+                        StatusPill(text: "Pending", systemImage: "clock", tint: CairnTheme.warning)
+                    }
+                    if let label = categoryLabel {
+                        Text(label)
+                    }
+                    if showsAccount, let accountName = row.accountName {
+                        if categoryLabel != nil {
+                            Text("·").foregroundStyle(.tertiary)
+                        }
+                        Text(accountName)
+                    }
+                    if !row.tagNames.isEmpty {
+                        Text("·").foregroundStyle(.tertiary)
+                        Text(tagSummary(row.tagNames))
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            AmountText(
+                money: row.amount,
+                showSign: true,
+                font: .body.weight(.semibold),
+                colorOverride: amountColor
+            )
+            .fixedSize(horizontal: true, vertical: false)
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 14)
+        .contentShape(Rectangle())
+    }
+
+    private var amountColor: Color? {
+        if row.isIgnored { return .secondary }
+        if row.countsAsTransfer { return .secondary }
+        return row.amountMinorUnits < 0 ? nil : CairnTheme.positive
+    }
+
+    /// The category, or "Transfer" when the row is money movement and has no
+    /// category of its own.
+    private var categoryLabel: String? {
+        if let name = row.categoryName { return name }
+        return row.countsAsTransfer ? "Transfer" : "Uncategorized"
+    }
+
+    /// Up to two tag names, then a count, so one row never grows unbounded.
+    private func tagSummary(_ names: [String]) -> String {
+        let shown = names.prefix(2).map { "#\($0)" }
+        let extra = names.count - shown.count
         return shown.joined(separator: " ") + (extra > 0 ? " +\(extra)" : "")
     }
 }
@@ -231,7 +332,7 @@ struct HoldingRow: View {
                     .padding(.horizontal, 3)
             } else {
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(CairnTheme.accent)
             }
         }
@@ -243,11 +344,11 @@ struct HoldingRow: View {
             parts.append(holding.name)
         }
         if let shares = holding.shares {
-            let text = shares.formatted(.number.precision(.fractionLength(0...4)))
-            parts.append("\(text) \(shares == 1 ? "share" : "shares")")
+            let count = shares.formatted(.number.precision(.fractionLength(0...4)))
+            parts.append("\(count) \(shares == 1 ? String(localized: "share") : String(localized: "shares"))")
         }
         if let cost = holding.costBasis {
-            parts.append("Cost \(cost.formatted())")
+            parts.append(String(localized: "Cost \(cost.formatted())"))
         }
         return parts.joined(separator: " · ")
     }

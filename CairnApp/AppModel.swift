@@ -53,6 +53,9 @@ final class AppModel {
     @ObservationIgnored let isSampleMode: Bool
     /// The "require unlock to open" state machine. UI reads `lock.isLocked`.
     @ObservationIgnored let lock: AppLockController
+    /// Watches network reachability so offline can be explained as a pause
+    /// rather than reported as a sync failure.
+    @ObservationIgnored let connectivity = NetworkMonitor()
 
     private(set) var onboardingComplete: Bool
     var useCloudKit: Bool
@@ -83,6 +86,9 @@ final class AppModel {
     @ObservationIgnored private var credentialsScanReady = false
     /// Coalesces repair passes: a remote change can arrive while one is running.
     @ObservationIgnored private var isRepairingConnections = false
+    /// Set while a sync resumed by a restored connection is in flight, so a
+    /// second path update cannot start an overlapping pass.
+    @ObservationIgnored var isResumingAfterReconnect = false
 
     /// Automatic categorization progress, surfaced in Insights.
     enum CategorizationState: Equatable {
@@ -212,6 +218,13 @@ final class AppModel {
         #endif
 
         PowerSource.prepare()
+        // Reachability is independent of the store, so it starts even when the
+        // recovery screen is up; offline is still worth explaining there.
+        // A restored path resumes the sync the offline copy promises.
+        connectivity.onBecameOnline = { [weak self] in
+            self?.resumeSyncAfterReconnect()
+        }
+        connectivity.start()
         // A background pass must never run against a store that failed to open.
         if storeFailure == nil {
             BackgroundCategorization.run = { [weak self] in
@@ -440,16 +453,17 @@ final class AppModel {
                 proposedCredentialID: UUID()
             )
             if case .ambiguous = adoption {
-                banner = "This SimpleFIN account’s connections match more than one saved connection. "
-                    + "Cairn left them as they are, so you’ll keep seeing both until it combines the "
-                    + "duplicates automatically."
+                banner = String(
+                    localized: "This account matches more than one saved connection. Cairn left both and will combine them."
+                )
             }
             return true
         } catch {
             let message: String
             if error is CredentialStoreError {
-                message = "Cairn couldn’t save this credential to the Keychain, so the "
-                    + "connection wasn’t completed. Create a new SimpleFIN token and try again."
+                message = String(
+                    localized: "Cairn couldn’t save the credential to the Keychain, so the connection wasn’t completed."
+                )
             } else {
                 message = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
             }
@@ -512,8 +526,9 @@ final class AppModel {
 
         guard let secret = try? credentials.secret(for: credential.id),
               let accessURL = URL(string: secret) else {
-            banner = "That saved SimpleFIN connection couldn’t be read. "
-                + "Connect again, or forget it with Not Now."
+            banner = String(
+                localized: "That saved SimpleFIN connection couldn’t be read. Connect again, or forget it with Not Now."
+            )
             return false
         }
         await cairnLog(.info, "Reconnecting saved credential for \(credential.host).")
@@ -532,9 +547,9 @@ final class AppModel {
                 retiringCredentialID: id
             )
             if case .ambiguous = adoption {
-                banner = "This saved connection’s banks match more than one saved connection. "
-                    + "Cairn left them as they are, so you’ll keep seeing both until it combines the "
-                    + "duplicates automatically."
+                banner = String(
+                    localized: "This saved connection’s banks match more than one saved connection. Cairn left both."
+                )
             }
             removeRecoverable(id: id)
             // Reconnecting from onboarding has to leave that screen; from
@@ -556,7 +571,7 @@ final class AppModel {
             try credentials.delete(id: credential.id)
             Task { await cairnLog(.info, "Forgot saved credential for \(credential.host).") }
         } catch {
-            banner = "Couldn’t remove the saved connection: \(error.localizedDescription)"
+            banner = String(localized: "Couldn’t remove the saved connection: \(error.localizedDescription)")
         }
         removeRecoverable(id: credential.id)
     }
@@ -656,7 +671,7 @@ final class AppModel {
         do {
             guard try await walletEngine.requestAuthorization() else {
                 syncState = .idle
-                banner = "Cairn wasn’t granted access to Wallet financial data."
+                banner = String(localized: "Cairn wasn’t granted access to Wallet financial data.")
                 return false
             }
             walletSyncEnabled = true
@@ -744,13 +759,18 @@ final class AppModel {
                 case .budgetExhausted:
                     await cairnLog(.warning, "\(name): daily request budget exhausted.")
                     if !reportedBudget {
-                        banner = "\(name) has reached today’s SimpleFIN request limit. It will sync again tomorrow."
+                        banner = String(
+                            localized: "\(name) has reached today’s SimpleFIN request limit. It will sync again tomorrow."
+                        )
                         reportedBudget = true
                     }
                 case let .throttled(until):
                     await cairnLog(.info, "\(name): throttled until \(until.formatted(date: .omitted, time: .shortened)).")
                     if force, !reportedThrottle {
-                        banner = "Just synced. Next automatic refresh after \(until.formatted(date: .omitted, time: .shortened))."
+                        let refreshTime = until.formatted(date: .omitted, time: .shortened)
+                        banner = String(
+                            localized: "Just synced. Next automatic refresh after \(refreshTime)."
+                        )
                         reportedThrottle = true
                     }
                 case .proceed:
@@ -939,11 +959,11 @@ final class AppModel {
                 try? credentials.delete(id: credentialID)
             }
             if outcome.retainedInstitutions > 0 {
-                banner = "Some accounts are still used by another saved connection, so they were kept."
+                banner = String(localized: "Some accounts are still used by another saved connection, so they were kept.")
             }
             await refreshBudget()
         } catch {
-            banner = "Couldn’t remove the connection: \(error.localizedDescription)"
+            banner = String(localized: "Couldn’t remove the connection: \(error.localizedDescription)")
             return
         }
         await syncAll(force: false)
@@ -951,13 +971,15 @@ final class AppModel {
 
     // MARK: - Manual accounts & import
 
-    /// Creates a manual account for data SimpleFIN can't reach.
+    /// Creates a manual account for data SimpleFIN can't reach. Returns the new
+    /// account so a caller can continue a flow, such as importing into it.
+    @discardableResult
     func createManualAccount(
         name: String,
         type: AccountType,
         openingBalanceMinorUnits: Int64,
         currency: Currency
-    ) {
+    ) -> Account {
         let account = Account(
             bankAccountID: "manual-\(UUID().uuidString)",
             name: name,
@@ -970,6 +992,7 @@ final class AppModel {
         account.balanceDate = .now
         container.mainContext.insert(account)
         try? container.mainContext.save()
+        return account
     }
 
     /// Imports parsed CSV rows into an account, returning what was inserted.
@@ -982,7 +1005,7 @@ final class AppModel {
             Task { await autoCategorize() }
             return outcome
         } catch {
-            banner = "Import failed: \(error.localizedDescription)"
+            banner = String(localized: "Import failed: \(error.localizedDescription)")
             return nil
         }
     }
@@ -1153,7 +1176,7 @@ final class AppModel {
     func setAppLock(enabled: Bool) {
         lock.setEnabled(enabled)
         if enabled, !lock.isEnabled {
-            banner = "Set a device passcode or password first — the app lock needs one."
+            banner = String(localized: "Set a device passcode or password first — the app lock needs one.")
         }
         UserDefaults.standard.set(lock.isEnabled, forKey: Self.Keys.appLockEnabled)
         Task { try? await engine.setAppLock(enabled: lock.isEnabled) }
@@ -1165,7 +1188,7 @@ final class AppModel {
         do {
             return json ? try await engine.exportJSON() : Data(try await engine.exportCSV().utf8)
         } catch {
-            banner = "Export failed: \(error.localizedDescription)"
+            banner = String(localized: "Export failed: \(error.localizedDescription)")
             return nil
         }
     }
@@ -1177,7 +1200,7 @@ final class AppModel {
             // Never claim success when the store refused. A partial delete with a
             // reassuring message is worse than an honest failure.
             await cairnLog(.error, "Delete All Data failed: \(error.localizedDescription)")
-            banner = "Cairn couldn’t delete everything: \(error.localizedDescription)"
+            banner = String(localized: "Cairn couldn’t delete everything: \(error.localizedDescription)")
             return
         }
 
@@ -1185,7 +1208,7 @@ final class AppModel {
             try credentials.deleteAll()
         } catch {
             await cairnLog(.warning, "Couldn’t clear stored credentials: \(error.localizedDescription)")
-            banner = "Data deleted, but a stored bank credential couldn’t be removed."
+            banner = String(localized: "Data deleted, but a stored bank credential couldn’t be removed.")
         }
 
         UserDefaults.standard.removeObject(forKey: Self.Keys.onboardingComplete)
@@ -1229,10 +1252,10 @@ final class AppModel {
         useCloudKit = cloud
         migrateCredentials(synchronizable: cloud)
         banner = cloud
-            ? "iCloud Sync will be enabled the next time you open Cairn."
-            : "This Device Only takes effect the next time you open Cairn. Cairn now reads "
-                + "the credential from this device; the copy in iCloud Keychain is left for "
-                + "your other devices."
+            ? String(localized: "iCloud Sync will be enabled the next time you open Cairn.")
+            : String(
+                localized: "Takes effect when you next open Cairn. The iCloud Keychain copy stays for your other devices."
+            )
     }
 
     /// Stores the credential with the requested iCloud Keychain setting. Falls
@@ -1244,7 +1267,9 @@ final class AppModel {
         } catch let syncError {
             do {
                 try credentials.store(secret, id: id, synchronizable: false)
-                banner = "iCloud Keychain sync isn’t available here, so the credential is stored on this device only."
+                banner = String(
+                    localized: "iCloud Keychain sync isn’t available, so the credential is stored on this device only."
+                )
             } catch {
                 throw syncError
             }
@@ -1285,7 +1310,7 @@ final class AppModel {
                 try credentials.store(secret, id: id, synchronizable: synchronizable)
             } catch {
                 let name = institution.name.isEmpty ? "an institution" : institution.name
-                banner = "Couldn’t update iCloud Keychain sync for \(name): \(error.localizedDescription)"
+                banner = String(localized: "Couldn’t update iCloud Keychain sync for \(name): \(error.localizedDescription)")
             }
         }
     }

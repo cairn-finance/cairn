@@ -196,4 +196,40 @@ struct TransactionImportTests {
         let count = try context.fetchCount(FetchDescriptor<LedgerTransaction>())
         #expect(count == 1)
     }
+
+    @Test("Re-importing after an edit keeps one row and preserves the edit")
+    func reimportAfterEditKeepsIdentity() async throws {
+        let result = try ModelContainerFactory.make(mode: .local, inMemory: true)
+        let context = result.container.mainContext
+        let account = makeManualAccount(in: context)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: result.container)
+        let day = Date()
+        let imports = [
+            ImportedTransaction(date: day, description: "Blue Bottle Coffee", merchant: "Blue Bottle", amountMinorUnits: -675),
+        ]
+        let first = try await engine.importTransactions(imports, intoAccountID: account.persistentModelID)
+        #expect(first.inserted == 1)
+
+        let row = try #require(try context.fetch(FetchDescriptor<LedgerTransaction>()).first)
+        let identifier = row.bankTransactionID
+        // Edit the amount too, so the row no longer matches on content at all and
+        // only the deterministic identity can prevent a second insert.
+        try await engine.updateManualTransaction(
+            ManualEntry(payee: "Blue Bottle (edited)", amountMinorUnits: -999, date: day),
+            transactionID: row.persistentModelID
+        )
+
+        let second = try await engine.importTransactions(imports, intoAccountID: account.persistentModelID)
+        #expect(second.inserted == 0)
+        #expect(second.duplicatesSkipped == 1)
+
+        let rows = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        #expect(rows.count == 1)
+        let refreshed = try #require(rows.first)
+        #expect(refreshed.bankTransactionID == identifier)
+        #expect(refreshed.payeeDescription == "Blue Bottle (edited)")
+        #expect(refreshed.amountMinorUnits == -999)
+    }
 }

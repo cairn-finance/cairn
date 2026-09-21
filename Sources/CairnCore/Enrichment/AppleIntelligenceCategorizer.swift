@@ -18,7 +18,7 @@ public enum CategoryNameMatcher {
         var best: (name: String, score: Double)?
         for category in categories {
             let score = TextSimilarity.ratio(trimmed, category)
-            if best == nil || score > best!.score {
+            if score > (best?.score ?? -Double.infinity) {
                 best = (category, score)
             }
         }
@@ -60,10 +60,15 @@ public struct DeviceProfile: Sendable, Equatable {
     }
 
     /// A short, non-identifying description for Settings and diagnostics.
-    public var summary: String {
-        guard isAvailable else { return unavailableReason ?? "Unavailable" }
-        let window = contextSize > 0 ? "\(contextSize)-token window" : "context size unknown"
-        return "On-device model ready · \(window) · up to \(recommendedBatchSize) merchants per call"
+    public var summary: LocalizedStringResource {
+        guard isAvailable else {
+            if let unavailableReason { return LocalizedStringResource(stringLiteral: unavailableReason) }
+            return "Unavailable"
+        }
+        if contextSize > 0 {
+            return "On-device model ready · \(contextSize)-token window · up to \(recommendedBatchSize) merchants per call"
+        }
+        return "On-device model ready · context size unknown · up to \(recommendedBatchSize) merchants per call"
     }
 }
 
@@ -124,10 +129,10 @@ public enum AppleIntelligenceCategorizer {
 
     public static var isAvailable: Bool { availability == .available }
 
-    public static var statusDescription: String {
+    public static var statusDescription: LocalizedStringResource {
         switch availability {
         case .available: "Apple Intelligence is available on this device."
-        case .unavailable(let reason): reason
+        case .unavailable(let reason): LocalizedStringResource(stringLiteral: reason)
         }
     }
 

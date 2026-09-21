@@ -30,7 +30,7 @@ public enum SimpleFINError: Error, LocalizedError, Sendable, Equatable {
         case .insecureURL:
             "SimpleFIN returned an insecure (non-HTTPS) address. Cairn refused to use it."
         case .claimForbidden:
-            "This setup token has already been used. If that wasn’t you, disable it at your SimpleFIN Bridge immediately, then create a new one."
+            "This setup token has been used. If that wasn’t you, disable it at your SimpleFIN Bridge and create a new one."
         case .unauthorized:
             "Access was revoked or the credentials are no longer valid. Reconnect this institution to continue."
         case .paymentRequired:

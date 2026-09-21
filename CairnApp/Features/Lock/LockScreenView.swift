@@ -158,7 +158,7 @@ struct PrivacyCoverView: View {
         ZStack {
             CairnTheme.inkGradient.ignoresSafeArea()
             Image(systemName: "lock.fill")
-                .font(.system(size: 30, weight: .semibold))
+                .font(.title.weight(.semibold))
                 .foregroundStyle(CairnTheme.inkGlow)
         }
         .accessibilityHidden(true)
@@ -177,7 +177,7 @@ struct LockScreenView: View {
                 mark
                 VStack(spacing: 6) {
                     Text("Cairn")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(.system(.largeTitle, design: .default, weight: .bold))
                         .tracking(-0.5)
                     Text("Locked")
                         .font(.subheadline)
@@ -233,7 +233,7 @@ struct LockScreenView: View {
                         .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
                 )
             Image(systemName: "lock.fill")
-                .font(.system(size: 30, weight: .semibold))
+                .font(.title.weight(.semibold))
                 .foregroundStyle(CairnTheme.inkGlow)
         }
     }

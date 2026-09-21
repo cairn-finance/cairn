@@ -119,9 +119,9 @@ enum CairnTheme {
 
 extension Font {
     /// The large hero figure. Tight and confident.
-    static let cairnHero = Font.system(size: 40, weight: .semibold, design: .default)
+    static let cairnHero = Font.system(.largeTitle, design: .default, weight: .semibold)
     /// A secondary figure inside a hero or summary.
-    static let cairnDisplay = Font.system(size: 28, weight: .semibold, design: .default)
+    static let cairnDisplay = Font.system(.title, design: .default, weight: .semibold)
     /// Section labels above cards.
     static let cairnLabel = Font.system(.caption, weight: .semibold)
 }
@@ -132,6 +132,7 @@ extension Font {
 /// jitter as values update. Amounts are neutral by default; callers pass a
 /// `colorOverride` only when color carries meaning (a delta, a loss).
 struct AmountText: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let money: Money
     var showSign: Bool = false
     var font: Font = .body
@@ -152,7 +153,7 @@ struct AmountText: View {
         .monospacedDigit()
         .foregroundStyle(colorOverride ?? .primary)
         .contentTransition(.numericText(value: Double(money.minorUnits)))
-        .animation(CairnTheme.Motion.numeric, value: money.minorUnits)
+        .animation(reduceMotion ? nil : CairnTheme.Motion.numeric, value: money.minorUnits)
         .lineLimit(1)
         .minimumScaleFactor(0.6)
         .accessibilityLabel(text)
@@ -275,12 +276,13 @@ private struct CardSurfaceModifier: ViewModifier {
 
 /// A quiet uppercase label that sits above a card or list group.
 struct SectionLabel: View {
-    let title: String
+    let title: LocalizedStringKey
     var trailing: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title.uppercased())
+            Text(title)
+                .textCase(.uppercase)
                 .font(.cairnLabel)
                 .tracking(0.8)
                 .foregroundStyle(.secondary)
@@ -297,11 +299,15 @@ struct SectionLabel: View {
 
 /// A titled row inside a card, with an optional trailing action.
 struct CardHeader<Trailing: View>: View {
-    let title: String
-    var subtitle: String?
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey?
     @ViewBuilder var trailing: Trailing
 
-    init(_ title: String, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
+    init(
+        _ title: LocalizedStringKey,
+        subtitle: LocalizedStringKey? = nil,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) {
         self.title = title
         self.subtitle = subtitle
         self.trailing = trailing()
@@ -364,7 +370,11 @@ struct AccountGlyphStyle {
         case .investment: AccountGlyphStyle(symbol: "chart.line.uptrend.xyaxis", tint: Color(red: 0.62, green: 0.36, blue: 0.87))
         case .loan: AccountGlyphStyle(symbol: "building.2.fill", tint: Color(red: 0.86, green: 0.53, blue: 0.20))
         case .cash: AccountGlyphStyle(symbol: "dollarsign.circle.fill", tint: Color(red: 0.24, green: 0.66, blue: 0.62))
-        case .other: AccountGlyphStyle(symbol: account.isManual ? "square.and.pencil" : "building.columns.fill", tint: CairnTheme.accent)
+        case .other:
+            AccountGlyphStyle(
+                symbol: account.isManual ? "square.and.pencil" : "building.columns.fill",
+                tint: CairnTheme.accent
+            )
         }
     }
 }
@@ -441,8 +451,14 @@ struct TrendPill: View {
         HStack(spacing: 3) {
             Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right")
                 .font(.system(size: 9, weight: .bold))
-            Text(percent > cap ? "\(cap)+%" : "\(percent)%")
-                .monospacedDigit()
+                .accessibilityHidden(true)
+            if percent > cap {
+                Text("\(cap)+%")
+                    .monospacedDigit()
+            } else {
+                Text((Double(percent) / 100).formatted(.percent.precision(.fractionLength(0))))
+                    .monospacedDigit()
+            }
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(onInk ? .white : tint)
@@ -450,6 +466,16 @@ struct TrendPill: View {
         .padding(.vertical, 3)
         .background(onInk ? tint.opacity(0.55) : tint.opacity(0.12), in: Capsule())
         .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    /// The spoken form: direction and magnitude, since the arrow and the color
+    /// alone don't convey it to VoiceOver.
+    private var accessibilityText: Text {
+        let percent = min(Int((abs(ratio) * 100).rounded()), cap)
+        if percent == 0 { return Text("No change") }
+        return ratio >= 0 ? Text("Up \(percent) percent") : Text("Down \(percent) percent")
     }
 }
 
@@ -457,7 +483,7 @@ struct TrendPill: View {
 
 /// A labeled value used inside summary cards.
 struct Metric: View {
-    let title: String
+    let title: LocalizedStringKey
     let money: Money
     var tint: Color = .primary
     var font: Font = .callout.weight(.semibold)
@@ -475,7 +501,7 @@ struct Metric: View {
 
 /// A small inset tile with a label and a figure, used in stat grids.
 struct StatTile<Value: View>: View {
-    let title: String
+    let title: LocalizedStringKey
     var systemImage: String?
     var tint: Color = .secondary
     @ViewBuilder var value: Value
@@ -487,6 +513,7 @@ struct StatTile<Value: View>: View {
                     Image(systemName: systemImage)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(tint)
+                        .accessibilityHidden(true)
                 }
                 Text(title)
                     .font(.caption)
@@ -505,7 +532,7 @@ struct StatTile<Value: View>: View {
 /// A compact capsule chip. Selected chips fill with the accent; unselected
 /// ones sit on an inset surface.
 struct Chip: View {
-    let title: String
+    let title: LocalizedStringKey
     var systemImage: String?
     var isSelected: Bool = false
     var tint: Color = CairnTheme.accent
@@ -515,6 +542,7 @@ struct Chip: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
             }
             Text(title)
                 .font(.subheadline.weight(isSelected ? .semibold : .medium))
@@ -526,6 +554,7 @@ struct Chip: View {
         .overlay(Capsule().strokeBorder(isSelected ? Color.clear : CairnTheme.outline, lineWidth: 1))
         .contentShape(Capsule())
         .animation(CairnTheme.Motion.quick, value: isSelected)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -533,18 +562,19 @@ struct Chip: View {
 struct SegmentedPicker<Option: Hashable & Identifiable>: View {
     let options: [Option]
     @Binding var selection: Option
-    let title: (Option) -> String
+    let title: (Option) -> LocalizedStringKey
     /// Render on the ink hero surface.
     var onInk: Bool = false
 
     @Namespace private var namespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options) { option in
                 let selected = option == selection
                 Button {
-                    withAnimation(CairnTheme.Motion.quick) { selection = option }
+                    withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { selection = option }
                 } label: {
                     Text(title(option))
                         .font(.footnote.weight(selected ? .semibold : .medium))
@@ -563,6 +593,7 @@ struct SegmentedPicker<Option: Hashable & Identifiable>: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
         .padding(3)
@@ -626,7 +657,18 @@ struct Sparkline: View {
         .chartLegend(.hidden)
         .chartPlotStyle { $0.clipped() }
         .chartXSelection(value: selection)
-        .accessibilityHidden(true)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Trend"))
+        .accessibilityValue(accessibilityValueText)
+    }
+
+    /// A spoken summary of the plotted range, since the line is purely visual.
+    private var accessibilityValueText: Text {
+        guard let first = values.first, let last = values.last else { return Text(verbatim: "") }
+        let delta = abs(last - first).formatted(.number.precision(.fractionLength(0)))
+        if last > first { return Text("Up \(delta)") }
+        if last < first { return Text("Down \(delta)") }
+        return Text("No change")
     }
 
     /// The selected index, clamped to the data that's actually plotted.
@@ -648,9 +690,9 @@ struct Sparkline: View {
 /// Empty-state presentation shared by the main lists.
 struct EmptyStateView: View {
     let systemImage: String
-    let title: String
-    let message: String
-    var actionTitle: String?
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey
+    var actionTitle: LocalizedStringKey?
     var action: (() -> Void)?
 
     var body: some View {
@@ -662,10 +704,12 @@ struct EmptyStateView: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 28, weight: .medium))
                     .foregroundStyle(CairnTheme.accent)
+                    .accessibilityHidden(true)
             }
             VStack(spacing: 6) {
                 Text(title)
                     .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
                 Text(message)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -769,15 +813,15 @@ struct SettingsIcon: View {
 
 /// A row with a leading icon, a title, and trailing content.
 struct IconRow<Trailing: View>: View {
-    let title: String
-    var subtitle: String?
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey?
     let systemImage: String
     var tint: Color = CairnTheme.accent
     @ViewBuilder var trailing: Trailing
 
     init(
-        _ title: String,
-        subtitle: String? = nil,
+        _ title: LocalizedStringKey,
+        subtitle: LocalizedStringKey? = nil,
         systemImage: String,
         tint: Color = CairnTheme.accent,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
@@ -808,9 +852,9 @@ struct IconRow<Trailing: View>: View {
 
 /// Small explanatory text under a group of controls.
 struct FootnoteText: View {
-    let text: String
+    let text: LocalizedStringKey
 
-    init(_ text: String) { self.text = text }
+    init(_ text: LocalizedStringKey) { self.text = text }
 
     var body: some View {
         Text(text)
@@ -824,7 +868,7 @@ struct FootnoteText: View {
 
 /// A small inline status such as "Synced 2m ago" or "Pending".
 struct StatusPill: View {
-    let text: String
+    let text: LocalizedStringKey
     var systemImage: String?
     var tint: Color = .secondary
 
@@ -833,6 +877,7 @@ struct StatusPill: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 9, weight: .bold))
+                    .accessibilityHidden(true)
             }
             Text(text)
                 .font(.caption2.weight(.semibold))
@@ -915,13 +960,15 @@ extension String {
 
 extension Date {
     /// "Today", "Yesterday", or "Mon, Sep 8".
-    var cairnDayLabel: String {
+    var cairnDayLabel: LocalizedStringKey {
         let calendar = Calendar.current
         if calendar.isDateInToday(self) { return "Today" }
         if calendar.isDateInYesterday(self) { return "Yesterday" }
         if calendar.isDate(self, equalTo: .now, toGranularity: .year) {
-            return formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            return LocalizedStringKey(
+                formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            )
         }
-        return formatted(.dateTime.month(.abbreviated).day().year())
+        return LocalizedStringKey(formatted(.dateTime.month(.abbreviated).day().year()))
     }
 }

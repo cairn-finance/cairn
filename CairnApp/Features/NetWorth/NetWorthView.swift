@@ -9,6 +9,7 @@ struct NetWorthView: View {
     @Query private var accounts: [Account]
     @Query private var settings: [AppSettings]
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var range: RangeOption = .ninetyDays
     @State private var selectedDate: Date?
 
@@ -93,12 +94,19 @@ struct NetWorthView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(selectedPoint.map { $0.date.formatted(date: .abbreviated, time: .omitted) } ?? "Today")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .contentTransition(.opacity)
+                        if let selectedPoint {
+                            Text(selectedPoint.date.formatted(date: .abbreviated, time: .omitted))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .contentTransition(.opacity)
+                        } else {
+                            Text("Today")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .contentTransition(.opacity)
+                        }
                         Spacer()
-                        SegmentedPicker(options: RangeOption.allCases, selection: $range) { $0.title }
+                        SegmentedPicker(options: RangeOption.allCases, selection: $range) { LocalizedStringKey($0.title) }
                             .frame(maxWidth: 220)
                     }
                     AmountText(
@@ -120,7 +128,7 @@ struct NetWorthView: View {
                     .frame(height: 220)
             }
         }
-        .animation(CairnTheme.Motion.standard, value: range)
+        .animation(reduceMotion ? nil : CairnTheme.Motion.standard, value: range)
     }
 
     private func chart(_ points: [(date: Date, balanceMinorUnits: Int64)]) -> some View {
@@ -176,14 +184,14 @@ struct NetWorthView: View {
         .chartXSelection(value: $selectedDate)
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day(), anchor: .top)
                     .foregroundStyle(Color.secondary)
             }
         }
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine().foregroundStyle(CairnTheme.hairline)
-                AxisValueLabel {
+                AxisValueLabel(anchor: .leading) {
                     if let amount = value.as(Double.self) {
                         Text(compact(amount)).foregroundStyle(Color.secondary)
                     }
@@ -191,6 +199,27 @@ struct NetWorthView: View {
             }
         }
         .sensoryFeedback(.selection, trigger: selectedPoint?.date)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Net worth over time"))
+        .accessibilityValue(Text(verbatim: summary(points)))
+        .accessibilityAdjustableAction { direction in
+            let dates = points.map(\.date)
+            guard !dates.isEmpty else { return }
+            let index = selectedDate.flatMap { selected in dates.firstIndex(of: selected) }
+            switch direction {
+            case .increment: selectedDate = dates[min((index ?? -1) + 1, dates.count - 1)]
+            case .decrement: selectedDate = dates[max((index ?? dates.count) - 1, 0)]
+            @unknown default: break
+            }
+        }
+    }
+
+    /// A spoken summary of the range, since the line itself is visual.
+    private func summary(_ points: [(date: Date, balanceMinorUnits: Int64)]) -> String {
+        guard let first = points.first, let last = points.last else { return "" }
+        let start = Money(minorUnits: first.balanceMinorUnits, currency: currency).formatted()
+        let end = Money(minorUnits: last.balanceMinorUnits, currency: currency).formatted()
+        return "\(start) to \(end)"
     }
 
     // MARK: - Breakdown
@@ -221,7 +250,10 @@ struct NetWorthView: View {
                         AmountText(money: Money(minorUnits: split.assets, currency: currency), font: .callout.weight(.semibold))
                     }
                     StatTile(title: "Liabilities", systemImage: "arrow.down.right", tint: CairnTheme.negative) {
-                        AmountText(money: Money(minorUnits: split.liabilities, currency: currency), font: .callout.weight(.semibold))
+                        AmountText(
+                            money: Money(minorUnits: split.liabilities, currency: currency),
+                            font: .callout.weight(.semibold)
+                        )
                     }
                 }
             }

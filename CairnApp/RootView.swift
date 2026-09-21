@@ -43,19 +43,25 @@ struct RootView: View {
 /// A transient, non-blocking status toast.
 private struct BannerView: View {
     let text: String
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(CairnTheme.accent)
                 .padding(.top, 1)
-            Text(text)
+            Text(verbatim: text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(
+            reduceTransparency
+                ? AnyShapeStyle(CairnTheme.surface)
+                : AnyShapeStyle(.regularMaterial),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(CairnTheme.outline, lineWidth: 1)
@@ -73,7 +79,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: LocalizedStringKey {
         switch self {
         case .home: "Home"
         case .activity: "Activity"
