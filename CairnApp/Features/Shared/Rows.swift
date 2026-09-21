@@ -78,13 +78,13 @@ struct TransactionRow: View {
                 if transaction.payeeDescription.isEmpty {
                     Text("No description")
                         .font(.body.weight(.medium))
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .strikethrough(transaction.isIgnored, color: .secondary)
                         .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
                 } else {
                     Text(transaction.payeeDescription)
                         .font(.body.weight(.medium))
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .strikethrough(transaction.isIgnored, color: .secondary)
                         .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
                 }

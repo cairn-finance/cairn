@@ -177,7 +177,7 @@ struct LockScreenView: View {
                 mark
                 VStack(spacing: 6) {
                     Text("Cairn")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(.system(.largeTitle, design: .default, weight: .bold))
                         .tracking(-0.5)
                     Text("Locked")
                         .font(.subheadline)

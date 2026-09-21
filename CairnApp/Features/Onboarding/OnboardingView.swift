@@ -148,7 +148,7 @@ struct OnboardingView: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Cairn")
-                    .font(.system(size: 44, weight: .bold))
+                    .font(.system(.largeTitle, design: .default, weight: .bold))
                     .tracking(-1)
                 Text("Your money. Your data.\nNo account, no server, no tracking.")
                     .font(.title3)

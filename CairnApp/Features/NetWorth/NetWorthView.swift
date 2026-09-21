@@ -198,6 +198,17 @@ struct NetWorthView: View {
             }
         }
         .sensoryFeedback(.selection, trigger: selectedPoint?.date)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Net worth over time"))
+        .accessibilityValue(Text(verbatim: summary(points)))
+    }
+
+    /// A spoken summary of the range, since the line itself is visual.
+    private func summary(_ points: [(date: Date, balanceMinorUnits: Int64)]) -> String {
+        guard let first = points.first, let last = points.last else { return "" }
+        let start = Money(minorUnits: first.balanceMinorUnits, currency: currency).formatted()
+        let end = Money(minorUnits: last.balanceMinorUnits, currency: currency).formatted()
+        return "\(start) to \(end)"
     }
 
     // MARK: - Breakdown

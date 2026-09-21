@@ -433,6 +433,8 @@ struct InsightsView: View {
                     }
                     .frame(height: 180)
                     .sensoryFeedback(.selection, trigger: paceSelection)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text("Spending pace"))
 
                     HStack(spacing: 14) {
                         legend("This month", color: CairnTheme.accent, dashed: false)
@@ -535,6 +537,8 @@ struct InsightsView: View {
                 }
                 .frame(height: 150)
                 .sensoryFeedback(.selection, trigger: trendSelection)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text("Monthly spending"))
             }
         }
     }
