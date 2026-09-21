@@ -183,14 +183,14 @@ struct NetWorthView: View {
         .chartXSelection(value: $selectedDate)
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day(), anchor: .top)
                     .foregroundStyle(Color.secondary)
             }
         }
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine().foregroundStyle(CairnTheme.hairline)
-                AxisValueLabel {
+                AxisValueLabel(anchor: .leading) {
                     if let amount = value.as(Double.self) {
                         Text(compact(amount)).foregroundStyle(Color.secondary)
                     }

@@ -411,7 +411,7 @@ struct InsightsView: View {
                     .chartXSelection(value: $paceSelection)
                     .chartXAxis {
                         AxisMarks(values: [1, 8, 15, 22, data.daysInMonth]) { value in
-                            AxisValueLabel {
+                            AxisValueLabel(anchor: .top) {
                                 if let day = value.as(Int.self) { Text("\(day)").foregroundStyle(Color.secondary) }
                             }
                         }
@@ -419,7 +419,7 @@ struct InsightsView: View {
                     .chartYAxis {
                         AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                             AxisGridLine().foregroundStyle(CairnTheme.hairline)
-                            AxisValueLabel {
+                            AxisValueLabel(anchor: .leading) {
                                  if let amount = value.as(Double.self) {
                                      Text(shortCurrency(amount)).foregroundStyle(Color.secondary)
                                  }
@@ -517,14 +517,14 @@ struct InsightsView: View {
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                         AxisGridLine().foregroundStyle(CairnTheme.hairline)
-                        AxisValueLabel {
+                        AxisValueLabel(anchor: .leading) {
                             if let amount = value.as(Double.self) { Text(shortCurrency(amount)).foregroundStyle(Color.secondary) }
                         }
                     }
                 }
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .month)) { _ in
-                        AxisValueLabel(format: .dateTime.month(.narrow))
+                        AxisValueLabel(format: .dateTime.month(.narrow), anchor: .top)
                             .foregroundStyle(Color.secondary)
                     }
                 }
