@@ -439,6 +439,7 @@ struct InsightsView: View {
                     .accessibilityValue(
                         Text(verbatim: data.cumulative.last.map { moneyText($0.amountMinorUnits) } ?? "")
                     )
+                    .accessibilityChartDescriptor(paceDescriptor(data))
                     .accessibilityAdjustableAction { direction in
                         let days = data.cumulative.map(\.day)
                         guard !days.isEmpty else { return }
@@ -554,6 +555,7 @@ struct InsightsView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text("Monthly spending"))
                 .accessibilityValue(Text("Average \(moneyText(average)) per month"))
+                .accessibilityChartDescriptor(trendDescriptor(data, average: average))
                 .accessibilityAdjustableAction { direction in
                     let months = data.months.map(\.monthStart)
                     guard !months.isEmpty else { return }
@@ -876,6 +878,67 @@ struct InsightsView: View {
 
     private var automaticModelEnabled: Bool {
         model.useAppleIntelligence && AppleIntelligenceCategorizer.isAvailable
+    }
+
+    /// The VoiceOver chart rotor and audio graph for the pace chart. The
+    /// actual, projected, and usual-pace lines are separate series so the
+    /// audio graph tracks each.
+    private func paceDescriptor(_ data: InsightsSnapshot) -> AccessibleChart {
+        AccessibleChart(
+            title: String(localized: "Spending pace"),
+            summary: data.cumulative.last.map { moneyText($0.amountMinorUnits) },
+            xTitle: String(localized: "Day"),
+            yTitle: String(localized: "Spent"),
+            lines: [
+                .init(
+                    name: String(localized: "This month"),
+                    isContinuous: true,
+                    points: data.cumulative.map {
+                        (x: Double($0.day), y: dollars($0.amountMinorUnits))
+                    }
+                ),
+                .init(
+                    name: String(localized: "Projected"),
+                    isContinuous: true,
+                    points: projection(data).map {
+                        (x: Double($0.day), y: dollars($0.amountMinorUnits))
+                    }
+                ),
+                .init(
+                    name: String(localized: "Usual pace"),
+                    isContinuous: true,
+                    points: idealPace(data).map {
+                        (x: Double($0.day), y: dollars($0.amountMinorUnits))
+                    }
+                )
+            ],
+            describesX: { String(localized: "Day \(Int($0))") },
+            describesY: { $0.formatted(.currency(code: primaryCurrency.code)) }
+        )
+    }
+
+    /// The VoiceOver chart rotor and audio graph for the six-month bars.
+    private func trendDescriptor(_ data: InsightsSnapshot, average: Int64) -> AccessibleChart {
+        AccessibleChart(
+            title: String(localized: "Monthly spending"),
+            summary: String(localized: "Average \(moneyText(average)) per month"),
+            xTitle: String(localized: "Month"),
+            yTitle: String(localized: "Spending"),
+            lines: [
+                .init(
+                    name: String(localized: "Spending"),
+                    isContinuous: false,
+                    points: data.months.map {
+                        (
+                            x: $0.monthStart.timeIntervalSince1970,
+                            y: dollars($0.spendingMinorUnits)
+                        )
+                    }
+                )
+            ],
+            describesX: { Date(timeIntervalSince1970: $0).formatted(.dateTime.month(.wide).year()) },
+            describesY: { $0.formatted(.currency(code: primaryCurrency.code)) }
+        )
     }
 
     private func moneyText(_ minorUnits: Int64) -> String {
