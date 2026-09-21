@@ -119,9 +119,9 @@ enum CairnTheme {
 
 extension Font {
     /// The large hero figure. Tight and confident.
-    static let cairnHero = Font.system(size: 40, weight: .semibold, design: .default)
+    static let cairnHero = Font.system(.largeTitle, design: .default, weight: .semibold)
     /// A secondary figure inside a hero or summary.
-    static let cairnDisplay = Font.system(size: 28, weight: .semibold, design: .default)
+    static let cairnDisplay = Font.system(.title, design: .default, weight: .semibold)
     /// Section labels above cards.
     static let cairnLabel = Font.system(.caption, weight: .semibold)
 }
@@ -450,6 +450,7 @@ struct TrendPill: View {
         HStack(spacing: 3) {
             Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right")
                 .font(.system(size: 9, weight: .bold))
+                .accessibilityHidden(true)
             if percent > cap {
                 Text("\(cap)+%")
                     .monospacedDigit()
@@ -464,6 +465,16 @@ struct TrendPill: View {
         .padding(.vertical, 3)
         .background(onInk ? tint.opacity(0.55) : tint.opacity(0.12), in: Capsule())
         .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    /// The spoken form: direction and magnitude, since the arrow and the color
+    /// alone don't convey it to VoiceOver.
+    private var accessibilityText: Text {
+        let percent = min(Int((abs(ratio) * 100).rounded()), cap)
+        if percent == 0 { return Text("No change") }
+        return ratio >= 0 ? Text("Up \(percent) percent") : Text("Down \(percent) percent")
     }
 }
 
@@ -540,6 +551,7 @@ struct Chip: View {
         .overlay(Capsule().strokeBorder(isSelected ? Color.clear : CairnTheme.outline, lineWidth: 1))
         .contentShape(Capsule())
         .animation(CairnTheme.Motion.quick, value: isSelected)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -552,13 +564,14 @@ struct SegmentedPicker<Option: Hashable & Identifiable>: View {
     var onInk: Bool = false
 
     @Namespace private var namespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options) { option in
                 let selected = option == selection
                 Button {
-                    withAnimation(CairnTheme.Motion.quick) { selection = option }
+                    withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { selection = option }
                 } label: {
                     Text(title(option))
                         .font(.footnote.weight(selected ? .semibold : .medium))
@@ -577,6 +590,7 @@ struct SegmentedPicker<Option: Hashable & Identifiable>: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
         .padding(3)
@@ -640,7 +654,18 @@ struct Sparkline: View {
         .chartLegend(.hidden)
         .chartPlotStyle { $0.clipped() }
         .chartXSelection(value: selection)
-        .accessibilityHidden(true)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Trend"))
+        .accessibilityValue(accessibilityValueText)
+    }
+
+    /// A spoken summary of the plotted range, since the line is purely visual.
+    private var accessibilityValueText: Text {
+        guard let first = values.first, let last = values.last else { return Text(verbatim: "") }
+        let delta = abs(last - first).formatted(.number.precision(.fractionLength(0)))
+        if last > first { return Text("Up \(delta)") }
+        if last < first { return Text("Down \(delta)") }
+        return Text("No change")
     }
 
     /// The selected index, clamped to the data that's actually plotted.

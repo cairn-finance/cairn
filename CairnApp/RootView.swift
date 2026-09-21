@@ -43,6 +43,7 @@ struct RootView: View {
 /// A transient, non-blocking status toast.
 private struct BannerView: View {
     let text: String
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -55,7 +56,12 @@ private struct BannerView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(
+            reduceTransparency
+                ? AnyShapeStyle(CairnTheme.surface)
+                : AnyShapeStyle(.regularMaterial),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(CairnTheme.outline, lineWidth: 1)

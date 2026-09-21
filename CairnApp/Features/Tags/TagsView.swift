@@ -168,7 +168,8 @@ struct TagEditorView: View {
                 }
                 Section("Color") {
                     LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(TagColorPalette.colors, id: \.self) { hex in
+                        ForEach(TagColorPalette.colors.indices, id: \.self) { index in
+                            let hex = TagColorPalette.colors[index]
                             Button {
                                 colorHex = hex
                             } label: {
@@ -180,10 +181,13 @@ struct TagEditorView: View {
                                             Image(systemName: "checkmark")
                                                 .font(.caption.weight(.bold))
                                                 .foregroundStyle(.white)
+                                                .accessibilityHidden(true)
                                         }
                                     }
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(Text("Color \(index + 1)"))
+                            .accessibilityAddTraits(hex == colorHex ? .isSelected : [])
                         }
                     }
                     .padding(.vertical, 4)

@@ -120,6 +120,7 @@ struct RulesView: View {
 
             Toggle("", isOn: enabledBinding(rule))
                 .labelsHidden()
+                .accessibilityLabel(Text(verbatim: ruleTitle(rule)))
         }
     }
 

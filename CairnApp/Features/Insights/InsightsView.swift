@@ -168,7 +168,7 @@ struct InsightsView: View {
 
     private var monthPicker: some View {
         HStack(spacing: 8) {
-            stepButton("chevron.left") { shiftMonth(-1) }
+            stepButton("chevron.left", label: "Previous month") { shiftMonth(-1) }
 
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -208,13 +208,17 @@ struct InsightsView: View {
                 .onChange(of: month) { _, _ in scrollToSelected(proxy, animated: true) }
             }
 
-            stepButton("chevron.right") { shiftMonth(1) }
+            stepButton("chevron.right", label: "Next month") { shiftMonth(1) }
                 .disabled(isCurrentMonth)
                 .opacity(isCurrentMonth ? 0.3 : 1)
         }
     }
 
-    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+    private func stepButton(
+        _ symbol: String,
+        label: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.footnote.weight(.bold))
@@ -224,6 +228,7 @@ struct InsightsView: View {
                 .overlay(Circle().strokeBorder(CairnTheme.outline, lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
     }
 
     private func shiftMonth(_ delta: Int) {

@@ -13,7 +13,7 @@ struct AccountRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.displayName)
                     .font(.body.weight(.medium))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -32,6 +32,7 @@ struct AccountRow: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 10)
@@ -124,6 +125,7 @@ struct TransactionRow: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 9)
@@ -216,6 +218,7 @@ struct TransactionValueRow: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 9)
