@@ -8,6 +8,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Added
 
+- Public GitHub Pages for privacy and support, with in-app and community links
+  pointing to the Cairn organization.
 - A public README, issue and pull request templates, a security policy, and
   refreshed privacy and support pages.
 - CI checks (tests and the schema hash) and a tag-driven release process that
