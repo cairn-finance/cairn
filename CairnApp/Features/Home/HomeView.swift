@@ -327,6 +327,7 @@ struct NetWorthHero: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.white.opacity(0.5))
+                        .accessibilityHidden(true)
                 }
 
                 AmountText(

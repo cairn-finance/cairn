@@ -508,17 +508,26 @@ struct SettingsView: View {
             }
             Link(destination: URL(string: "https://github.com/sehejjain/cairn")!) {
                 IconRow("Source Code", systemImage: "chevron.left.forwardslash.chevron.right", tint: .gray) {
-                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
             }
             Link(destination: URL(string: "https://sehejjain.github.io/cairn/privacy.html")!) {
                 IconRow("Privacy Policy", systemImage: "hand.raised.fill", tint: .gray) {
-                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
             }
             Link(destination: URL(string: "https://sehejjain.github.io/cairn/support.html")!) {
                 IconRow("Support", systemImage: "questionmark.circle.fill", tint: .gray) {
-                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
             }
         } header: {

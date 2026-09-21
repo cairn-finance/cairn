@@ -512,6 +512,7 @@ struct StatTile<Value: View>: View {
                     Image(systemName: systemImage)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(tint)
+                        .accessibilityHidden(true)
                 }
                 Text(title)
                     .font(.caption)
@@ -540,6 +541,7 @@ struct Chip: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
             }
             Text(title)
                 .font(.subheadline.weight(isSelected ? .semibold : .medium))
@@ -701,6 +703,7 @@ struct EmptyStateView: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 28, weight: .medium))
                     .foregroundStyle(CairnTheme.accent)
+                    .accessibilityHidden(true)
             }
             VStack(spacing: 6) {
                 Text(title)
@@ -873,6 +876,7 @@ struct StatusPill: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 9, weight: .bold))
+                    .accessibilityHidden(true)
             }
             Text(text)
                 .font(.caption2.weight(.semibold))
