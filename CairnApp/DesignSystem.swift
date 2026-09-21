@@ -132,6 +132,7 @@ extension Font {
 /// jitter as values update. Amounts are neutral by default; callers pass a
 /// `colorOverride` only when color carries meaning (a delta, a loss).
 struct AmountText: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let money: Money
     var showSign: Bool = false
     var font: Font = .body
@@ -152,7 +153,7 @@ struct AmountText: View {
         .monospacedDigit()
         .foregroundStyle(colorOverride ?? .primary)
         .contentTransition(.numericText(value: Double(money.minorUnits)))
-        .animation(CairnTheme.Motion.numeric, value: money.minorUnits)
+        .animation(reduceMotion ? nil : CairnTheme.Motion.numeric, value: money.minorUnits)
         .lineLimit(1)
         .minimumScaleFactor(0.6)
         .accessibilityLabel(text)

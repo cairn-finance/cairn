@@ -9,6 +9,7 @@ struct NetWorthView: View {
     @Query private var accounts: [Account]
     @Query private var settings: [AppSettings]
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var range: RangeOption = .ninetyDays
     @State private var selectedDate: Date?
 
@@ -127,7 +128,7 @@ struct NetWorthView: View {
                     .frame(height: 220)
             }
         }
-        .animation(CairnTheme.Motion.standard, value: range)
+        .animation(reduceMotion ? nil : CairnTheme.Motion.standard, value: range)
     }
 
     private func chart(_ points: [(date: Date, balanceMinorUnits: Int64)]) -> some View {

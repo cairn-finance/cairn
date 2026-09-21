@@ -8,6 +8,7 @@ import CairnCore
 /// computed on-device from the synced store.
 struct InsightsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(filter: #Predicate<Account> { $0.isHidden == false })
     private var accounts: [Account]
     @Query private var settings: [AppSettings]
@@ -175,7 +176,7 @@ struct InsightsView: View {
                     HStack(spacing: 6) {
                         ForEach(recentMonths, id: \.self) { candidate in
                             Button {
-                                withAnimation(CairnTheme.Motion.quick) { month = candidate }
+                                withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { month = candidate }
                             } label: {
                                 Chip(
                                      title: LocalizedStringKey(
@@ -234,13 +235,13 @@ struct InsightsView: View {
     private func shiftMonth(_ delta: Int) {
         guard let next = Calendar.current.date(byAdding: .month, value: delta, to: month) else { return }
         guard next <= .now || Calendar.current.isDate(next, equalTo: .now, toGranularity: .month) else { return }
-        withAnimation(CairnTheme.Motion.quick) { month = next }
+        withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { month = next }
     }
 
     private func scrollToSelected(_ proxy: ScrollViewProxy, animated: Bool) {
         guard let selected = recentMonths.first(where: { isSelected($0) }) else { return }
         if animated {
-            withAnimation(CairnTheme.Motion.quick) { proxy.scrollTo(selected, anchor: .center) }
+            withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { proxy.scrollTo(selected, anchor: .center) }
         } else {
             proxy.scrollTo(selected, anchor: .center)
         }
@@ -578,7 +579,7 @@ struct InsightsView: View {
                 CardHeader("By category") {
                     if data.categories.count > 6 {
                         Button(showAllCategories ? "Show less" : "Show all") {
-                            withAnimation(CairnTheme.Motion.standard) { showAllCategories.toggle() }
+                            withAnimation(reduceMotion ? nil : CairnTheme.Motion.standard) { showAllCategories.toggle() }
                         }
                         .font(.subheadline.weight(.medium))
                     }
