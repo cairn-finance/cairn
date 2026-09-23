@@ -35,6 +35,9 @@ no budgets, reports, or exchange rates yet.
 ## Try it
 
 - Join the public beta: **https://testflight.apple.com/join/zcmwDyef**
+- I got tired of paying about $100 a year for apps like Monarch Money and
+  Copilot, so I built Cairn. Cairn itself is free. If you want automatic bank
+  sync, the optional SimpleFIN Bridge currently costs $15 per year plus tax.
 - **Cairn is free:** it has no subscription, account, or Cairn service fee.
   Automatic bank sync needs your own [SimpleFIN Bridge](https://www.simplefin.org)
   account, a separate paid service billed by SimpleFIN — not Cairn. Cairn talks
