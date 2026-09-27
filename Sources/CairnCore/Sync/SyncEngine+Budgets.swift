@@ -15,7 +15,7 @@ public enum BudgetManagementError: Error, LocalizedError, Equatable {
         case .categoryNotFound: "That category no longer exists."
         case .notSpendingCategory: "Choose a spending category for a budget limit."
         case .categoryArchived: "Unhide this category before adding a budget limit."
-        case .categoryAlreadyConfigured: "A budget already exists for one of the selected categories. Refresh and review the suggestions again."
+        case .categoryAlreadyConfigured: "A selected category already has a budget. Refresh suggestions and try again."
         case .invalidMonth: "Choose a valid budget month."
         }
     }

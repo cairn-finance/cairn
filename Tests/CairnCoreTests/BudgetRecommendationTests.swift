@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Budget recommendations")
 struct BudgetRecommendationTests {
-    private let timeZone = TimeZone(secondsFromGMT: 0)!
+    private let timeZone = TimeZone(secondsFromGMT: 0) ?? .current
     private let months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
 
     @Test("Completed month keys are chronological and skip the current month")
@@ -51,8 +51,6 @@ struct BudgetRecommendationTests {
                 == [2_000, 4_000, 6_000, 8_000, 10_000, 1_000]
         )
     }
-
-
     @Test("Categories need spending in at least three sampled months")
     func requiresThreeActiveMonths() throws {
         let dining = category("Dining", order: 0)

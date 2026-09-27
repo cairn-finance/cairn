@@ -505,7 +505,7 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Transaction exports include every transaction, category, and note. Budget exports include category limits. Nothing is uploaded; you choose where it saves.")
+            Text("Exports include transactions, categories, notes, and budget limits. You choose where they save.")
         }
     }
 

@@ -165,7 +165,12 @@ struct HomeView: View {
                     } else if let summary = budgetSnapshot {
                         let spent = Money(minorUnits: summary.spentMinorUnits, currency: summary.currency).formatted()
                         if summary.plannedMinorUnits > 0 {
-                            Text("\(Money(minorUnits: summary.budgetedSpentMinorUnits, currency: summary.currency).formatted()) of \(Money(minorUnits: summary.plannedMinorUnits, currency: summary.currency).formatted()) planned · \(Money(minorUnits: summary.remainingMinorUnits, currency: summary.currency).formatted()) left")
+                            let plannedSpent = Money(
+                                minorUnits: summary.budgetedSpentMinorUnits, currency: summary.currency
+                            ).formatted()
+                            let planned = Money(minorUnits: summary.plannedMinorUnits, currency: summary.currency).formatted()
+                            let remaining = Money(minorUnits: summary.remainingMinorUnits, currency: summary.currency).formatted()
+                            Text("\(plannedSpent) of \(planned) planned · \(remaining) left")
                                 .font(.caption)
                                 .foregroundStyle(summary.remainingMinorUnits < 0 ? CairnTheme.warning : Color.secondary)
                         } else {

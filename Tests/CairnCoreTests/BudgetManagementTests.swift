@@ -6,7 +6,7 @@ import Testing
 @Suite("Budget management")
 @MainActor
 struct BudgetManagementTests {
-    private let timeZone = TimeZone(secondsFromGMT: 0)!
+    private let timeZone = TimeZone(secondsFromGMT: 0) ?? .current
 
     @Test("Remaining compares planned limits with spending in planned categories")
     func remainingExcludesUnbudgetedSpending() throws {

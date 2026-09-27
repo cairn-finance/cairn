@@ -256,13 +256,16 @@ struct BudgetView: View {
     private func summaryCard(_ data: BudgetSnapshot) -> some View {
         Card {
             let hasLimits = data.lines.contains { $0.plannedMinorUnits != nil }
+            let displayedSpent = hasLimits ? data.budgetedSpentMinorUnits : data.spentMinorUnits
+            let remaining = Money(minorUnits: data.remainingMinorUnits, currency: data.currency).formatted()
+            let allSpent = Money(minorUnits: data.spentMinorUnits, currency: data.currency).formatted()
             VStack(alignment: .leading, spacing: 12) {
                 Text(hasLimits ? "Spent in planned categories" : "Spent this month")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                 HStack(alignment: .firstTextBaseline) {
                     AmountText(
-                        money: Money(minorUnits: hasLimits ? data.budgetedSpentMinorUnits : data.spentMinorUnits, currency: data.currency),
+                        money: Money(minorUnits: displayedSpent, currency: data.currency),
                         font: .cairnDisplay
                     )
                     Spacer()
@@ -276,7 +279,7 @@ struct BudgetView: View {
                                 font: .subheadline.weight(.semibold),
                                 colorOverride: data.remainingMinorUnits < 0 ? CairnTheme.warning : CairnTheme.positive
                             )
-                            .accessibilityLabel("\(Money(minorUnits: data.remainingMinorUnits, currency: data.currency).formatted()) remaining in planned categories")
+                            .accessibilityLabel("\(remaining) remaining in planned categories")
                         } else {
                             Text("No limits set")
                                 .font(.caption.weight(.medium))
@@ -294,7 +297,7 @@ struct BudgetView: View {
                         .accessibilityLabel("Monthly budget progress")
                 }
                 if hasLimits {
-                    Text("\(Money(minorUnits: data.spentMinorUnits, currency: data.currency).formatted()) spent across all categories this month")
+                    Text("\(allSpent) spent across all categories this month")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -522,9 +525,11 @@ private struct BudgetLimitEditor: View {
                     }
 
                     if let currentLimit {
+                        let formattedLimit = Money(minorUnits: currentLimit, currency: currency).formatted()
+                        let limitScope = currentSetting?.isMonthOverride == true ? "for this month" : "recurring"
                         Card {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Current limit: \(Money(minorUnits: currentLimit, currency: currency).formatted())\(currentSetting?.isMonthOverride == true ? " for this month" : " recurring").")
+                                Text("Current limit: \(formattedLimit) \(limitScope).")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 Button("Remove limit", role: .destructive) {
@@ -561,13 +566,16 @@ private struct BudgetLimitEditor: View {
                 }
             }
             .confirmationDialog("Remove \(category.name) limit?", isPresented: $showingRemoveConfirmation) {
-                Button(scope == .monthOnly ? "Remove for \(monthLabel)" : "Remove from \(monthLabel) onward", role: .destructive) {
+                Button(
+                    scope == .monthOnly ? "Remove for \(monthLabel)" : "Remove from \(monthLabel) onward",
+                    role: .destructive
+                ) {
                     save(isEnabled: false)
                 }
             } message: {
                 Text(scope == .monthOnly
                      ? "The recurring limit will apply again next month."
-                     : "This removes the recurring limit from \(monthLabel). Existing exceptions in later months remain in place.")
+                     : "This removes the recurring limit from \(monthLabel). Later exceptions remain in place.")
             }
         }
         #if os(macOS)

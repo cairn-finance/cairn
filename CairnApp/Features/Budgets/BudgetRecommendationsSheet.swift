@@ -79,7 +79,7 @@ struct BudgetRecommendationsSheet: View {
                     GetStartedEmptyState(
                         systemImage: "chart.pie",
                         title: "No suggestions yet",
-                        message: "No unbudgeted category has enough spending history yet. Cairn needs net spending in at least three of the last six complete months.",
+                        message: "Cairn needs net spending in three of the last six completed months to suggest a limit.",
                         includesConnect: false
                     )
                     .padding()
@@ -145,7 +145,7 @@ struct BudgetRecommendationsSheet: View {
                 ForEach(recommendations) { recommendation in
                     recommendationRow(recommendation)
                 }
-                Text("Suggestions use six complete months of spending history on this device. Months without spending are shown in each category's explanation.")
+                Text("Suggestions use six completed months of spending. Each category shows months with no spending.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -161,7 +161,8 @@ struct BudgetRecommendationsSheet: View {
     }
 
     private func recommendationRow(_ recommendation: BudgetRecommendation) -> some View {
-        Card {
+        let suggested = Money(minorUnits: recommendation.suggestedLimitMinorUnits, currency: currency).formatted()
+        return Card {
             VStack(alignment: .leading, spacing: 14) {
                 Toggle(isOn: selectionBinding(for: recommendation.id)) {
                     HStack(spacing: 10) {
@@ -214,7 +215,7 @@ struct BudgetRecommendationsSheet: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Why \(recommendation.category.name) has a suggested limit of \(Money(minorUnits: recommendation.suggestedLimitMinorUnits, currency: currency).formatted())")
+                .accessibilityLabel("Why \(recommendation.category.name) has a suggested limit of \(suggested)")
             }
         }
     }
@@ -234,7 +235,10 @@ struct BudgetRecommendationsSheet: View {
 
     private func amountBinding(for recommendation: BudgetRecommendation) -> Binding<String> {
         Binding(
-            get: { amountTexts[recommendation.id] ?? MinorUnits.string(recommendation.suggestedLimitMinorUnits, exponent: currency.exponent) },
+            get: {
+                amountTexts[recommendation.id]
+                    ?? MinorUnits.string(recommendation.suggestedLimitMinorUnits, exponent: currency.exponent)
+            },
             set: { amountTexts[recommendation.id] = $0 }
         )
     }
@@ -326,7 +330,13 @@ private struct BudgetRecommendationDetail: View {
                                 .foregroundStyle(.secondary)
                             Text(Money(minorUnits: recommendation.suggestedLimitMinorUnits, currency: currency).formatted())
                                 .font(.cairnDisplay)
-                            Text("Median spending was \(Money(minorUnits: recommendation.typicalActiveMonthMinorUnits, currency: currency).formatted()) across \(recommendation.monthsWithSpending) months with net spending. The limit rounds that up to the next five currency units.")
+                            let median = Money(
+                                minorUnits: recommendation.typicalActiveMonthMinorUnits, currency: currency
+                            ).formatted()
+                            Text("Median: \(median) across \(recommendation.monthsWithSpending) months with net spending.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text("The limit rounds that up to the next five currency units.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -348,7 +358,10 @@ private struct BudgetRecommendationDetail: View {
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     } else {
-                                        if month.amountMinorUnits > MinorUnits.multiplyClamped(recommendation.typicalActiveMonthMinorUnits, 2) {
+                                        let highThreshold = MinorUnits.multiplyClamped(
+                                            recommendation.typicalActiveMonthMinorUnits, 2
+                                        )
+                                        if month.amountMinorUnits > highThreshold {
                                             Text("Higher than typical")
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
@@ -366,7 +379,7 @@ private struct BudgetRecommendationDetail: View {
                         }
                     }
 
-                    Text("Months with no net spending are shown for context. The median uses months with spending, so one unusually expensive month has less influence on the suggestion.")
+                    Text("The median uses months with spending, so one expensive month has less influence.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
