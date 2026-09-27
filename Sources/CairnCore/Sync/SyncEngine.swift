@@ -2270,6 +2270,27 @@ public actor SyncEngine {
         return RecurringDetector.detect(transactions: transactions, now: now, calendar: calendar)
     }
 
+    /// Fetches only the charges behind one detected series and snapshots them
+    /// on the store actor before the detail screen renders them.
+    public func recurringChargeRows(for series: RecurringSeries) throws -> [TransactionRowValue] {
+        let accountPrefix = "\(series.accountID)|"
+        let bankTransactionIDs = series.transactionIDs.compactMap { identifier in
+            identifier.hasPrefix(accountPrefix)
+                ? String(identifier.dropFirst(accountPrefix.count))
+                : nil
+        }
+        guard !bankTransactionIDs.isEmpty else { return [] }
+
+        let descriptor = FetchDescriptor<LedgerTransaction>(
+            predicate: #Predicate { bankTransactionIDs.contains($0.bankTransactionID) }
+        )
+        let wanted = Set(series.transactionIDs)
+        return try modelContext.fetch(descriptor)
+            .filter { wanted.contains($0.recurringIdentifier) }
+            .map { $0.rowValue() }
+            .sorted { $0.effectiveDate > $1.effectiveDate }
+    }
+
     /// Runs the on-device Apple Intelligence model over a bounded set of
     /// uncategorized *merchants*, not individual transactions. Purely local: it
     /// uses `SystemLanguageModel` and never the Private Cloud Compute model.

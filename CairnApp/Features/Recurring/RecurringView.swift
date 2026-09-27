@@ -271,25 +271,28 @@ struct RecurringSummaryCard: View {
 
 /// The detail behind one detected series: the summary and every charge in it.
 struct RecurringDetailView: View {
-    @Query(sort: [SortDescriptor(\LedgerTransaction.postedDate, order: .reverse)])
-    private var allTransactions: [LedgerTransaction]
+    @Environment(AppModel.self) private var model
+    @State private var charges: [TransactionRowValue] = []
+    @State private var isLoadingCharges = true
+    @State private var chargeLoadFailed = false
 
     let series: RecurringSeries
-
-    private var charges: [LedgerTransaction] {
-        let ids = Set(series.transactionIDs)
-        return allTransactions.filter { ids.contains($0.recurringIdentifier) }
-    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
                 header
                 summary
-                if !charges.isEmpty {
+                if isLoadingCharges {
+                    ProgressView("Loading charges…")
+                } else if chargeLoadFailed {
+                    FootnoteText("Couldn’t load these charges. Try opening this payment again.")
+                } else if charges.isEmpty {
+                    FootnoteText("These charges are no longer available.")
+                } else {
                     VStack(alignment: .leading, spacing: 8) {
                         SectionLabel(title: "Charges", trailing: "\(charges.count)")
-                        TransactionDayList(rows: charges.map { $0.rowValue() })
+                        TransactionDayList(rows: charges)
                     }
                 }
             }
@@ -300,6 +303,20 @@ struct RecurringDetailView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .task(id: series.id) {
+            isLoadingCharges = true
+            do {
+                let rows = try await model.recurringChargeRows(for: series)
+                guard !Task.isCancelled else { return }
+                charges = rows
+                chargeLoadFailed = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                charges = []
+                chargeLoadFailed = true
+            }
+            isLoadingCharges = false
+        }
     }
 
     private var header: some View {
