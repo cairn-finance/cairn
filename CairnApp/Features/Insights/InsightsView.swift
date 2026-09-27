@@ -15,6 +15,7 @@ struct InsightsView: View {
 
     @State private var month: Date = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var showAllCategories = false
+    @State private var categoryPage = 0
     @State private var paceSelection: Int?
     @State private var trendSelection: Date?
     /// Calculator input, fetched and mapped on a background actor. The view
@@ -74,6 +75,7 @@ struct InsightsView: View {
                     recurringCard.cairnAppear(delay: 0.24)
                     categorizeCard.cairnAppear(delay: 0.28)
                 }
+                exploreCard
             }
             .cairnScreen()
         }
@@ -596,38 +598,115 @@ struct InsightsView: View {
     // MARK: - Categories
 
     private func categoryCard(_ data: InsightsSnapshot) -> some View {
-        let visible = showAllCategories ? data.categories : Array(data.categories.prefix(6))
         return Card {
             VStack(alignment: .leading, spacing: 10) {
-                CardHeader("By category") {
-                    if data.categories.count > 6 {
-                        Button(showAllCategories ? "Show less" : "Show all") {
-                            withAnimation(reduceMotion ? nil : CairnTheme.Motion.standard) { showAllCategories.toggle() }
-                        }
-                        .font(.subheadline.weight(.medium))
-                    }
-                }
+                CardHeader("Spending by category")
 
                 if data.categories.isEmpty {
                     Text("No spending recorded this month.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
-                    VStack(spacing: 6) {
-                        ForEach(visible) { slice in
-                            NavigationLink {
-                                InsightFilteredListView(
-                                    title: slice.name,
-                                    emptyMessage: "No transactions in this category for this month.",
-                                    currency: primaryCurrency,
-                                    scope: .category(name: slice.name, month: data.monthStart)
-                                )
-                            } label: {
-                                categoryRow(slice, in: data)
-                            }
-                            .buttonStyle(.plain)
-                        }
+                    Picker("Category view", selection: $categoryPage) {
+                        Text("Chart").tag(0)
+                        Text("List").tag(1)
                     }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Category view")
+
+                    #if os(iOS)
+                    TabView(selection: $categoryPage) {
+                        categoryChart(data).tag(0)
+                        categoryList(data).tag(1)
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .frame(height: 325)
+                    #else
+                    Group {
+                        if categoryPage == 0 { categoryChart(data) }
+                        else { categoryList(data) }
+                    }
+                    .frame(height: 325)
+                    #endif
+                }
+            }
+        }
+    }
+
+    private func categoryChart(_ data: InsightsSnapshot) -> some View {
+        let total = data.categories.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
+        return VStack(spacing: 12) {
+            Chart(data.categories) { slice in
+                SectorMark(
+                    angle: .value("Spending", max(0, slice.amountMinorUnits)),
+                    innerRadius: .ratio(0.62),
+                    angularInset: 2
+                )
+                .foregroundStyle(CairnTheme.color(hex: slice.colorHex))
+                .cornerRadius(3)
+            }
+            .chartLegend(.hidden)
+            .overlay {
+                VStack(spacing: 2) {
+                    Text("Spent").font(.caption).foregroundStyle(.secondary)
+                    Text(moneyText(total)).font(.headline).minimumScaleFactor(0.7).lineLimit(1)
+                }
+                .padding(30)
+            }
+            .frame(height: 245)
+            .accessibilityLabel("Category spending chart")
+            .accessibilityValue(Text("\(data.categories.count) categories, \(moneyText(total)) spent"))
+
+            Text("Swipe to see category amounts")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func categoryList(_ data: InsightsSnapshot) -> some View {
+        let visible = showAllCategories ? data.categories : Array(data.categories.prefix(6))
+        return ScrollView {
+            VStack(spacing: 6) {
+                ForEach(visible) { slice in
+                    NavigationLink {
+                        InsightFilteredListView(
+                            title: slice.name,
+                            emptyMessage: "No transactions in this category for this month.",
+                            currency: primaryCurrency,
+                            scope: .category(name: slice.name, month: data.monthStart)
+                        )
+                    } label: {
+                        categoryRow(slice, in: data)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if data.categories.count > 6 {
+                    Button(showAllCategories ? "Show fewer" : "Show all categories") {
+                        withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { showAllCategories.toggle() }
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .padding(.top, 8)
+                }
+            }
+        }
+    }
+
+    private var exploreCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                CardHeader("Explore")
+                NavigationLink {
+                    InsightTagsView(currency: primaryCurrency)
+                } label: {
+                    Label("Tags and transactions", systemImage: "tag")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                NavigationLink {
+                    InsightRulesView(currency: primaryCurrency)
+                } label: {
+                    Label("Rules and matching transactions", systemImage: "slider.horizontal.3")
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
