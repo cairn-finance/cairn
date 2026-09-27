@@ -8,6 +8,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Added
 
+- Browse spending with a category chart, then swipe to category amounts and
+  open lists of transactions matching a tag or rule in Insights.
 - Monthly category budgets with recurring limits, one-month overrides, and
   CSV export. Starting suggestions show each month's spending and let you
   review the combined plan before adding limits.
