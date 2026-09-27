@@ -22,6 +22,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Fixed
 
+- Opening a recurring payment now loads its charges without crashing when
+  synced transactions change in the background.
 - Budget remaining now compares planned limits with spending in those planned
   categories. Other spending is shown separately.
 - A failed transaction load no longer appears as zero budget spending.

@@ -1147,6 +1147,10 @@ final class AppModel {
         recurringSeries = (try? await engine.recurringSeries()) ?? []
     }
 
+    func recurringChargeRows(for series: RecurringSeries) async throws -> [TransactionRowValue] {
+        try await engine.recurringChargeRows(for: series)
+    }
+
     /// Called right after the person changes a transaction's category, so the
     /// same merchant's other automatic rows pick the correction up immediately.
     func propagateUserCategory(of transactionID: PersistentIdentifier) {
