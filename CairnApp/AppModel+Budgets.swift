@@ -3,6 +3,17 @@ import CairnCore
 
 extension AppModel {
     @discardableResult
+    func resetBudgetSettings() async -> Bool {
+        do {
+            try await engine.resetBudgetSettings()
+            return true
+        } catch {
+            banner = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
     func applyBudgetRecommendations(
         _ selections: [BudgetLimitSelection],
         currency: Currency,

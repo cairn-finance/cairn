@@ -254,7 +254,7 @@ public enum BudgetCalculator {
         categories: [BudgetCategory],
         currency: Currency,
         monthKeys: [String],
-        minimumActiveMonths: Int = 3,
+        minimumActiveMonths: Int = 2,
         timeZone: TimeZone = .current
     ) -> [BudgetRecommendation] {
         guard !monthKeys.isEmpty,

@@ -65,29 +65,27 @@ struct BudgetRecommendationsSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if loadFailed {
                     VStack(spacing: 16) {
-                        GetStartedEmptyState(
+                        emptyState(
                             systemImage: "exclamationmark.triangle",
                             title: "Suggestions unavailable",
-                            message: "Cairn couldn't load recent transactions. Try again.",
-                            includesConnect: false
+                            message: "Cairn couldn't load recent spending. Try again."
                         )
                         Button("Try again") { reloadToken &+= 1 }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding()
                 } else if recommendations.isEmpty {
-                    GetStartedEmptyState(
+                    emptyState(
                         systemImage: "chart.pie",
-                        title: "No suggestions yet",
-                        message: "Cairn needs net spending in three of the last six completed months to suggest a limit.",
-                        includesConnect: false
+                        title: "No new suggestions",
+                        message: "Suggestions need spending in two completed months. Categories with limits are skipped."
                     )
                     .padding()
                 } else {
                     recommendationsContent
                 }
             }
-            .navigationTitle("Starting budget")
+            .navigationTitle("Suggestions")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -95,6 +93,7 @@ struct BudgetRecommendationsSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                #if os(macOS)
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         applySelected()
@@ -107,7 +106,28 @@ struct BudgetRecommendationsSheet: View {
                     }
                     .disabled(!canApply)
                 }
+                #endif
             }
+            #if os(iOS)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !recommendations.isEmpty {
+                    Button {
+                        applySelected()
+                    } label: {
+                        if isApplying {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("Add selected")
+                        }
+                    }
+                    .buttonStyle(.cairnProminent)
+                    .disabled(!canApply)
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+                    .background(.regularMaterial)
+                }
+            }
+            #endif
             .task(id: reloadToken) { await loadRecommendations() }
             .sheet(item: $explanationRecommendation) { recommendation in
                 BudgetRecommendationDetail(
@@ -122,22 +142,35 @@ struct BudgetRecommendationsSheet: View {
         #endif
     }
 
+    private func emptyState(systemImage: String, title: LocalizedStringKey, message: LocalizedStringKey) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.largeTitle)
+                .foregroundStyle(CairnTheme.accent)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: 340)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var recommendationsContent: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 Card {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Your starting plan")
-                            .font(.headline)
-                        HStack(alignment: .firstTextBaseline) {
-                            Text("\(selectedCategoryIDs.count) categories selected")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(Money(minorUnits: selectedTotal, currency: currency).formatted())
-                                .font(.title3.weight(.semibold).monospacedDigit())
-                        }
-                        Text("These monthly limits start now and repeat. Adjust each amount before adding them.")
+                        Text("Selected monthly total")
+                            .font(.subheadline.weight(.semibold))
+                        Text(Money(minorUnits: selectedTotal, currency: currency).formatted())
+                            .font(.title2.weight(.semibold).monospacedDigit())
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("\(selectedCategoryIDs.count) categories selected")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -145,10 +178,6 @@ struct BudgetRecommendationsSheet: View {
                 ForEach(recommendations) { recommendation in
                     recommendationRow(recommendation)
                 }
-                Text("Suggestions use six completed months of spending. Each category shows months with no spending.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
             }
             .padding()
             .frame(maxWidth: 760)
@@ -174,30 +203,35 @@ struct BudgetRecommendationsSheet: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(recommendation.category.name)
                                 .font(.subheadline.weight(.semibold))
-                            Text("Spending in \(recommendation.monthsWithSpending) of \(recommendation.monthsSampled) months")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
 
-                HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Monthly limit")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(currencyLabel)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    TextField("Amount", text: amountBinding(for: recommendation))
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 90)
-                        .accessibilityLabel("\(recommendation.category.name) suggested monthly limit")
-                        #if os(iOS)
-                        .keyboardType(.decimalPad)
-                        #endif
-                        .disabled(!selectedCategoryIDs.contains(recommendation.id))
+                    HStack(spacing: 8) {
+                        Text(currencyLabel)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        TextField("Amount", text: amountBinding(for: recommendation))
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
+                            .font(.title3.weight(.semibold).monospacedDigit())
+                            .padding(.vertical, 8)
+                            .overlay(alignment: .bottom) {
+                                Rectangle()
+                                    .fill(CairnTheme.outline)
+                                    .frame(height: 1)
+                            }
+                            .accessibilityLabel("\(recommendation.category.name) suggested monthly limit")
+                            #if os(iOS)
+                            .keyboardType(.decimalPad)
+                            #endif
+                            .disabled(!selectedCategoryIDs.contains(recommendation.id))
+                    }
                 }
 
                 Divider()
@@ -277,7 +311,7 @@ struct BudgetRecommendationsSheet: View {
             categories: categories.filter { !alreadyConfigured.contains($0.uuid) },
             currency: currency,
             monthKeys: monthKeys,
-            minimumActiveMonths: 3,
+            minimumActiveMonths: 2,
             timeZone: timeZone
         )
         selectedCategoryIDs = Set(recommendations.map(\.id))
@@ -350,14 +384,9 @@ private struct BudgetRecommendationDetail: View {
                         VStack(spacing: 0) {
                             ForEach(recommendation.monthlySpending.reversed()) { month in
                                 HStack(spacing: 12) {
-                                    Text(title(for: month.monthKey))
-                                        .font(.subheadline)
-                                    Spacer()
-                                    if month.amountMinorUnits == 0 {
-                                        Text("No net spending")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    } else {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(title(for: month.monthKey))
+                                            .font(.subheadline)
                                         let highThreshold = MinorUnits.multiplyClamped(
                                             recommendation.typicalActiveMonthMinorUnits, 2
                                         )
@@ -366,8 +395,17 @@ private struct BudgetRecommendationDetail: View {
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
                                         }
+                                    }
+                                    Spacer()
+                                    if month.amountMinorUnits == 0 {
+                                        Text("No net spending")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    } else {
                                         Text(Money(minorUnits: month.amountMinorUnits, currency: currency).formatted())
                                             .font(.subheadline.monospacedDigit())
+                                            .multilineTextAlignment(.trailing)
+                                            .fixedSize(horizontal: false, vertical: true)
                                     }
                                 }
                                 .padding(.vertical, 10)

@@ -20,6 +20,8 @@ struct BudgetView: View {
     @State private var loadFailed = false
     @State private var editTarget: BudgetLine?
     @State private var showingRecommendations = false
+    @State private var showingResetConfirmation = false
+    @State private var isResetting = false
 
     private var currencies: [Currency] {
         var seen = Set<String>()
@@ -121,7 +123,8 @@ struct BudgetView: View {
                     currencyPicker
                 }
                 if monthKey == BudgetCalculator.monthKey(for: .now, timeZone: budgetTimeZone),
-                   !currencyAccounts.isEmpty {
+                   !currencyAccounts.isEmpty,
+                   !snapshot.lines.contains(where: { $0.plannedMinorUnits != nil }) {
                     recommendationButton
                 }
                 if currencyAccounts.isEmpty {
@@ -133,14 +136,19 @@ struct BudgetView: View {
                 } else if isLoading {
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 28)
                 } else if loadFailed {
-                    GetStartedEmptyState(
-                        systemImage: "exclamationmark.triangle",
-                        title: "Spending unavailable",
-                        message: "Cairn couldn't load this month's transactions. Try again.",
-                        includesConnect: false
-                    )
-                    Button("Try again") { reloadToken &+= 1 }
-                        .frame(maxWidth: .infinity)
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                            .foregroundStyle(CairnTheme.accent)
+                        Text("Spending unavailable")
+                            .font(.headline)
+                        Text("Cairn couldn't load this month's transactions.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Button("Try again") { reloadToken &+= 1 }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
                 } else {
                     summaryCard(snapshot)
                     categoryList(snapshot)
@@ -153,6 +161,42 @@ struct BudgetView: View {
         }
         .cairnCanvas()
         .navigationTitle("Budget")
+        .toolbar {
+            if !savedSettings.isEmpty
+                || (!currencyAccounts.isEmpty
+                    && monthKey == BudgetCalculator.monthKey(for: .now, timeZone: budgetTimeZone)) {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        if !currencyAccounts.isEmpty,
+                           monthKey == BudgetCalculator.monthKey(for: .now, timeZone: budgetTimeZone) {
+                            Button("Suggest limits", systemImage: "sparkles") {
+                                showingRecommendations = true
+                            }
+                        }
+                        if !savedSettings.isEmpty {
+                            if !currencyAccounts.isEmpty,
+                               monthKey == BudgetCalculator.monthKey(for: .now, timeZone: budgetTimeZone) {
+                                Divider()
+                            }
+                            Button(role: .destructive) {
+                                showingResetConfirmation = true
+                            } label: {
+                                Label("Reset all limits", systemImage: "arrow.counterclockwise")
+                            }
+                            .disabled(isResetting)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("Budget options")
+                }
+            }
+        }
+        .confirmationDialog("Reset all budget limits?", isPresented: $showingResetConfirmation) {
+            Button("Reset all limits", role: .destructive) { resetBudgetSettings() }
+        } message: {
+            Text("This removes recurring limits and monthly overrides in every currency. Your accounts and transactions stay.")
+        }
         .task {
             if selectedCurrencyCode.isEmpty {
                 selectedCurrencyCode = defaultCurrency.code
@@ -257,49 +301,30 @@ struct BudgetView: View {
         Card {
             let hasLimits = data.lines.contains { $0.plannedMinorUnits != nil }
             let displayedSpent = hasLimits ? data.budgetedSpentMinorUnits : data.spentMinorUnits
-            let remaining = Money(minorUnits: data.remainingMinorUnits, currency: data.currency).formatted()
-            let allSpent = Money(minorUnits: data.spentMinorUnits, currency: data.currency).formatted()
             VStack(alignment: .leading, spacing: 12) {
-                Text(hasLimits ? "Spent in planned categories" : "Spent this month")
+                Text(hasLimits ? "Budgeted spending" : "Spent this month")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-                HStack(alignment: .firstTextBaseline) {
-                    AmountText(
-                        money: Money(minorUnits: displayedSpent, currency: data.currency),
-                        font: .cairnDisplay
-                    )
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 3) {
-                        if hasLimits {
-                            Text("of \(Money(minorUnits: data.plannedMinorUnits, currency: data.currency).formatted()) planned")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            AmountText(
-                                money: Money(minorUnits: data.remainingMinorUnits, currency: data.currency),
-                                font: .subheadline.weight(.semibold),
-                                colorOverride: data.remainingMinorUnits < 0 ? CairnTheme.warning : CairnTheme.positive
-                            )
-                            .accessibilityLabel("\(remaining) remaining in planned categories")
-                        } else {
-                            Text("No limits set")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
+                AmountText(
+                    money: Money(minorUnits: displayedSpent, currency: data.currency),
+                    font: .cairnDisplay
+                )
                 if !hasLimits {
                     Text("Set category limits to make a monthly plan.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                } else if data.plannedMinorUnits > 0 {
-                    ProgressView(value: min(1, max(0, Double(data.budgetedSpentMinorUnits) / Double(data.plannedMinorUnits))))
-                        .tint(data.remainingMinorUnits < 0 ? CairnTheme.warning : CairnTheme.accent)
-                        .accessibilityLabel("Monthly budget progress")
-                }
-                if hasLimits {
-                    Text("\(allSpent) spent across all categories this month")
-                        .font(.caption)
+                } else {
+                    Text("of \(Money(minorUnits: data.plannedMinorUnits, currency: data.currency).formatted()) planned")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    if data.plannedMinorUnits > 0 {
+                        ProgressView(value: min(1, max(0, Double(data.budgetedSpentMinorUnits) / Double(data.plannedMinorUnits))))
+                            .tint(data.remainingMinorUnits < 0 ? CairnTheme.warning : CairnTheme.accent)
+                            .accessibilityLabel("Monthly budget progress")
+                    }
+                    budgetStatus(data.remainingMinorUnits, currency: data.currency)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(data.remainingMinorUnits < 0 ? CairnTheme.warning : CairnTheme.positive)
                 }
             }
         }
@@ -337,15 +362,17 @@ struct BudgetView: View {
                             CategoryBadge(symbolName: line.category.symbolName, hex: line.category.colorHex, size: 34)
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 5) {
-                                    Text(line.category.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    Text(line.category.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .fixedSize(horizontal: false, vertical: true)
                                     if line.category.isArchived {
                                         Text("Hidden").font(.caption2).foregroundStyle(.secondary)
                                     }
                                 }
-                                Text(categoryDetail(line, currency: currency))
+                                Text("\(Money(minorUnits: line.spentMinorUnits, currency: currency).formatted()) spent")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 2)
                             Image(systemName: "chevron.right")
@@ -359,42 +386,50 @@ struct BudgetView: View {
                     Button {
                         editTarget = line
                     } label: {
-                        Text(line.plannedMinorUnits == nil ? "Set" : "Edit")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(CairnTheme.surfaceInset, in: Capsule())
+                        Image(systemName: line.plannedMinorUnits == nil ? "plus" : "slider.horizontal.3")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(width: 36, height: 36)
+                            .background(CairnTheme.surfaceInset, in: Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Edit \(line.category.name) limit")
+                    .accessibilityLabel(
+                        line.plannedMinorUnits == nil
+                            ? "Set \(line.category.name) limit"
+                            : "Edit \(line.category.name) limit"
+                    )
                 }
                 if let limit = line.plannedMinorUnits, limit > 0 {
                     ProgressView(value: min(1, max(0, Double(line.spentMinorUnits) / Double(limit))))
                         .tint((line.remainingMinorUnits ?? 0) < 0 ? CairnTheme.warning : CairnTheme.accent)
-                        .padding(.leading, 44)
                         .accessibilityLabel("\(line.category.name) budget progress")
+                    categoryStatus(line, currency: currency)
+                        .font(.caption)
+                        .foregroundStyle((line.remainingMinorUnits ?? 0) < 0 ? CairnTheme.warning : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
     }
 
-    private func categoryDetail(_ line: BudgetLine, currency: Currency) -> String {
-        let spent = Money(minorUnits: line.spentMinorUnits, currency: currency).formatted()
-        guard let limit = line.plannedMinorUnits else { return "\(spent) spent · No limit" }
-        let remaining = Money(minorUnits: line.remainingMinorUnits ?? 0, currency: currency).formatted()
-        return "\(spent) spent · \(remaining) remaining of \(Money(minorUnits: limit, currency: currency).formatted())"
+    private func budgetStatus(_ remaining: Int64, currency: Currency) -> Text {
+        let amount = Money(minorUnits: MinorUnits.absClamped(remaining), currency: currency).formatted()
+        return remaining < 0 ? Text("\(amount) over plan") : Text("\(amount) left")
+    }
+
+    private func categoryStatus(_ line: BudgetLine, currency: Currency) -> Text {
+        guard let limit = line.plannedMinorUnits else { return Text("") }
+        let amount = Money(minorUnits: MinorUnits.absClamped(line.remainingMinorUnits ?? 0), currency: currency).formatted()
+        let planned = Money(minorUnits: limit, currency: currency).formatted()
+        return (line.remainingMinorUnits ?? 0) < 0
+            ? Text("\(amount) over · \(planned) limit")
+            : Text("\(amount) left · \(planned) limit")
     }
 
     private func unbudgetedCard(_ data: BudgetSnapshot) -> some View {
         Card {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Unbudgeted spending").font(.subheadline.weight(.semibold))
-                    Text("Includes uncategorized transactions and categories without a limit.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Spending without limits")
+                    .font(.subheadline.weight(.semibold))
                 AmountText(money: Money(minorUnits: data.unbudgetedMinorUnits, currency: data.currency), font: .subheadline)
             }
         }
@@ -425,6 +460,15 @@ struct BudgetView: View {
             loadFailed = true
         }
         isLoading = false
+    }
+
+    private func resetBudgetSettings() {
+        guard !isResetting else { return }
+        isResetting = true
+        Task {
+            _ = await model.resetBudgetSettings()
+            isResetting = false
+        }
     }
 }
 

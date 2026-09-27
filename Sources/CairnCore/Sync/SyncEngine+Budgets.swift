@@ -191,6 +191,15 @@ public extension SyncEngine {
         try modelContext.fetch(FetchDescriptor<CategoryBudget>()).filter { $0.categoryUUID == categoryUUID }.count
     }
 
+    /// Removes every recurring limit and monthly override, across currencies.
+    /// Categories, accounts, and transactions are not changed.
+    func resetBudgetSettings() throws {
+        for setting in try modelContext.fetch(FetchDescriptor<CategoryBudget>()) {
+            modelContext.delete(setting)
+        }
+        try modelContext.save()
+    }
+
     func exportBudgetRows() throws -> [BudgetExportRow] {
         let categories = try modelContext.fetch(FetchDescriptor<Category>())
         let names = Dictionary(categories.map { ($0.uuid, $0.name) }, uniquingKeysWith: { first, _ in first })

@@ -111,6 +111,48 @@ struct BudgetManagementTests {
         #expect(rows.first?.isMonthOverride == false)
     }
 
+    @Test("Reset removes all limit rules while preserving ledger data")
+    func resetBudgetSettings() async throws {
+        let result = try ModelContainerFactory.make(mode: .local, inMemory: true)
+        let context = result.container.mainContext
+        let category = Category(name: "Groceries")
+        let account = Account(bankAccountID: "test-account", name: "Checking", currency: .usd)
+        let transaction = LedgerTransaction(
+            bankTransactionID: "test-transaction", payeeDescription: "Groceries", amountMinorUnits: -1_000
+        )
+        transaction.accountIDIndex = account.bankAccountID
+        transaction.account = account
+        context.insert(category)
+        context.insert(account)
+        context.insert(transaction)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: result.container)
+        try await engine.setBudgetLimit(
+            categoryUUID: category.uuid, currency: .usd, monthKey: "2026-09",
+            amountMinorUnits: 20_000, isMonthOverride: false,
+            isEnabled: true, timeZoneIdentifier: "UTC"
+        )
+        try await engine.setBudgetLimit(
+            categoryUUID: category.uuid, currency: .usd, monthKey: "2026-10",
+            amountMinorUnits: 15_000, isMonthOverride: true,
+            isEnabled: true, timeZoneIdentifier: "UTC"
+        )
+        try await engine.setBudgetLimit(
+            categoryUUID: category.uuid, currency: Currency(code: "EUR"), monthKey: "2026-09",
+            amountMinorUnits: 18_000, isMonthOverride: false,
+            isEnabled: true, timeZoneIdentifier: "UTC"
+        )
+
+        try await engine.resetBudgetSettings()
+
+        let verificationContext = ModelContext(result.container)
+        #expect(try verificationContext.fetch(FetchDescriptor<CategoryBudget>()).isEmpty)
+        #expect(try verificationContext.fetch(FetchDescriptor<CairnSchemaV2.Category>()).count == 1)
+        #expect(try verificationContext.fetch(FetchDescriptor<Account>()).count == 1)
+        #expect(try verificationContext.fetch(FetchDescriptor<LedgerTransaction>()).count == 1)
+    }
+
     private func budgetCategory(_ name: String) -> BudgetCategory {
         BudgetCategory(
             uuid: UUID(), name: name, colorHex: "#8E8E93",

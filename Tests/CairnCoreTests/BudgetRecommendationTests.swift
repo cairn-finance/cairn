@@ -51,23 +51,32 @@ struct BudgetRecommendationTests {
                 == [2_000, 4_000, 6_000, 8_000, 10_000, 1_000]
         )
     }
-    @Test("Categories need spending in at least three sampled months")
-    func requiresThreeActiveMonths() throws {
+    @Test("Two active months qualify, but one does not")
+    func requiresTwoActiveMonths() throws {
         let dining = category("Dining", order: 0)
-        let transactions = try [
+        let twoMonths = try [
             transaction(month: "2026-01", amount: -3_000, category: dining),
             transaction(month: "2026-02", amount: -4_000, category: dining),
         ]
 
-        let results = BudgetCalculator.recommendations(
-            transactions: transactions,
+        let qualified = BudgetCalculator.recommendations(
+            transactions: twoMonths,
+            categories: [dining],
+            currency: .usd,
+            monthKeys: months,
+            timeZone: timeZone
+        )
+        let insufficient = BudgetCalculator.recommendations(
+            transactions: [twoMonths[0]],
             categories: [dining],
             currency: .usd,
             monthKeys: months,
             timeZone: timeZone
         )
 
-        #expect(results.isEmpty)
+        #expect(qualified.count == 1)
+        #expect(qualified.first?.monthsWithSpending == 2)
+        #expect(insufficient.isEmpty)
     }
 
     @Test("Monthly breakdown includes months with no net spending")
