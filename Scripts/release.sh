@@ -3,7 +3,7 @@
 # Cut a Cairn release from `main`.
 #
 # Computes the next semantic version from the latest tag, keeps the local
-# MARKETING_VERSION in sync, prepends a CHANGELOG entry, commits, tags, and
+# MARKETING_VERSION in sync, promotes Unreleased notes, commits, tags, and
 # pushes. The tag then triggers .github/workflows/release.yml, which archives,
 # uploads to TestFlight, and publishes a GitHub Release.
 #
@@ -43,6 +43,24 @@ fi
 
 if [ -n "$(git status --porcelain)" ]; then
   echo "error: working tree is not clean; commit or stash first." >&2
+  exit 1
+fi
+
+if [ ! -f CHANGELOG.md ]; then
+  echo "error: CHANGELOG.md is missing; add release notes under Unreleased." >&2
+  exit 1
+fi
+
+if ! awk '
+  /^## \[/ {
+    if (!first_section++) first_is_unreleased = ($0 == "## [Unreleased]")
+    if ($0 == "## [Unreleased]") { unreleased_count++; in_unreleased = 1; next }
+    in_unreleased = 0
+  }
+  in_unreleased && /^- / { has_notes = 1 }
+  END { exit !(first_is_unreleased && unreleased_count == 1 && has_notes) }
+' CHANGELOG.md; then
+  echo "error: add notes under a single leading Unreleased section before release." >&2
   exit 1
 fi
 
@@ -89,41 +107,18 @@ echo "Next version: v$next"
 
 # --- CHANGELOG ------------------------------------------------------------
 
-if [ ! -f CHANGELOG.md ]; then
-  cat > CHANGELOG.md <<'EOF'
-# Changelog
-
-All notable changes to Cairn are documented here. This project follows
-[Semantic Versioning](https://semver.org) and
-[Keep a Changelog](https://keepachangelog.com).
-
-EOF
-fi
-
 today="$(date -u +%Y-%m-%d)"
 entry="$(mktemp)"
-{
-  echo "## [$next] - $today"
-  echo
-  if git rev-parse -q --verify "refs/tags/$latest_tag" >/dev/null; then
-    git log --no-merges --pretty='- %s' "$latest_tag..HEAD"
-  else
-    git log --no-merges --pretty='- %s' HEAD
-  fi
-  echo
-} > "$entry"
-
-# Insert the new section *after* the file's preamble. Prepending put releases
-# above the `# Changelog` heading once the file grew a title and intro.
-header="$(mktemp)"
-rest="$(mktemp)"
-awk -v header="$header" -v rest="$rest" '
-  !pastPreamble && /^## \[/ { pastPreamble = 1 }
-  { print > (pastPreamble ? rest : header) }
-' CHANGELOG.md
-cat "$header" "$entry" "$rest" > "$entry.merged"
-mv "$entry.merged" CHANGELOG.md
-rm -f "$entry" "$header" "$rest"
+awk -v version="$next" -v release_date="$today" '
+  /^## \[Unreleased\]$/ {
+    print
+    print ""
+    print "## [" version "] - " release_date
+    next
+  }
+  { print }
+' CHANGELOG.md > "$entry"
+mv "$entry" CHANGELOG.md
 
 # --- Commit and tag -------------------------------------------------------
 

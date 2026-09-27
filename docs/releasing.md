@@ -159,8 +159,13 @@ Scripts/release.sh patch     # or minor / major / an explicit X.Y.Z
 ```
 
 The script verifies you are on a clean `main`, computes the next version,
-prepends a `CHANGELOG.md` entry, commits, tags `vX.Y.Z`, and pushes. CI does the
-rest. Watch it under the repository's **Actions → Release** tab.
+promotes the `Unreleased` notes in `CHANGELOG.md`, commits, tags `vX.Y.Z`, and
+pushes. CI does the rest. Watch it under the repository's **Actions → Release**
+tab.
+
+Add user-facing notes under the single `Unreleased` section in `CHANGELOG.md`
+during feature work. The script requires notes there, moves them into the new
+versioned section, and leaves an empty `Unreleased` section for future work.
 
 The tag must be contained in `main`; the workflow refuses anything else.
 
