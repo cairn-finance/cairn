@@ -8,6 +8,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Added
 
+- Choose which sections appear in the tab bar or sidebar and change their order
+  from Settings.
 - Monthly category budgets with recurring limits, one-month overrides, and
   CSV export. Starting suggestions show each month's spending and let you
   review the combined plan before adding limits.
