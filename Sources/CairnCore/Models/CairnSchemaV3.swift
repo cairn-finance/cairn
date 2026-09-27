@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-/// Schema version 2. Existing models keep their version 1 shape, with encrypted
-/// budget values added as a new model.
+/// Schema version 3. Rule actions and their derived transaction values are
+/// additive to the version 2 model.
 ///
 /// CloudKit compatibility rules obeyed here:
 /// - No `@Attribute(.unique)` / `#Unique`.
@@ -18,8 +18,8 @@ import SwiftData
 /// migration, so treat the encryption attribute as part of the field's type.
 /// `docs/releasing.md` covers the deployment step, and `ci.yml` fails when this
 /// file changes without a recorded promotion.
-public enum CairnSchemaV2: VersionedSchema {
-    public static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+public enum CairnSchemaV3: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
 
     public static var models: [any PersistentModel.Type] {
         [
@@ -289,6 +289,9 @@ public enum CairnSchemaV2: VersionedSchema {
         public var autoCategory: Category?
         public var autoCategorySource: String?
         public var autoConfidence: Double = 0
+        @Attribute(.allowsCloudEncryption) public var autoDisplayName: String?
+        public var autoCompact: Bool = false
+        public var autoTags: [Tag]?
 
         // User-owned: no automation ever writes these.
         @Attribute(.allowsCloudEncryption) public var note: String?
@@ -343,6 +346,16 @@ public enum CairnSchemaV2: VersionedSchema {
 
         public var effectiveCategory: Category? {
             userCategory ?? autoCategory
+        }
+
+        public var displayDescription: String {
+            guard let autoDisplayName, !autoDisplayName.isEmpty else { return payeeDescription }
+            return autoDisplayName
+        }
+
+        public var effectiveTags: [Tag] {
+            var seen: Set<PersistentIdentifier> = []
+            return ((tags ?? []) + (autoTags ?? [])).filter { seen.insert($0.persistentModelID).inserted }
         }
 
         /// True when this row should be treated as money movement for reporting:
@@ -437,6 +450,10 @@ public enum CairnSchemaV2: VersionedSchema {
 
         @Relationship(inverse: \LedgerTransaction.tags)
         public var transactions: [LedgerTransaction]?
+        @Relationship(inverse: \LedgerTransaction.autoTags)
+        public var automaticTransactions: [LedgerTransaction]?
+        @Relationship(inverse: \CategorizationRule.appliedTags)
+        public var applyingRules: [CategorizationRule]?
 
         public init(name: String = "", colorHex: String = "#8E8E93") {
             self.name = name
@@ -463,6 +480,9 @@ public enum CairnSchemaV2: VersionedSchema {
 
         /// Inverse declared on `Category.rules`.
         public var assignedCategory: Category?
+        @Attribute(.allowsCloudEncryption) public var displayNameTemplate: String?
+        public var makesCompact: Bool = false
+        public var appliedTags: [Tag]?
 
         public init(
             name: String = "",
@@ -585,9 +605,20 @@ public enum CairnSchemaV2: VersionedSchema {
 
 // MARK: - Short names
 
+public typealias Institution = CairnSchemaV3.Institution
+public typealias Account = CairnSchemaV3.Account
+public typealias Holding = CairnSchemaV3.Holding
+public typealias LedgerTransaction = CairnSchemaV3.LedgerTransaction
+public typealias Category = CairnSchemaV3.Category
+public typealias Tag = CairnSchemaV3.Tag
+public typealias CategorizationRule = CairnSchemaV3.CategorizationRule
+public typealias BalanceSnapshot = CairnSchemaV3.BalanceSnapshot
+public typealias AppSettings = CairnSchemaV3.AppSettings
+public typealias CategoryBudget = CairnSchemaV3.CategoryBudget
+
 // MARK: - How connections are listed
 
-extension CairnSchemaV2.Institution {
+extension CairnSchemaV3.Institution {
     /// A connection-less record that owns one SimpleFIN Access URL. It holds the
     /// credential; the per-connection institutions carry the accounts.
     public var isCredentialHolder: Bool { bankConnectionID.isEmpty }

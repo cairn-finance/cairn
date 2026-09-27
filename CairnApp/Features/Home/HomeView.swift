@@ -13,7 +13,7 @@ struct HomeView: View {
     )
     private var accounts: [Account]
     @Query private var settings: [AppSettings]
-    @Query private var categories: [CairnSchemaV2.Category]
+    @Query private var categories: [CairnSchemaV3.Category]
     @Query private var budgetSettings: [CategoryBudget]
 
     @State private var showingConnect = false

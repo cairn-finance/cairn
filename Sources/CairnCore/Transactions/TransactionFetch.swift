@@ -175,6 +175,7 @@ public enum TransactionRefinement {
     /// search: merchant, note, category, account, and tags.
     public static func matches(_ search: String, row: TransactionRowValue) -> Bool {
         row.payeeDescription.localizedStandardContains(search)
+            || (row.displayName?.localizedStandardContains(search) ?? false)
             || (row.note?.localizedStandardContains(search) ?? false)
             || (row.categoryName?.localizedStandardContains(search) ?? false)
             || (row.accountName?.localizedStandardContains(search) ?? false)

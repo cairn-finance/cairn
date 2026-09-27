@@ -58,10 +58,13 @@ struct AccountRow: View {
 /// for money in, so income is visible without the list turning into a
 /// rainbow.
 struct TransactionRow: View {
+    @AppStorage("cairn.compactTransactions") private var compactAll = false
     let transaction: LedgerTransaction
     /// Show the account name under the merchant (hide inside account detail).
     var showsAccount: Bool = true
     var showsChevron: Bool = false
+
+    private var compact: Bool { compactAll || transaction.autoCompact }
 
     var body: some View {
         HStack(alignment: .center, spacing: CairnTheme.Spacing.m) {
@@ -70,46 +73,51 @@ struct TransactionRow: View {
                     ? "arrow.left.arrow.right"
                     : transaction.effectiveCategory?.symbolName,
                 hex: transaction.effectiveCategory?.colorHex ?? (transaction.countsAsTransfer ? "#32ADE6" : nil),
-                size: 40
+                size: compact ? 30 : 40
             )
             .opacity(transaction.isIgnored ? 0.5 : 1)
 
             VStack(alignment: .leading, spacing: 3) {
-                if transaction.payeeDescription.isEmpty {
+                if transaction.displayDescription.isEmpty {
                     Text("No description")
                         .font(.body.weight(.medium))
                         .lineLimit(2)
                         .strikethrough(transaction.isIgnored, color: .secondary)
                         .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
                 } else {
-                    Text(transaction.payeeDescription)
+                    Text(transaction.displayDescription)
                         .font(.body.weight(.medium))
                         .lineLimit(2)
                         .strikethrough(transaction.isIgnored, color: .secondary)
                         .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
                 }
 
-                HStack(spacing: 5) {
+                if !compact || transaction.isPending || (showsAccount && transaction.account != nil)
+                    || !transaction.effectiveTags.isEmpty {
+                    HStack(spacing: 5) {
                     if transaction.isPending {
                         StatusPill(text: "Pending", systemImage: "clock", tint: CairnTheme.warning)
                     }
-                    if let label = categoryLabel {
+                    if !compact, let label = categoryLabel {
                         Text(label)
                     }
                     if showsAccount, let accountName = transaction.account?.displayName {
-                        if categoryLabel != nil {
+                        if !compact && categoryLabel != nil {
                             Text("·").foregroundStyle(.tertiary)
                         }
                         Text(accountName)
                     }
-                    if let tags = transaction.tags, !tags.isEmpty {
-                        Text("·").foregroundStyle(.tertiary)
-                        Text(tagSummary(tags))
+                    if !transaction.effectiveTags.isEmpty {
+                        if !compact || transaction.isPending || (showsAccount && transaction.account != nil) {
+                            Text("·").foregroundStyle(.tertiary)
+                        }
+                        Text(tagSummary(transaction.effectiveTags))
                     }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -128,7 +136,7 @@ struct TransactionRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, compact ? 5 : 9)
         .padding(.horizontal, 14)
         .contentShape(Rectangle())
     }
@@ -160,9 +168,12 @@ struct TransactionRow: View {
 /// windowed lists use: it reads no SwiftData state while diffing, so a single
 /// categorized transaction cannot invalidate unrelated rows.
 struct TransactionValueRow: View {
+    @AppStorage("cairn.compactTransactions") private var compactAll = false
     let row: TransactionRowValue
     var showsAccount: Bool = true
     var showsChevron: Bool = false
+
+    private var compact: Bool { compactAll || row.isCompact }
 
     var body: some View {
         HStack(alignment: .center, spacing: CairnTheme.Spacing.m) {
@@ -171,38 +182,43 @@ struct TransactionValueRow: View {
                     ? "arrow.left.arrow.right"
                     : row.categorySymbolName,
                 hex: row.categoryColorHex ?? (row.countsAsTransfer ? "#32ADE6" : nil),
-                size: 40
+                size: compact ? 30 : 40
             )
             .opacity(row.isIgnored ? 0.5 : 1)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(row.payeeDescription.isEmpty ? "No description" : row.payeeDescription)
+                Text((row.displayName ?? row.payeeDescription).isEmpty
+                    ? "No description" : (row.displayName ?? row.payeeDescription))
                     .font(.body.weight(.medium))
                     .lineLimit(1)
                     .strikethrough(row.isIgnored, color: .secondary)
                     .foregroundStyle(row.isIgnored ? .secondary : .primary)
 
-                HStack(spacing: 5) {
+                if !compact || row.isPending || (showsAccount && row.accountName != nil) || !row.tagNames.isEmpty {
+                    HStack(spacing: 5) {
                     if row.isPending {
                         StatusPill(text: "Pending", systemImage: "clock", tint: CairnTheme.warning)
                     }
-                    if let label = categoryLabel {
+                    if !compact, let label = categoryLabel {
                         Text(label)
                     }
                     if showsAccount, let accountName = row.accountName {
-                        if categoryLabel != nil {
+                        if !compact && categoryLabel != nil {
                             Text("·").foregroundStyle(.tertiary)
                         }
                         Text(accountName)
                     }
                     if !row.tagNames.isEmpty {
-                        Text("·").foregroundStyle(.tertiary)
+                        if !compact || row.isPending || (showsAccount && row.accountName != nil) {
+                            Text("·").foregroundStyle(.tertiary)
+                        }
                         Text(tagSummary(row.tagNames))
                     }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -221,7 +237,7 @@ struct TransactionValueRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, compact ? 5 : 9)
         .padding(.horizontal, 14)
         .contentShape(Rectangle())
     }

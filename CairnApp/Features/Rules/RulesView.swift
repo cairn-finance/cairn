@@ -2,8 +2,8 @@ import SwiftUI
 import SwiftData
 import CairnCore
 
-/// The person's own categorization rules, in priority order. A rule always
-/// wins over an automatic guess but never overrides a category set by hand.
+/// The person's rules, in priority order. Matching actions combine, while a
+/// higher rule wins conflicts and manual category choices remain untouched.
 struct RulesView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.modelContext) private var modelContext
@@ -40,7 +40,7 @@ struct RulesView: View {
                     EmptyStateView(
                         systemImage: "slider.horizontal.3",
                         title: "No rules yet",
-                        message: "A rule matches the bank description or amount and assigns a category.",
+                        message: "Match bank descriptions or amounts to set categories, names, tags, or compact rows.",
                         actionTitle: "New Rule"
                     ) {
                         editorTarget = .create
@@ -55,7 +55,7 @@ struct RulesView: View {
                     .onDelete(perform: delete)
                     .onMove(perform: move)
                 } footer: {
-                    Text("Drag to reorder. The topmost matching rule wins. Turning a rule off re-checks its transactions.")
+                    Text("Drag to reorder. Matching rules combine; higher rules win conflicting actions.")
                 }
             }
         }
@@ -178,7 +178,16 @@ struct RulesView: View {
             let max = rule.maxAmountMinorUnits.map { ruleAmount($0, currency: currency) } ?? "…"
             parts.append("\(min) to \(max)")
         }
-        return parts.joined(separator: " · ")
+        var actions: [String] = []
+        if let category = rule.assignedCategory { actions.append(category.name) }
+        if let displayName = rule.displayNameTemplate, !displayName.isEmpty {
+            actions.append("Name: \(displayName)")
+        }
+        if let tags = rule.appliedTags, !tags.isEmpty {
+            actions.append(String(localized: "^[\(tags.count) tag](inflect: true)"))
+        }
+        if rule.makesCompact { actions.append("Compact") }
+        return parts.joined(separator: " · ") + " → " + actions.joined(separator: " · ")
     }
 
     /// Rules compare raw minor units at two decimal places, independent of the
@@ -198,18 +207,19 @@ struct RuleEditorView: View {
     @Environment(AppModel.self) private var model
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV2.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV2.Category.createdAt),
+            SortDescriptor(\CairnSchemaV3.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV3.Category.createdAt),
         ]
-    ) private var categories: [CairnSchemaV2.Category]
+    ) private var categories: [CairnSchemaV3.Category]
     @Query private var allTransactions: [LedgerTransaction]
     @Query private var settings: [AppSettings]
+    @Query(sort: \Tag.name) private var allTags: [Tag]
 
     /// When set, the editor edits this rule instead of creating one.
     var rule: CategorizationRule?
     /// Prefills for a rule created from a transaction.
     var prefillPattern: String?
-    var prefillCategory: CairnSchemaV2.Category?
+    var prefillCategory: CairnSchemaV3.Category?
 
     @State private var didLoad = false
     @State private var name = ""
@@ -218,7 +228,10 @@ struct RuleEditorView: View {
     @State private var useAmountRange = false
     @State private var minAmountText = ""
     @State private var maxAmountText = ""
-    @State private var category: CairnSchemaV2.Category?
+    @State private var category: CairnSchemaV3.Category?
+    @State private var displayNameTemplate = ""
+    @State private var selectedTagIDs: Set<PersistentIdentifier> = []
+    @State private var makesCompact = false
     @State private var isEnabled = true
 
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
@@ -229,7 +242,7 @@ struct RuleEditorView: View {
         return "-0\(separator)00"
     }
 
-    private var activeCategories: [CairnSchemaV2.Category] {
+    private var activeCategories: [CairnSchemaV3.Category] {
         categories.filter { !$0.isArchived }
     }
 
@@ -269,11 +282,30 @@ struct RuleEditorView: View {
                     Text("Optional. Amounts are signed: spending is negative (for example -12.34), income is positive.")
                 }
 
-                Section("Category") {
+                Section {
                     Picker("Category", selection: $category) {
-                        Text("Choose a category").tag(CairnSchemaV2.Category?.none)
+                        Text("No category change").tag(CairnSchemaV3.Category?.none)
                         ForEach(activeCategories) { item in
-                            Label(item.name, systemImage: item.symbolName).tag(CairnSchemaV2.Category?.some(item))
+                            Label(item.name, systemImage: item.symbolName).tag(CairnSchemaV3.Category?.some(item))
+                        }
+                    }
+                    TextField("Display name (optional)", text: $displayNameTemplate)
+                        .autocorrectionDisabled()
+                    Toggle("Compact matching rows", isOn: $makesCompact)
+                } header: {
+                    Text("Actions")
+                } footer: {
+                    Text("For a regex, use {1}, {2}, and so on to insert captured text in the display name. "
+                        + "The bank description stays unchanged.")
+                }
+
+                Section("Apply tags") {
+                    if allTags.isEmpty {
+                        Text("Create tags in Settings, then choose them here.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(allTags) { tag in
+                            Toggle(tag.name, isOn: tagBinding(tag))
                         }
                     }
                 }
@@ -377,14 +409,14 @@ struct RuleEditorView: View {
     }
 
     private var canSave: Bool {
-        category != nil
-            && !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && isAmountRangeValid
             && patternProblem == nil
+            && (category != nil || !displayNameTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !selectedTagIDs.isEmpty || makesCompact)
     }
 
     private var draftSnapshot: RuleSnapshot? {
-        guard let categoryID = category?.uuid else { return nil }
         let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let bounds = parsedAmountBounds
@@ -395,21 +427,21 @@ struct RuleEditorView: View {
             pattern: trimmed,
             minAmountMinorUnits: bounds.min,
             maxAmountMinorUnits: bounds.max,
-            categoryID: categoryID,
-            priority: 0
+            categoryID: category?.uuid,
+            priority: 0,
+            displayNameTemplate: displayNameTemplate.trimmingCharacters(in: .whitespacesAndNewlines),
+            makesCompact: makesCompact,
+            appliedTagIDs: Array(selectedTagIDs)
         )
     }
 
     private var previewMatches: [LedgerTransaction] {
         guard let snapshot = draftSnapshot else { return [] }
         return allTransactions.filter { transaction in
-            transaction.userCategory == nil
-                && !transaction.isIgnored
-                && !transaction.countsAsTransfer
-                && snapshot.matches(
-                    amountMinorUnits: transaction.amountMinorUnits,
-                    description: transaction.payeeDescription
-                )
+            snapshot.matches(
+                amountMinorUnits: transaction.amountMinorUnits,
+                description: transaction.payeeDescription
+            )
         }
     }
 
@@ -421,6 +453,9 @@ struct RuleEditorView: View {
             matchKind = RuleMatchKind(rawValue: rule.matchKindRaw) ?? .contains
             pattern = rule.pattern
             category = rule.assignedCategory
+            displayNameTemplate = rule.displayNameTemplate ?? ""
+            selectedTagIDs = Set((rule.appliedTags ?? []).map(\.persistentModelID))
+            makesCompact = rule.makesCompact
             isEnabled = rule.isEnabled
             useAmountRange = rule.minAmountMinorUnits != nil || rule.maxAmountMinorUnits != nil
             minAmountText = rule.minAmountMinorUnits.map { MinorUnits.string($0, exponent: 2) } ?? ""
@@ -432,7 +467,7 @@ struct RuleEditorView: View {
     }
 
     private func save() {
-        guard canSave, let category else { return }
+        guard canSave else { return }
         let target: CategorizationRule
         if let rule {
             target = rule
@@ -449,6 +484,10 @@ struct RuleEditorView: View {
         target.minAmountMinorUnits = bounds.min
         target.maxAmountMinorUnits = bounds.max
         target.assignedCategory = category
+        let trimmedDisplayName = displayNameTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        target.displayNameTemplate = trimmedDisplayName.isEmpty ? nil : trimmedDisplayName
+        target.appliedTags = allTags.filter { selectedTagIDs.contains($0.persistentModelID) }
+        target.makesCompact = makesCompact
         target.isEnabled = isEnabled
         try? modelContext.save()
         Task { await model.applyRules() }
@@ -458,5 +497,15 @@ struct RuleEditorView: View {
     private func nextPriority() -> Int {
         let existing = (try? modelContext.fetch(FetchDescriptor<CategorizationRule>())) ?? []
         return (existing.map(\.priority).max() ?? -1) + 1
+    }
+
+    private func tagBinding(_ tag: Tag) -> Binding<Bool> {
+        Binding(
+            get: { selectedTagIDs.contains(tag.persistentModelID) },
+            set: { selected in
+                if selected { selectedTagIDs.insert(tag.persistentModelID) }
+                else { selectedTagIDs.remove(tag.persistentModelID) }
+            }
+        )
     }
 }

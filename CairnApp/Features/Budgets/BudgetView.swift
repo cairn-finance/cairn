@@ -7,8 +7,8 @@ struct BudgetView: View {
     @Environment(AppModel.self) private var model
     @Query(filter: #Predicate<Account> { $0.isHidden == false }, sort: \Account.displayOrder)
     private var accounts: [Account]
-    @Query(sort: [SortDescriptor(\CairnSchemaV2.Category.sortOrder), SortDescriptor(\CairnSchemaV2.Category.createdAt)])
-    private var categories: [CairnSchemaV2.Category]
+    @Query(sort: [SortDescriptor(\CairnSchemaV3.Category.sortOrder), SortDescriptor(\CairnSchemaV3.Category.createdAt)])
+    private var categories: [CairnSchemaV3.Category]
     @Query private var appSettings: [AppSettings]
     @Query private var savedSettings: [CategoryBudget]
 

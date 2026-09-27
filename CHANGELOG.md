@@ -8,6 +8,10 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Added
 
+- Rules can set a displayed transaction name, apply tags, and make matching
+  transaction rows compact. Regex rules can use capture groups in names.
+- Transaction details show every matching rule and open its editor.
+- A Settings option makes all transaction rows compact.
 - Browse spending with a category chart, then swipe to category amounts and
   open lists of transactions matching a tag or rule in Insights.
 - Choose which sections appear in the tab bar or sidebar and change their order
@@ -19,6 +23,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Multiple matching rules now combine their actions. Higher rules win when
+  they set different names or categories on the same transaction.
 - Limit editing now shows the month scope explicitly and keeps the current
   scope selected when editing an existing limit.
 - Starting suggestions require spending in two completed months. Budget cards

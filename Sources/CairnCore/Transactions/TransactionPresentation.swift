@@ -18,6 +18,8 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
     public let persistentID: PersistentIdentifier?
 
     public let payeeDescription: String
+    public let displayName: String?
+    public let isCompact: Bool
     public let note: String?
     public let amountMinorUnits: Int64
     public let currency: Currency
@@ -49,6 +51,8 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
         id: String,
         persistentID: PersistentIdentifier?,
         payeeDescription: String,
+        displayName: String? = nil,
+        isCompact: Bool = false,
         note: String? = nil,
         amountMinorUnits: Int64,
         currency: Currency,
@@ -68,6 +72,8 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
         self.id = id
         self.persistentID = persistentID
         self.payeeDescription = payeeDescription
+        self.displayName = displayName
+        self.isCompact = isCompact
         self.note = note
         self.amountMinorUnits = amountMinorUnits
         self.currency = currency
@@ -111,11 +117,12 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
     }
 }
 
-extension CairnSchemaV2.LedgerTransaction {
+extension CairnSchemaV3.LedgerTransaction {
     /// Snapshots this transaction into a `Sendable` value. Reads every model
     /// property and relationship the UI needs exactly once.
     public func rowValue() -> TransactionRowValue {
         let category = effectiveCategory
+        let visibleTags = effectiveTags
         return TransactionRowValue(
             id: TransactionRowValue.stableID(
                 accountIDIndex: accountIDIndex,
@@ -124,6 +131,8 @@ extension CairnSchemaV2.LedgerTransaction {
             ),
             persistentID: persistentModelID,
             payeeDescription: payeeDescription,
+            displayName: autoDisplayName,
+            isCompact: autoCompact,
             note: note,
             amountMinorUnits: amountMinorUnits,
             currency: account?.currency ?? Currency(code: "USD", exponent: currencyExponent),
@@ -137,8 +146,8 @@ extension CairnSchemaV2.LedgerTransaction {
             categoryColorHex: category?.colorHex,
             categoryID: category?.persistentModelID,
             accountName: account?.displayName,
-            tagNames: (tags ?? []).map(\.name),
-            tagIDs: (tags ?? []).map(\.persistentModelID)
+            tagNames: visibleTags.map(\.name),
+            tagIDs: visibleTags.map(\.persistentModelID)
         )
     }
 }

@@ -12,11 +12,11 @@ struct TransactionsView: View {
 
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV2.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV2.Category.createdAt),
+            SortDescriptor(\CairnSchemaV3.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV3.Category.createdAt),
         ]
     )
-    private var categories: [CairnSchemaV2.Category]
+    private var categories: [CairnSchemaV3.Category]
     @Query(sort: \Tag.name)
     private var tags: [Tag]
     @Query(sort: [SortDescriptor(\Account.displayOrder)])
@@ -159,7 +159,7 @@ struct TransactionsView: View {
         .transition(.scale(scale: 0.9).combined(with: .opacity))
     }
 
-    private var categoryFilter: CairnSchemaV2.Category? {
+    private var categoryFilter: CairnSchemaV3.Category? {
         categories.first { $0.persistentModelID == filter.categoryID }
     }
 
@@ -174,9 +174,9 @@ struct TransactionsView: View {
     private var filtersMenu: some View {
         Menu {
             Picker("Category", selection: categorySelection) {
-                Text("All Categories").tag(CairnSchemaV2.Category?.none)
+                Text("All Categories").tag(CairnSchemaV3.Category?.none)
                 ForEach(categories.filter { !$0.isArchived }) { category in
-                    Label(category.name, systemImage: category.symbolName).tag(CairnSchemaV2.Category?.some(category))
+                    Label(category.name, systemImage: category.symbolName).tag(CairnSchemaV3.Category?.some(category))
                 }
             }
             .pickerStyle(.menu)
@@ -210,7 +210,7 @@ struct TransactionsView: View {
         }
     }
 
-    private var categorySelection: Binding<CairnSchemaV2.Category?> {
+    private var categorySelection: Binding<CairnSchemaV3.Category?> {
         Binding(
             get: { categoryFilter },
             set: { filter.categoryID = $0?.persistentModelID }

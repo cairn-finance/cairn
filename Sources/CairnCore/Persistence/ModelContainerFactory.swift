@@ -132,7 +132,7 @@ public struct ModelContainerFactory: Sendable {
         inMemory: Bool = false,
         cloudKitContainerID: String = configuredCloudKitContainerID
     ) throws -> Result {
-        let schema = Schema(versionedSchema: CairnSchemaV2.self)
+        let schema = Schema(versionedSchema: CairnSchemaV3.self)
 
         if mode == .cloud {
             // Never touch CloudKit without the entitlement: it traps instead of
