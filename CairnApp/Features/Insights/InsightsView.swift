@@ -30,6 +30,27 @@ struct InsightsView: View {
         let data = snapshot
         return ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
+                NavigationLink {
+                    BudgetView()
+                } label: {
+                    Card(padding: 14) {
+                        HStack(spacing: 12) {
+                            SettingsIcon(systemImage: "chart.pie.fill", tint: CairnTheme.accent)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Monthly budget").font(.subheadline.weight(.semibold))
+                                Text("Set category limits and track what remains.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+
                 monthPicker
 
                 if currencyAccounts.isEmpty {

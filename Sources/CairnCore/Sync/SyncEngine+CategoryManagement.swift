@@ -8,6 +8,7 @@ public enum CategoryManagementError: Error, LocalizedError, Equatable {
     case systemCategory
     case duplicateName
     case referenced(transactionCount: Int, ruleCount: Int)
+    case budgetEntriesReferenced(count: Int)
 
     public var errorDescription: String? {
         switch self {
@@ -31,6 +32,8 @@ public enum CategoryManagementError: Error, LocalizedError, Equatable {
                 ? String(localized: "Records")
                 : parts.joined(separator: String(localized: " and "))
             return String(localized: "\(list) still use this category, so it wasn’t deleted.")
+        case let .budgetEntriesReferenced(count):
+            return String(localized: "^[\(count) budget entry](inflect: true) still use this category, so it wasn’t deleted.")
         }
     }
 }
@@ -39,13 +42,15 @@ public enum CategoryManagementError: Error, LocalizedError, Equatable {
 public struct CategoryDeletionImpact: Sendable, Equatable {
     public let transactionCount: Int
     public let ruleCount: Int
+    public let budgetEntryCount: Int
 
-    public init(transactionCount: Int, ruleCount: Int) {
+    public init(transactionCount: Int, ruleCount: Int, budgetEntryCount: Int = 0) {
         self.transactionCount = transactionCount
         self.ruleCount = ruleCount
+        self.budgetEntryCount = budgetEntryCount
     }
 
-    public var isReferenced: Bool { transactionCount > 0 || ruleCount > 0 }
+    public var isReferenced: Bool { transactionCount > 0 || ruleCount > 0 || budgetEntryCount > 0 }
 }
 
 /// Which way a category moves in the visible list.
@@ -155,7 +160,8 @@ public extension SyncEngine {
         return CategoryDeletionImpact(
             transactionCount: (category.userTransactions?.count ?? 0)
                 + (category.autoTransactions?.count ?? 0),
-            ruleCount: category.rules?.count ?? 0
+            ruleCount: category.rules?.count ?? 0,
+            budgetEntryCount: try budgetCount(categoryUUID: id)
         )
     }
 
@@ -167,17 +173,24 @@ public extension SyncEngine {
         let impact = CategoryDeletionImpact(
             transactionCount: (category.userTransactions?.count ?? 0)
                 + (category.autoTransactions?.count ?? 0),
-            ruleCount: category.rules?.count ?? 0
+            ruleCount: category.rules?.count ?? 0,
+            budgetEntryCount: try budgetCount(categoryUUID: id)
         )
         switch CategoryManagement.deletionDecision(
             isSystem: category.isSystem,
             transactionCount: impact.transactionCount,
-            ruleCount: impact.ruleCount
+            ruleCount: impact.ruleCount,
+            budgetEntryCount: impact.budgetEntryCount
         ) {
         case .delete:
             modelContext.delete(category)
             try modelContext.save()
         case .archive:
+            if impact.budgetEntryCount > 0,
+               impact.transactionCount == 0,
+               impact.ruleCount == 0 {
+                throw CategoryManagementError.budgetEntriesReferenced(count: impact.budgetEntryCount)
+            }
             throw CategoryManagementError.referenced(
                 transactionCount: impact.transactionCount,
                 ruleCount: impact.ruleCount

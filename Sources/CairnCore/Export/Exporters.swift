@@ -47,6 +47,34 @@ public struct TransactionExportRow: Sendable {
     }
 }
 
+public struct BudgetExportRow: Sendable {
+    public var category: String
+    public var currency: String
+    public var month: String
+    public var amount: String
+    public var applies: String
+    public var enabled: Bool
+    public var timeZone: String
+
+    public init(
+        category: String,
+        currency: String,
+        month: String,
+        amount: String,
+        applies: String,
+        enabled: Bool,
+        timeZone: String
+    ) {
+        self.category = category
+        self.currency = currency
+        self.month = month
+        self.amount = amount
+        self.applies = applies
+        self.enabled = enabled
+        self.timeZone = timeZone
+    }
+}
+
 /// CSV and JSON writers. "Your data is yours" is only true if you can get it
 /// out in an open format, so these ship in the first release.
 public enum Exporters {
@@ -85,6 +113,23 @@ public enum Exporters {
                     .map { escapeCSV($0.value, neutralizeFormula: $0.neutralizeFormula) }
                     .joined(separator: ",")
             )
+        }
+        return lines.joined(separator: "\r\n") + "\r\n"
+    }
+
+    public static func budgetsCSV(rows: [BudgetExportRow]) -> String {
+        var lines = ["Category,Currency,Month,Amount,Applies,Enabled,Time Zone"]
+        lines.reserveCapacity(rows.count + 1)
+        for row in rows {
+            lines.append([
+                escapeCSV(row.category, neutralizeFormula: true),
+                escapeCSV(row.currency, neutralizeFormula: true),
+                escapeCSV(row.month, neutralizeFormula: true),
+                escapeCSV(row.amount, neutralizeFormula: false),
+                escapeCSV(row.applies, neutralizeFormula: true),
+                row.enabled ? "true" : "false",
+                escapeCSV(row.timeZone, neutralizeFormula: true),
+            ].joined(separator: ","))
         }
         return lines.joined(separator: "\r\n") + "\r\n"
     }

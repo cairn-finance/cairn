@@ -13,9 +13,15 @@ struct HomeView: View {
     )
     private var accounts: [Account]
     @Query private var settings: [AppSettings]
+    @Query private var categories: [CairnSchemaV2.Category]
+    @Query private var budgetSettings: [CategoryBudget]
 
     @State private var showingConnect = false
     @State private var showingManualAccount = false
+    @State private var budgetTransactions: [BudgetTransaction] = []
+    @State private var budgetReloadToken = 0
+    @State private var didLoadBudgetSummary = false
+    @State private var budgetLoadFailed = false
 
     var body: some View {
         ScrollView {
@@ -50,6 +56,9 @@ struct HomeView: View {
                         .cairnAppear(delay: 0.08)
                     }
 
+                    NavigationLink { BudgetView() } label: { budgetSummaryCard }
+                    .buttonStyle(.pressableCard)
+
                     institutionsSection
                         .cairnAppear(delay: 0.1)
                 }
@@ -59,6 +68,12 @@ struct HomeView: View {
         .cairnCanvas()
         .navigationTitle("Home")
         .toolbar { toolbarContent }
+        .task(id: budgetReloadKey) { await loadBudgetSummary() }
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: ModelContext.didSave) {
+                budgetReloadToken &+= 1
+            }
+        }
         .refreshable { await model.syncAll(force: true) }
         .sheet(isPresented: $showingConnect) {
             AddConnectionSheet { showingConnect = false }
@@ -71,6 +86,136 @@ struct HomeView: View {
     }
 
     // MARK: - Sections
+
+    private var budgetCurrency: Currency {
+        accounts.first(where: { $0.currency.code == homeCurrency.code })?.currency
+            ?? accounts.first?.currency
+            ?? homeCurrency
+    }
+
+    private var budgetMonthKey: String {
+        BudgetCalculator.monthKey(for: .now, timeZone: budgetTimeZone)
+    }
+
+    private var budgetTimeZone: TimeZone {
+        budgetSettings
+            .filter { $0.currencyCode == budgetCurrency.code }
+            .sorted {
+                if $0.monthKey != $1.monthKey { return $0.monthKey < $1.monthKey }
+                return $0.uuid.uuidString < $1.uuid.uuidString
+            }
+            .compactMap { TimeZone(identifier: $0.timeZoneIdentifier) }
+            .first ?? .current
+    }
+
+    private var budgetReloadKey: String {
+        let editStamp = budgetSettings.map(\.modifiedAt).max()?.timeIntervalSince1970 ?? 0
+        let accountStamp = accounts.filter { $0.currency.code == budgetCurrency.code }
+            .map(\.bankAccountID).sorted().joined(separator: ",")
+        let categoryStamp = categories.map { "\($0.uuid.uuidString):\($0.name):\($0.isArchived)" }
+            .joined(separator: ",")
+        return "\(budgetReloadToken)-\(budgetMonthKey)-\(budgetCurrency.code)-\(editStamp)-\(accountStamp)-\(categoryStamp)"
+    }
+
+    private var budgetSnapshot: BudgetSnapshot? {
+        guard didLoadBudgetSummary, !budgetLoadFailed else { return nil }
+        let categoryValues = categories.map {
+            BudgetCategory(
+                uuid: $0.uuid,
+                name: $0.name,
+                colorHex: $0.colorHex,
+                symbolName: $0.symbolName,
+                sortOrder: $0.sortOrder,
+                isArchived: $0.isArchived
+            )
+        }
+        let settingValues = budgetSettings.map {
+            BudgetSetting(
+                uuid: $0.uuid,
+                categoryUUID: $0.categoryUUID,
+                currency: $0.currency,
+                monthKey: $0.monthKey,
+                amountMinorUnits: $0.amountMinorUnits,
+                isMonthOverride: $0.isMonthOverride,
+                isEnabled: $0.isEnabled,
+                timeZoneIdentifier: $0.timeZoneIdentifier,
+                modifiedAt: $0.modifiedAt
+            )
+        }
+        return BudgetCalculator.snapshot(
+            transactions: budgetTransactions,
+            categories: categoryValues,
+            settings: settingValues,
+            monthKey: budgetMonthKey,
+            currency: budgetCurrency,
+            timeZone: budgetTimeZone
+        )
+    }
+
+    private var budgetSummaryCard: some View {
+        Card(padding: 14) {
+            HStack(spacing: 12) {
+                SettingsIcon(systemImage: "chart.pie.fill", tint: CairnTheme.accent)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Monthly budget").font(.subheadline.weight(.semibold))
+                    if budgetLoadFailed {
+                        Text("Spending unavailable. Open Budget to retry.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let summary = budgetSnapshot {
+                        let spent = Money(minorUnits: summary.spentMinorUnits, currency: summary.currency).formatted()
+                        if summary.plannedMinorUnits > 0 {
+                            Text("\(Money(minorUnits: summary.budgetedSpentMinorUnits, currency: summary.currency).formatted()) of \(Money(minorUnits: summary.plannedMinorUnits, currency: summary.currency).formatted()) planned · \(Money(minorUnits: summary.remainingMinorUnits, currency: summary.currency).formatted()) left")
+                                .font(.caption)
+                                .foregroundStyle(summary.remainingMinorUnits < 0 ? CairnTheme.warning : Color.secondary)
+                        } else {
+                            Text("\(spent) spent · Set category limits")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("Track category limits and spending this month.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func loadBudgetSummary() async {
+        didLoadBudgetSummary = false
+        budgetLoadFailed = false
+        let visible = accounts.filter { $0.currency.code == budgetCurrency.code }
+        guard !visible.isEmpty,
+              let start = BudgetCalculator.startOfMonth(budgetMonthKey, timeZone: budgetTimeZone) else {
+            budgetTransactions = []
+            didLoadBudgetSummary = true
+            return
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = budgetTimeZone
+        let end = calendar.date(byAdding: .month, value: 1, to: start) ?? start
+        let scopes = visible.map { BudgetAccountScope(bankAccountID: $0.bankAccountID) }
+        let container = model.container
+        let fetcher = await Task.detached(priority: .utility) {
+            BudgetFetcher(modelContainer: container)
+        }.value
+        do {
+            let result = try await fetcher.budgetTransactions(scopes: scopes, from: start, to: end)
+            guard !Task.isCancelled else { return }
+            budgetTransactions = result
+        } catch {
+            guard !Task.isCancelled else { return }
+            budgetTransactions = []
+            budgetLoadFailed = true
+        }
+        didLoadBudgetSummary = true
+    }
 
     private var syncStatus: some View {
         HStack(spacing: 10) {

@@ -10,12 +10,13 @@ struct SettingsView: View {
     private var walletAccounts: [Account]
     @Query(sort: \CategorizationRule.createdAt) private var rules: [CategorizationRule]
     @Query(sort: \Tag.name) private var tags: [Tag]
-    @Query(sort: [SortDescriptor(\CairnSchemaV1.Category.sortOrder)])
-    private var categories: [CairnSchemaV1.Category]
+    @Query(sort: [SortDescriptor(\CairnSchemaV2.Category.sortOrder)])
+    private var categories: [CairnSchemaV2.Category]
 
     @State private var storageMode: StoreMode = .local
     @State private var exportDocument: ExportFile?
     @State private var exportType: UTType = .commaSeparatedText
+    @State private var exportFileName = "cairn-transactions"
     @State private var showingExporter = false
     @State private var showingDeleteConfirm = false
     @State private var showingConnect = false
@@ -67,7 +68,7 @@ struct SettingsView: View {
             isPresented: $showingExporter,
             document: exportDocument,
             contentType: exportType,
-            defaultFilename: "cairn-transactions"
+            defaultFilename: exportFileName
         ) { result in
             if case let .failure(error) = result {
                 // Cancelling the save dialog is a choice, not a failure.
@@ -492,6 +493,9 @@ struct SettingsView: View {
             Button { export(json: true) } label: {
                 IconRow("Export as JSON", systemImage: "curlybraces", tint: .indigo)
             }
+            Button { exportBudgets() } label: {
+                IconRow("Export budgets as CSV", systemImage: "chart.pie", tint: CairnTheme.accent)
+            }
             Button(role: .destructive) {
                 showingDeleteConfirm = true
             } label: {
@@ -501,7 +505,7 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Exports include every transaction, category, and note. Nothing is uploaded; you choose where it saves.")
+            Text("Transaction exports include every transaction, category, and note. Budget exports include category limits. Nothing is uploaded; you choose where it saves.")
         }
     }
 
@@ -577,6 +581,17 @@ struct SettingsView: View {
             guard let data = await model.exportData(json: json) else { return }
             exportDocument = ExportFile(data: data)
             exportType = json ? .json : .commaSeparatedText
+            exportFileName = "cairn-transactions"
+            showingExporter = true
+        }
+    }
+
+    private func exportBudgets() {
+        Task {
+            guard let data = await model.exportBudgetsCSV() else { return }
+            exportDocument = ExportFile(data: data)
+            exportType = .commaSeparatedText
+            exportFileName = "cairn-budgets"
             showingExporter = true
         }
     }

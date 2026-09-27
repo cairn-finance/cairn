@@ -29,8 +29,9 @@ private iCloud database. There is no Cairn backend. Ever.
 ## Project status
 
 Cairn is in **public beta on TestFlight**, heading toward **1.0 on the App
-Store**. It is usable today for read-only tracking of real accounts; there are
-no budgets, reports, or exchange rates yet.
+Store**. It is usable today for read-only tracking of real accounts, with
+spending insights and monthly category budgets. Cairn does not convert between
+currencies.
 
 ## Try it
 
@@ -70,12 +71,14 @@ no budgets, reports, or exchange rates yet.
   expected next charge.
 - Investments and holdings, with cost basis and gain per position.
 - Insights: spending pace, category breakdowns, and six-month trends.
+- Monthly category limits with spending, remaining amounts, and one-month overrides.
 - Imports CSV exports from other apps, and adds manual accounts.
 - Syncs across devices through your private iCloud database with **end-to-end
   encrypted financial fields** — Apple stores the record, not the amount. iCloud
   sync is opt-in; new installs keep everything on this device.
 - Optional Face ID / Touch ID app lock.
-- Exports every transaction to CSV or JSON, and can delete everything.
+- Exports every transaction to CSV or JSON, exports budget limits to CSV, and
+  can delete everything.
 
 ## Privacy
 
@@ -91,12 +94,13 @@ no budgets, reports, or exchange rates yet.
   text is handled by the system model locally and never sent to a server.
 - The SimpleFIN Access URL is a bearer credential and lives in the **Keychain**,
   never in the database or logs.
-- Amounts, balances, names, descriptions, notes, merchant names, and dates are
-  marked `@Attribute(.allowsCloudEncryption)`, so CloudKit encrypts them
+- Amounts, balances, names, descriptions, notes, merchant names, dates, and
+  budget amounts and month keys are marked `@Attribute(.allowsCloudEncryption)`,
+  so CloudKit encrypts them
   end-to-end with keys from your iCloud Keychain, independent of Advanced Data
   Protection. Structural metadata is **not** encrypted — for example, which
-  category a transaction is linked to, category icons, status flags such as
-  pending or transfer, and sync timestamps.
+  category a transaction or budget is linked to, budget rule kind, category
+  icons, status flags such as pending or transfer, and sync timestamps.
 - Financial amounts are stored as integer minor units — exact, and never a float.
 
 See [`docs/threat-model.md`](docs/threat-model.md) and

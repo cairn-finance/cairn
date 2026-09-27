@@ -9,13 +9,14 @@ CairnApp (SwiftUI, iOS/iPadOS/macOS)
    │  @Query / @Observable
    ▼
 CairnCore (Swift package)
-   ├─ Models/        SwiftData @Model types (CairnSchemaV1)
+   ├─ Models/        SwiftData @Model types (CairnSchemaV2; V1 retained for migration)
    ├─ Persistence/   ModelContainerFactory, StoreMode
    ├─ Security/      CredentialStore, KeychainCredentialStore
    ├─ SimpleFIN/     client, DTOs, errors, sanitizer
    ├─ Sync/          SyncEngine (@ModelActor), matching, balance history
    ├─ Enrichment/    rules engine, merchant memory, transfer pairing
    ├─ Insights/      month-over-month math, subscription detection
+   ├─ Budgets/       monthly category limit math and ledger snapshots
    └─ Export/        CSV + JSON
 ```
 
@@ -67,7 +68,8 @@ forces local-only storage at runtime, and the test host always uses local storag
 - **CloudKit constraints**: no `@Attribute(.unique)`, every scalar has a default,
   relationships are optional with explicit inverses.
 - **Encrypted fields**: amounts, balances, names, descriptions, notes, merchant
-  names, and dates use `@Attribute(.allowsCloudEncryption)` — plus identifying
+  names, dates, and category budget values/months/time zones use
+  `@Attribute(.allowsCloudEncryption)` — plus identifying
   metadata such as the institution's org URL, the account type, and the
   account's custom-currency names, and `normalizedMerchant` (a plaintext copy
   would give away what encrypting `payeeDescription` protects). Structural
@@ -92,6 +94,13 @@ forces local-only storage at runtime, and the test host always uses local storag
   field-level last-writer-wins cannot clobber a manual choice.
 - **Money as integer minor units**: exact arithmetic, CloudKit-safe, and
   custom currencies (miles, points) work through a configurable exponent.
+- **Budgets**: one currency and Gregorian month at a time. Recurring limits take
+  effect from their month key; an override changes one month. Posted spending
+  excludes transfers, ignored rows, pending rows, and income, while categorized
+  credits reduce that category's net spend. Remaining is planned minus net
+  spending in planned categories; all spending and unbudgeted spending are
+  reported separately. Transaction fetch errors leave budget data unavailable
+  until a retry instead of presenting incomplete totals.
 - **Derived history**: `balance(on: d) = currentBalance − Σ(amounts posted after d)`
   means the net-worth chart is populated from the first sync; snapshots are a
   cache.

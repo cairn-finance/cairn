@@ -87,7 +87,7 @@ struct PersistenceTests {
         // CloudKit refuses to load a store when any relationship lacks an
         // inverse or is non-optional. Assert this structurally, without asking
         // CloudKit for a container (which traps when entitlements are absent).
-        let schema = Schema(versionedSchema: CairnSchemaV1.self)
+        let schema = Schema(versionedSchema: CairnSchemaV2.self)
         var violations: [String] = []
         var inspected = 0
         for entity in schema.entities {

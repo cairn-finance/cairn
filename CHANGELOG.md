@@ -4,6 +4,25 @@ All notable changes to Cairn are documented here. This project follows
 [Semantic Versioning](https://semver.org) and
 [Keep a Changelog](https://keepachangelog.com).
 
+## [Unreleased]
+
+### Added
+
+- Monthly category budgets with recurring limits, one-month overrides, and
+  CSV export. Starting suggestions show each month's spending and let you
+  review the combined plan before adding limits.
+
+### Changed
+
+- Limit editing now shows the month scope explicitly and keeps the current
+  scope selected when editing an existing limit.
+
+### Fixed
+
+- Budget remaining now compares planned limits with spending in those planned
+  categories. Other spending is shown separately.
+- A failed transaction load no longer appears as zero budget spending.
+
 ## [1.0.0] - 2026-09-21
 
 - docs: note public support pages

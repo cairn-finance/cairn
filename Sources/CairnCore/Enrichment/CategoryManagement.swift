@@ -46,10 +46,11 @@ public enum CategoryManagement {
     public static func deletionDecision(
         isSystem: Bool,
         transactionCount: Int,
-        ruleCount: Int
+        ruleCount: Int,
+        budgetEntryCount: Int = 0
     ) -> CategoryDeletionDecision {
         if isSystem { return .forbidden }
-        if transactionCount > 0 || ruleCount > 0 { return .archive }
+        if transactionCount > 0 || ruleCount > 0 || budgetEntryCount > 0 { return .archive }
         return .delete
     }
 }

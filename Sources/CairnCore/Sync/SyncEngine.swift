@@ -2922,6 +2922,7 @@ public actor SyncEngine {
     /// never trip a relationship constraint.
     public func deleteAllData() throws {
         try modelContext.delete(model: LedgerTransaction.self)
+        try modelContext.delete(model: CategoryBudget.self)
         try modelContext.delete(model: BalanceSnapshot.self)
         try modelContext.delete(model: Holding.self)
         try modelContext.delete(model: CategorizationRule.self)

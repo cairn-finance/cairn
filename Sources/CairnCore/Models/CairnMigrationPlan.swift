@@ -1,15 +1,13 @@
 import Foundation
 import SwiftData
 
-/// Migration plan for the Cairn store. Version 1 is the initial schema; future
-/// versions add a stage here. Keeping this in place from day one means schema
-/// changes never require an ad-hoc reset.
+/// Migration plan for the Cairn store.
 public enum CairnMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [CairnSchemaV1.self]
+        [CairnSchemaV1.self, CairnSchemaV2.self]
     }
 
     public static var stages: [MigrationStage] {
-        []
+        [MigrationStage.lightweight(fromVersion: CairnSchemaV1.self, toVersion: CairnSchemaV2.self)]
     }
 }
