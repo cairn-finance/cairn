@@ -269,6 +269,49 @@ struct RecurringAnalyzerTests {
         _ = container
     }
 
+    @Test("Recurring detail fetches only live charges from its account")
+    func fetchesRecurringCharges() async throws {
+        let (container, context) = try makeContext()
+        let firstAccount = Account(bankAccountID: "A1", name: "Checking", currency: .usd)
+        let secondAccount = Account(bankAccountID: "B1", name: "Savings", currency: .usd)
+        context.insert(firstAccount)
+        context.insert(secondAccount)
+
+        var latestFirstCharge: LedgerTransaction?
+        for month in 1...4 {
+            for (account, amount) in [(firstAccount, Int64(-1_299)), (secondAccount, Int64(-2_999))] {
+                let transaction = LedgerTransaction(
+                    bankTransactionID: "S\(month)",
+                    payeeDescription: "Streaming Service",
+                    amountMinorUnits: amount
+                )
+                transaction.account = account
+                // Older rows can lack the stored account index.
+                transaction.accountIDIndex = month == 1 && account === firstAccount
+                    ? "" : account.bankAccountID
+                transaction.postedDate = date(month, 5)
+                transaction.normalizedMerchant = "streaming service"
+                context.insert(transaction)
+                if month == 4 && account === firstAccount { latestFirstCharge = transaction }
+            }
+        }
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        let detected = try await engine.recurringSeries(now: date(5, 1))
+        let series = try #require(detected.first { $0.accountID == "A1" })
+
+        // The list can still hold a detected series after a sync removes one
+        // charge. Fetching the detail must read the live store, not cached rows.
+        context.delete(try #require(latestFirstCharge))
+        try context.save()
+
+        let rows = try await engine.recurringChargeRows(for: series)
+        #expect(rows.count == 3)
+        #expect(rows.allSatisfy { $0.accountName == "Checking" && $0.amountMinorUnits == -1_299 })
+        #expect(rows.map(\.effectiveDate) == [date(3, 5), date(2, 5), date(1, 5)])
+    }
+
     @Test("A transfer run produces no series")
     func transfersExcluded() async throws {
         let (container, context) = try makeContext()

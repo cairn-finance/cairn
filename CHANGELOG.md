@@ -10,6 +10,8 @@ All notable changes to Cairn are documented here. This project follows
 
 - Browse spending with a category chart, then swipe to category amounts and
   open lists of transactions matching a tag or rule in Insights.
+- Choose which sections appear in the tab bar or sidebar and change their order
+  from Settings.
 - Monthly category budgets with recurring limits, one-month overrides, and
   CSV export. Starting suggestions show each month's spending and let you
   review the combined plan before adding limits.
@@ -24,6 +26,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Fixed
 
+- Opening a recurring payment now loads its charges without crashing when
+  synced transactions change in the background.
 - Budget remaining now compares planned limits with spending in those planned
   categories. Other spending is shown separately.
 - A failed transaction load no longer appears as zero budget spending.

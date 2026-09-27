@@ -124,17 +124,61 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+/// Device-local navigation preference. Unknown or duplicate saved values are
+/// ignored so adding a section in a later version keeps it visible by default.
+struct TabLayout {
+    static let orderKey = "cairn.tabOrder"
+    static let hiddenKey = "cairn.hiddenTabs"
+
+    let orderedSections: [AppSection]
+    let hiddenSections: Set<AppSection>
+
+    init(orderRaw: String, hiddenRaw: String) {
+        let savedOrder = orderRaw.split(separator: ",").compactMap { AppSection(rawValue: String($0)) }
+        var seen: Set<AppSection> = []
+        orderedSections = (savedOrder + AppSection.allCases).filter { seen.insert($0).inserted }
+
+        var hidden = Set(hiddenRaw.split(separator: ",").compactMap { AppSection(rawValue: String($0)) })
+        hidden.remove(.settings)
+        if AppSection.allCases.filter({ $0 != .settings && !hidden.contains($0) }).isEmpty {
+            hidden.remove(.home)
+        }
+        hiddenSections = hidden
+    }
+
+    var visibleSections: [AppSection] {
+        orderedSections.filter { !hiddenSections.contains($0) }
+    }
+
+    static func encodeOrder(_ sections: [AppSection]) -> String {
+        sections.map(\.rawValue).joined(separator: ",")
+    }
+
+    static func encodeHidden(_ sections: Set<AppSection>) -> String {
+        AppSection.allCases.filter { sections.contains($0) }.map(\.rawValue).joined(separator: ",")
+    }
+}
+
 #if os(iOS)
 struct MainTabView: View {
     @State private var selection: AppSection = AppSection.initial
+    @AppStorage(TabLayout.orderKey) private var orderRaw = ""
+    @AppStorage(TabLayout.hiddenKey) private var hiddenRaw = ""
+
+    private var sections: [AppSection] {
+        TabLayout(orderRaw: orderRaw, hiddenRaw: hiddenRaw).visibleSections
+    }
 
     var body: some View {
         TabView(selection: $selection) {
-            ForEach(AppSection.allCases) { section in
+            ForEach(sections) { section in
                 Tab(section.title, systemImage: section.systemImage, value: section) {
                     NavigationStack { section.destination }
                 }
             }
+        }
+        .onChange(of: sections) { _, visible in
+            if !visible.contains(selection) { selection = visible.first ?? .settings }
         }
     }
 }
@@ -143,10 +187,16 @@ struct MainTabView: View {
 #if os(macOS)
 struct MainShellView: View {
     @State private var selection: AppSection = AppSection.initial
+    @AppStorage(TabLayout.orderKey) private var orderRaw = ""
+    @AppStorage(TabLayout.hiddenKey) private var hiddenRaw = ""
+
+    private var sections: [AppSection] {
+        TabLayout(orderRaw: orderRaw, hiddenRaw: hiddenRaw).visibleSections
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(AppSection.allCases, selection: $selection) { section in
+            List(sections, selection: $selection) { section in
                 Label(section.title, systemImage: section.systemImage)
                     .tag(section)
             }
@@ -155,6 +205,9 @@ struct MainShellView: View {
             NavigationStack { selection.destination }
         }
         .frame(minWidth: 900, minHeight: 600)
+        .onChange(of: sections) { _, visible in
+            if !visible.contains(selection) { selection = visible.first ?? .settings }
+        }
     }
 }
 #endif

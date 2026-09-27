@@ -139,6 +139,9 @@ public struct RecurringSeries: Sendable, Hashable, Identifiable {
     public let categoryName: String?
     public let categoryColorHex: String?
     public let categorySymbolName: String?
+    /// Bank account identifier used to fetch this series' charges without
+    /// loading the full transaction store on the main actor.
+    public let accountID: String
     public let accountNames: [String]
     public let transactionIDs: [String]
     public let currency: Currency
@@ -279,6 +282,7 @@ public enum RecurringDetector {
             categoryName: categorized?.categoryName,
             categoryColorHex: categorized?.categoryColorHex,
             categorySymbolName: categorized?.categorySymbolName,
+            accountID: latest.accountID,
             accountNames: Array(Set(sorted.map(\.accountName))).sorted(),
             transactionIDs: sorted.map(\.id),
             currency: latest.currency

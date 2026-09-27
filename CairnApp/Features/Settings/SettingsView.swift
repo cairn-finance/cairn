@@ -52,6 +52,7 @@ struct SettingsView: View {
             institutionsSection
             categorizationSection
             organizationSection
+            navigationSection
             storageSection
             privacySection
             dataSection
@@ -402,6 +403,18 @@ struct SettingsView: View {
     private var categoriesSubtitle: LocalizedStringKey {
         let count = categories.filter { !$0.isArchived }.count
         return "^[\(count) category](inflect: true)"
+    }
+
+    private var navigationSection: some View {
+        Section {
+            NavigationLink {
+                TabCustomizationView()
+            } label: {
+                IconRow("Customize Navigation", systemImage: "rectangle.3.group", tint: CairnTheme.accent)
+            }
+        } header: {
+            Text("Navigation")
+        }
     }
 
     // MARK: - Storage
