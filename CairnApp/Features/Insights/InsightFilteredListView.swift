@@ -8,11 +8,15 @@ struct InsightFilteredListView: View {
     enum Scope: Hashable {
         case category(name: String, month: Date)
         case budgetCategory(name: String, month: Date, currencyCode: String, timeZoneIdentifier: String)
+        case tag(PersistentIdentifier)
+        case rule(UUID)
         case needingCategory
     }
 
     @Query(sort: [SortDescriptor(\LedgerTransaction.postedDate, order: .reverse)])
     private var allTransactions: [LedgerTransaction]
+    @Query private var tags: [Tag]
+    @Query private var rules: [CategorizationRule]
 
     let title: String
     let emptyMessage: LocalizedStringKey
@@ -56,6 +60,11 @@ struct InsightFilteredListView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+        case .tag, .rule:
+            Card {
+                Label("^[\(filtered.count) matching transaction](inflect: true)", systemImage: "list.bullet")
+                    .font(.headline)
+            }
         case .needingCategory:
             Card {
                 HStack(spacing: 12) {
@@ -96,6 +105,26 @@ struct InsightFilteredListView: View {
                       let interval else { return false }
                 return interval.contains(transaction.effectiveDate)
             }
+        case let .tag(tagID):
+            guard tags.contains(where: { $0.persistentModelID == tagID }) else { return [] }
+            return allTransactions.filter { transaction in
+                transaction.rowValue().tagIDs.contains(tagID)
+            }
+        case let .rule(ruleID):
+            guard let rule = rules.first(where: { $0.uuid == ruleID }) else { return [] }
+            let snapshot = RuleSnapshot(
+                id: rule.uuid,
+                field: RuleField(rawValue: rule.fieldRaw) ?? .payee,
+                matchKind: RuleMatchKind(rawValue: rule.matchKindRaw) ?? .contains,
+                pattern: rule.pattern,
+                minAmountMinorUnits: rule.minAmountMinorUnits,
+                maxAmountMinorUnits: rule.maxAmountMinorUnits,
+                categoryID: rule.assignedCategory?.uuid ?? rule.uuid,
+                priority: rule.priority
+            )
+            return allTransactions.filter {
+                snapshot.matches(amountMinorUnits: $0.amountMinorUnits, description: $0.payeeDescription)
+            }
         case .needingCategory:
             return allTransactions.filter { transaction in
                 transaction.userCategory == nil
@@ -117,7 +146,7 @@ struct InsightFilteredListView: View {
                         : -transaction.amountMinorUnits
                     return MinorUnits.addClamped(total, delta)
                 }
-        case .category, .needingCategory:
+        case .category, .tag, .rule, .needingCategory:
             return filtered
                 .filter { $0.amountMinorUnits < 0 && !$0.countsAsTransfer }
                 .reduce(Int64(0)) { MinorUnits.addClamped($0, MinorUnits.absClamped($1.amountMinorUnits)) }

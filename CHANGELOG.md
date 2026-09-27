@@ -12,6 +12,10 @@ All notable changes to Cairn are documented here. This project follows
   transaction rows compact. Regex rules can use capture groups in names.
 - Transaction details show every matching rule and open its editor.
 - A Settings option makes all transaction rows compact.
+- Browse spending with a category chart, then swipe to category amounts and
+  open lists of transactions matching a tag or rule in Insights.
+- Choose which sections appear in the tab bar or sidebar and change their order
+  from Settings.
 - Monthly category budgets with recurring limits, one-month overrides, and
   CSV export. Starting suggestions show each month's spending and let you
   review the combined plan before adding limits.

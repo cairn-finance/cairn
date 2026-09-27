@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import Testing
 @testable import CairnCore
@@ -47,16 +48,17 @@ struct RuleRegexSafetyTests {
 
     @Test("An overrun is abandoned, and the pattern is never evaluated twice")
     func overrunIsAbandonedAndDisabled() {
-        // `(a+)+b` over a run of a's with no b is the textbook exponential case.
-        // The budget is passed in rather than waited for: the real one is two
-        // seconds on purpose, and a test that waited it out would slow every run
-        // and leave a thread burning CPU while other suites tried to run. The run
-        // is short so that abandoned evaluation finishes quickly too.
-        let pattern = "(a+)+b"
-        let description = String(repeating: "a", count: 20)
+        // Hold a serial evaluation queue briefly instead of running a genuinely
+        // catastrophic regex. That exercises the deadline deterministically and
+        // cannot leave a CPU-heavy regex competing with the rest of the suite.
+        let pattern = "^SAFE"
+        let queue = DispatchQueue(label: "com.sehej.cairn.tests.rules.regex")
+        queue.async { Thread.sleep(forTimeInterval: 0.05) }
 
         let started = Date()
-        let matched = RulesEngine.matchesRegex(pattern, description: description, budget: .milliseconds(1))
+        let matched = RulesEngine.matchesRegex(
+            pattern, description: "SAFE MERCHANT", budget: .milliseconds(1), queue: queue
+        )
         let elapsed = Date().timeIntervalSince(started)
 
         #expect(!matched)
@@ -65,7 +67,9 @@ struct RuleRegexSafetyTests {
 
         // Disabled means skipped: the next transaction pays nothing for it.
         let second = Date()
-        _ = RulesEngine.matchesRegex(pattern, description: description, budget: .milliseconds(1))
+        _ = RulesEngine.matchesRegex(
+            pattern, description: "SAFE MERCHANT", budget: .milliseconds(1), queue: queue
+        )
         #expect(Date().timeIntervalSince(second) < 0.05)
     }
 

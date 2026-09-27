@@ -290,15 +290,17 @@ public enum RulesEngine {
     static func matchesRegex(
         _ pattern: String,
         description: String,
-        budget: DispatchTimeInterval = regexBudget
+        budget: DispatchTimeInterval = regexBudget,
+        queue: DispatchQueue? = nil
     ) -> Bool {
-        regexCaptures(pattern, description: description, budget: budget) != nil
+        regexCaptures(pattern, description: description, budget: budget, queue: queue) != nil
     }
 
     private static func regexCaptures(
         _ pattern: String,
         description: String,
-        budget: DispatchTimeInterval
+        budget: DispatchTimeInterval,
+        queue: DispatchQueue? = nil
     ) -> [String]? {
         guard let regex = RegexCache.shared.regex(for: pattern) else { return nil }
         let pending = PendingRegexMatch(
@@ -306,7 +308,7 @@ public enum RulesEngine {
             text: description,
             range: NSRange(description.startIndex..<description.endIndex, in: description)
         )
-        RegexCache.shared.queue.async { pending.run() }
+        (queue ?? RegexCache.shared.queue).async { pending.run() }
         guard let result = pending.result(within: budget) else {
             RegexCache.shared.disable(pattern)
             return nil

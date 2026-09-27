@@ -54,6 +54,7 @@ struct SettingsView: View {
             categorizationSection
             organizationSection
             displaySection
+            navigationSection
             storageSection
             privacySection
             dataSection
@@ -413,6 +414,18 @@ struct SettingsView: View {
             Text("Display")
         } footer: {
             Text("Compact rows use smaller icons and hide category names. Tags and account names remain visible.")
+        }
+    }
+
+    private var navigationSection: some View {
+        Section {
+            NavigationLink {
+                TabCustomizationView()
+            } label: {
+                IconRow("Customize Navigation", systemImage: "rectangle.3.group", tint: CairnTheme.accent)
+            }
+        } header: {
+            Text("Navigation")
         }
     }
 
