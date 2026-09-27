@@ -455,20 +455,23 @@ struct SettingsView: View {
         } header: {
             Text("Storage")
         } footer: {
-            Text("\(storageMode.summary) Changing this takes effect after you quit and reopen Cairn. "
-                + deleteDataNote)
+            Text(verbatim: storageFooter)
         }
     }
 
-    /// The storage footer used to tell everyone to "use Delete All Data" to
-    /// clear iCloud, which is wrong in This Device Only mode: nothing was
-    /// uploaded, so there is nothing in iCloud to remove.
-    private var deleteDataNote: String {
-        if model.storeMode == .cloud {
-            "Delete All Data removes everything here and asks iCloud to remove it from your other devices."
-        } else {
-            "This device isn’t using iCloud, so Delete All Data removes everything here; nothing was uploaded to delete."
-        }
+    /// In This Device Only mode there is nothing in iCloud to remove.
+    private var storageFooter: String {
+        let summary = storageMode == .cloud
+            ? String(localized: "Data syncs through your private iCloud database.")
+            : String(localized: "Nothing leaves this device. No iCloud. No credential sync.")
+        let deleteDataNote = model.storeMode == .cloud
+            ? String(localized: "Delete All Data removes everything here and asks iCloud to remove it from your other devices.")
+            : String(localized: "This device isn’t using iCloud, so Delete All Data removes everything here; nothing was uploaded to delete.")
+        return [
+            summary,
+            String(localized: "Changing this takes effect after you quit and reopen Cairn."),
+            deleteDataNote
+        ].joined(separator: " ")
     }
 
     // MARK: - Privacy
