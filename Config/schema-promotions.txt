@@ -25,3 +25,4 @@
 
 2026-09-13  1415eee53f1b8a109d196130eced8f6b52849a155ede945cdf7f7027209e80da  d52597e  first production promotion
 2026-09-18  78c199d70ce32c32a05fb445b6bcbeb2126a80ea90271efd38c95df4c5c71975  e15f623  container swap + encryption
+2026-09-27  4abc74fcc23070168e9a065a0b595fc258bc9bbe56fc97eb8648df6535d14a23  3c437a7  monthly category budgets
