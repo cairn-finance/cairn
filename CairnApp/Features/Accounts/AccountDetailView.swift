@@ -461,16 +461,19 @@ struct TransactionDetailView: View {
     @Environment(AppModel.self) private var model
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV2.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV2.Category.createdAt),
+            SortDescriptor(\CairnSchemaV3.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV3.Category.createdAt),
         ]
-    ) private var categories: [CairnSchemaV2.Category]
+    ) private var categories: [CairnSchemaV3.Category]
     @Query(sort: \Tag.name) private var allTags: [Tag]
+    @Query(sort: \CategorizationRule.priority, order: .reverse)
+    private var allRules: [CategorizationRule]
 
     let transaction: LedgerTransaction
 
     @State private var showingNewTag = false
     @State private var showingRuleEditor = false
+    @State private var ruleToEdit: CategorizationRule?
 
     private let columns = [GridItem(.adaptive(minimum: 148), spacing: 8)]
 
@@ -482,6 +485,7 @@ struct TransactionDetailView: View {
                 optionsCard
                 noteCard
                 tagsCard
+                matchingRulesCard
                 detailsCard
             }
             .cairnScreen()
@@ -507,6 +511,10 @@ struct TransactionDetailView: View {
             )
             .cairnLockCover()
         }
+        .sheet(item: $ruleToEdit) { rule in
+            RuleEditorView(rule: rule)
+                .cairnLockCover()
+        }
         .sensoryFeedback(.selection, trigger: transaction.effectiveCategory?.uuid)
     }
 
@@ -521,12 +529,12 @@ struct TransactionDetailView: View {
                         size: 52
                     )
                     VStack(alignment: .leading, spacing: 4) {
-                        if transaction.payeeDescription.isEmpty {
+                        if transaction.displayDescription.isEmpty {
                             Text("No description")
                                 .font(.title3.weight(.semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
-                            Text(transaction.payeeDescription)
+                            Text(transaction.displayDescription)
                                 .font(.title3.weight(.semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -604,7 +612,7 @@ struct TransactionDetailView: View {
         }
     }
 
-    private func categoryChip(_ category: CairnSchemaV2.Category, selected: Bool) -> some View {
+    private func categoryChip(_ category: CairnSchemaV3.Category, selected: Bool) -> some View {
         let tint = CairnTheme.color(hex: category.colorHex)
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         return HStack(spacing: 9) {
@@ -648,7 +656,7 @@ struct TransactionDetailView: View {
         return "Choose a category. Cairn remembers it for this merchant."
     }
 
-    private func select(_ category: CairnSchemaV2.Category) {
+    private func select(_ category: CairnSchemaV3.Category) {
         withAnimation(CairnTheme.Motion.quick) {
             if transaction.userCategory?.uuid == category.uuid {
                 transaction.userCategory = nil
@@ -730,22 +738,28 @@ struct TransactionDetailView: View {
                         spacing: 8
                     ) {
                         ForEach(assignedTags) { tag in
-                            Button { toggleTag(tag) } label: {
-                                TagChip(name: tag.name, colorHex: tag.colorHex, showsRemove: true)
+                            if isAutomaticallyAssigned(tag) {
+                                TagChip(name: tag.name, colorHex: tag.colorHex)
+                                    .accessibilityLabel(Text("\(tag.name), applied by a rule"))
+                            } else {
+                                Button { toggleTag(tag) } label: {
+                                    TagChip(name: tag.name, colorHex: tag.colorHex, showsRemove: true)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
                 Menu {
                     ForEach(allTags) { tag in
-                        Button {
-                            toggleTag(tag)
-                        } label: {
-                            Label(
-                                tag.name,
-                                systemImage: isAssigned(tag) ? "checkmark" : "tag"
-                            )
+                        if isAutomaticallyAssigned(tag) {
+                            Label("\(tag.name) · Applied by rule", systemImage: "checkmark")
+                        } else {
+                            Button {
+                                toggleTag(tag)
+                            } label: {
+                                Label(tag.name, systemImage: isAssigned(tag) ? "checkmark" : "tag")
+                            }
                         }
                     }
                     if !allTags.isEmpty { Divider() }
@@ -763,9 +777,13 @@ struct TransactionDetailView: View {
     }
 
     private var assignedTags: [Tag] {
-        (transaction.tags ?? []).sorted {
+        transaction.effectiveTags.sorted {
             $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
+    }
+
+    private func isAutomaticallyAssigned(_ tag: Tag) -> Bool {
+        (transaction.autoTags ?? []).contains { $0.persistentModelID == tag.persistentModelID }
     }
 
     private func isAssigned(_ tag: Tag) -> Bool {
@@ -799,10 +817,59 @@ struct TransactionDetailView: View {
             : transaction.normalizedMerchant
     }
 
+    private var matchingRules: [CategorizationRule] {
+        allRules.filter { rule in
+            guard rule.isEnabled else { return false }
+            let snapshot = RuleSnapshot(
+                id: rule.uuid,
+                field: RuleField(rawValue: rule.fieldRaw) ?? .payee,
+                matchKind: RuleMatchKind(rawValue: rule.matchKindRaw) ?? .contains,
+                pattern: rule.pattern,
+                minAmountMinorUnits: rule.minAmountMinorUnits,
+                maxAmountMinorUnits: rule.maxAmountMinorUnits,
+                categoryID: rule.assignedCategory?.uuid,
+                priority: rule.priority
+            )
+            return snapshot.matches(
+                amountMinorUnits: transaction.amountMinorUnits,
+                description: transaction.payeeDescription
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var matchingRulesCard: some View {
+        if !matchingRules.isEmpty {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    CardHeader("Matching rules", subtitle: "Higher rules win when actions conflict.")
+                    ForEach(matchingRules) { rule in
+                        Button {
+                            ruleToEdit = rule
+                        } label: {
+                            HStack {
+                                Text(rule.name.isEmpty ? rule.pattern : rule.name)
+                                    .lineLimit(1)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
     private var detailsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 CardHeader("Details")
+                if transaction.autoDisplayName != nil {
+                    detailRow("Bank description", transaction.payeeDescription)
+                }
                 detailRow("Posted", transaction.postedDate.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "Pending")
                 if let transacted = transaction.transactedAt {
                     detailRow("Transacted", transacted.formatted(date: .abbreviated, time: .shortened))

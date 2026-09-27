@@ -9,10 +9,10 @@ struct TransactionEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV2.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV2.Category.createdAt),
+            SortDescriptor(\CairnSchemaV3.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV3.Category.createdAt),
         ]
-    ) private var categories: [CairnSchemaV2.Category]
+    ) private var categories: [CairnSchemaV3.Category]
     @Query(sort: \Tag.name) private var allTags: [Tag]
 
     let account: Account
@@ -158,7 +158,7 @@ struct TransactionEditSheet: View {
 
     /// Keep an archived category visible when it is the row's current choice,
     /// so the picker never renders a blank selection.
-    private var pickerCategories: [CairnSchemaV2.Category] {
+    private var pickerCategories: [CairnSchemaV3.Category] {
         categories.filter { !$0.isArchived || $0.persistentModelID == categoryID }
     }
 

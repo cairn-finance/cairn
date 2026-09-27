@@ -77,6 +77,7 @@ public enum SyncDecision: Sendable, Equatable {
 /// propagates changes between devices.
 @ModelActor
 public actor SyncEngine {
+    private var activeRuleTags: [PersistentIdentifier: Tag] = [:]
     /// SimpleFIN Bridge's documented daily request ceiling per token. Kept
     /// conservative because every signed-in device shares one Access URL.
     public static let dailyRequestLimit = 24
@@ -1645,23 +1646,46 @@ public actor SyncEngine {
         }
     }
 
-    private func applyRulesIfNeeded(to transaction: LedgerTransaction, rules: [RuleSnapshot]) {
-        guard transaction.userCategory == nil else { return }
-        // Never overwrite an on-device model suggestion with a rule.
-        guard transaction.autoCategorySource != SuggestionSource.appleIntelligence.rawValue,
-              transaction.autoCategorySource != "model" else { return }
-        guard !rules.isEmpty else { return }
-
-        let categoryID = RulesEngine.categoryID(
+    @discardableResult
+    private func applyRulesIfNeeded(
+        to transaction: LedgerTransaction,
+        rules: [RuleSnapshot],
+        applyCategory: Bool = true
+    ) -> Bool {
+        var didChange = false
+        let effects = RulesEngine.effects(
             amountMinorUnits: transaction.amountMinorUnits,
             description: transaction.payeeDescription,
             rules: rules
         )
-        if let categoryID, let category = try? category(withUUID: categoryID) {
-            transaction.autoCategory = category
-            transaction.autoCategorySource = "rule"
-            transaction.autoConfidence = 1
+        let appliedTags = effects.appliedTagIDs.compactMap { activeRuleTags[$0] }
+        let oldTagIDs = Set((transaction.autoTags ?? []).map(\.persistentModelID))
+        let newTagIDs = Set(appliedTags.map(\.persistentModelID))
+        if transaction.autoDisplayName != effects.displayName
+            || transaction.autoCompact != effects.makesCompact
+            || oldTagIDs != newTagIDs {
+            transaction.autoDisplayName = effects.displayName
+            transaction.autoCompact = effects.makesCompact
+            transaction.autoTags = appliedTags
+            transaction.modifiedAt = .now
+            didChange = true
         }
+
+        guard applyCategory, transaction.userCategory == nil else { return didChange }
+        // Never overwrite an on-device model suggestion with a rule.
+        guard transaction.autoCategorySource != SuggestionSource.appleIntelligence.rawValue,
+              transaction.autoCategorySource != "model" else { return didChange }
+        if let categoryID = effects.categoryID, let category = try? category(withUUID: categoryID) {
+            if transaction.autoCategory?.uuid != categoryID
+                || transaction.autoCategorySource != SuggestionSource.rule.rawValue {
+                transaction.autoCategory = category
+                transaction.autoCategorySource = SuggestionSource.rule.rawValue
+                transaction.autoConfidence = 1
+                transaction.modifiedAt = .now
+                didChange = true
+            }
+        }
+        return didChange
     }
 
     private func category(withUUID uuid: UUID) throws -> Category? {
@@ -1672,12 +1696,15 @@ public actor SyncEngine {
 
     private func loadRuleSnapshots() throws -> [RuleSnapshot] {
         let descriptor = FetchDescriptor<CategorizationRule>(
-            predicate: #Predicate { $0.isEnabled == true && $0.assignedCategory != nil }
+            predicate: #Predicate { $0.isEnabled == true }
         )
         let rules = try modelContext.fetch(descriptor)
+        let tagIDs = Set(rules.flatMap { ($0.appliedTags ?? []).map(\.persistentModelID) })
+        activeRuleTags = Dictionary(uniqueKeysWithValues: tagIDs.compactMap { id in
+            liveModel(Tag.self, id).map { (id, $0) }
+        })
         return rules.compactMap { rule in
-            guard let category = rule.assignedCategory,
-                  let field = RuleField(rawValue: rule.fieldRaw),
+            guard let field = RuleField(rawValue: rule.fieldRaw),
                   let kind = RuleMatchKind(rawValue: rule.matchKindRaw) else { return nil }
             return RuleSnapshot(
                 id: rule.uuid,
@@ -1686,8 +1713,11 @@ public actor SyncEngine {
                 pattern: rule.pattern,
                 minAmountMinorUnits: rule.minAmountMinorUnits,
                 maxAmountMinorUnits: rule.maxAmountMinorUnits,
-                categoryID: category.uuid,
-                priority: rule.priority
+                categoryID: rule.assignedCategory?.uuid,
+                priority: rule.priority,
+                displayNameTemplate: rule.displayNameTemplate,
+                makesCompact: rule.makesCompact,
+                appliedTagIDs: (rule.appliedTags ?? []).map(\.persistentModelID)
             )
         }
     }
@@ -1764,6 +1794,7 @@ public actor SyncEngine {
         let memory = try buildMerchantMemory()
 
         for transaction in transactions {
+            if applyRulesIfNeeded(to: transaction, rules: rules, applyCategory: false) { didChange = true }
             guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
             // Money movement is a deterministic outcome. Once a row is recognized
             // as a transfer, merchant memory and fuzzy matches must not pull it
@@ -2900,7 +2931,7 @@ public actor SyncEngine {
                 isTransfer: txn.isTransfer,
                 isIgnored: txn.isIgnored,
                 note: txn.note,
-                tags: (txn.tags ?? []).map(\.name).sorted(),
+                tags: txn.effectiveTags.map(\.name).sorted(),
                 transactionID: txn.bankTransactionID
             )
         }

@@ -5,13 +5,14 @@ import CairnCore
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage("cairn.compactTransactions") private var compactTransactions = false
     @Query(sort: \Institution.name) private var institutions: [Institution]
     @Query(filter: #Predicate<Account> { $0.sourceRaw == "financekit" })
     private var walletAccounts: [Account]
     @Query(sort: \CategorizationRule.createdAt) private var rules: [CategorizationRule]
     @Query(sort: \Tag.name) private var tags: [Tag]
-    @Query(sort: [SortDescriptor(\CairnSchemaV2.Category.sortOrder)])
-    private var categories: [CairnSchemaV2.Category]
+    @Query(sort: [SortDescriptor(\CairnSchemaV3.Category.sortOrder)])
+    private var categories: [CairnSchemaV3.Category]
 
     @State private var storageMode: StoreMode = .local
     @State private var exportDocument: ExportFile?
@@ -52,6 +53,7 @@ struct SettingsView: View {
             institutionsSection
             categorizationSection
             organizationSection
+            displaySection
             storageSection
             privacySection
             dataSection
@@ -402,6 +404,16 @@ struct SettingsView: View {
     private var categoriesSubtitle: LocalizedStringKey {
         let count = categories.filter { !$0.isArchived }.count
         return "^[\(count) category](inflect: true)"
+    }
+
+    private var displaySection: some View {
+        Section {
+            Toggle("Compact transaction rows", isOn: $compactTransactions)
+        } header: {
+            Text("Display")
+        } footer: {
+            Text("Compact rows use smaller icons and hide category names. Tags and account names remain visible.")
+        }
     }
 
     // MARK: - Storage

@@ -229,6 +229,63 @@ struct RuleApplicationTests {
         #expect(refreshed?.autoCategory?.name == "Entertainment")
         _ = container
     }
+
+    @Test("Name, tags, and compact actions combine without changing manual fields")
+    func decorationActionsPreserveManualChoices() async throws {
+        let (container, context) = try makeContext()
+        let account = Account(bankAccountID: "A1", name: "Checking", currency: .usd)
+        let manualCategory = Category(name: "Groceries")
+        let automaticCategory = Category(name: "Subscriptions")
+        let manualTag = Tag(name: "Reviewed")
+        let automaticTag = Tag(name: "Recurring")
+        context.insert(account)
+        context.insert(manualCategory)
+        context.insert(automaticCategory)
+        context.insert(manualTag)
+        context.insert(automaticTag)
+        let transaction = addTransaction(
+            context, account: account, id: "T1", description: "PAYPAL MSP/DIV", month: 1
+        )
+        transaction.userCategory = manualCategory
+        transaction.tags = [manualTag]
+
+        let general = CategorizationRule(
+            name: "PayPal", pattern: "PAYPAL", assignedCategory: automaticCategory, priority: 1
+        )
+        general.displayNameTemplate = "PayPal payment"
+        general.appliedTags = [automaticTag]
+        general.makesCompact = true
+        let specific = CategorizationRule(name: "iCloud", pattern: "PAYPAL MSP/DIV", priority: 10)
+        specific.displayNameTemplate = "iCloud"
+        context.insert(general)
+        context.insert(specific)
+        try context.save()
+
+        let engine = SyncEngine(modelContainer: container)
+        _ = try await engine.applyRules()
+        let refreshed = try #require(ModelContext(container).fetch(FetchDescriptor<LedgerTransaction>()).first)
+        #expect(refreshed.payeeDescription == "PAYPAL MSP/DIV")
+        #expect(refreshed.userCategory?.name == "Groceries")
+        #expect(refreshed.autoCategory == nil)
+        #expect(refreshed.displayDescription == "iCloud")
+        #expect(refreshed.autoCompact)
+        #expect(Set(refreshed.effectiveTags.map(\.name)) == ["Reviewed", "Recurring"])
+
+        general.isEnabled = false
+        try context.save()
+        _ = try await engine.applyRules()
+        let withoutGeneral = try #require(ModelContext(container).fetch(FetchDescriptor<LedgerTransaction>()).first)
+        #expect(withoutGeneral.displayDescription == "iCloud")
+        #expect(!withoutGeneral.autoCompact)
+        #expect(withoutGeneral.effectiveTags.map(\.name) == ["Reviewed"])
+
+        specific.isEnabled = false
+        try context.save()
+        _ = try await engine.applyRules()
+        let withoutRules = try #require(ModelContext(container).fetch(FetchDescriptor<LedgerTransaction>()).first)
+        #expect(withoutRules.autoDisplayName == nil)
+        _ = container
+    }
 }
 
 @Suite("Tag persistence")

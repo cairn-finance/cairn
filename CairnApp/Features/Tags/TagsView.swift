@@ -121,11 +121,17 @@ struct TagsView: View {
                 .frame(width: 14, height: 14)
             Text(tag.name)
             Spacer(minLength: 8)
-            Text("\(tag.transactions?.count ?? 0)")
+            Text("\(transactionCount(for: tag))")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())
+    }
+
+    private func transactionCount(for tag: Tag) -> Int {
+        let manual = (tag.transactions ?? []).map(\.persistentModelID)
+        let automatic = (tag.automaticTransactions ?? []).map(\.persistentModelID)
+        return Set(manual + automatic).count
     }
 
     private func delete(_ offsets: IndexSet) {
@@ -135,6 +141,16 @@ struct TagsView: View {
             // never left pointing at a removed object.
             for transaction in tag.transactions ?? [] {
                 transaction.tags = (transaction.tags ?? []).filter {
+                    $0.persistentModelID != tag.persistentModelID
+                }
+            }
+            for transaction in tag.automaticTransactions ?? [] {
+                transaction.autoTags = (transaction.autoTags ?? []).filter {
+                    $0.persistentModelID != tag.persistentModelID
+                }
+            }
+            for rule in tag.applyingRules ?? [] {
+                rule.appliedTags = (rule.appliedTags ?? []).filter {
                     $0.persistentModelID != tag.persistentModelID
                 }
             }

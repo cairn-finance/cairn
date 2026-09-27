@@ -92,6 +92,40 @@ struct RulesEngineTests {
         #expect(RulesEngine.categoryID(amountMinorUnits: 1, description: "Payroll Deposit", rules: [rule]) == groceries)
         #expect(RulesEngine.categoryID(amountMinorUnits: 1, description: "ACME Payroll", rules: [rule]) == nil)
     }
+
+    @Test("Matching rules combine actions and priority resolves conflicts")
+    func combinedActions() {
+        let general = RuleSnapshot(
+            id: UUID(), field: .payee, matchKind: .contains, pattern: "PAYPAL",
+            categoryID: groceries, priority: 1, displayNameTemplate: "Generic", makesCompact: true
+        )
+        let specific = RuleSnapshot(
+            id: UUID(), field: .payee, matchKind: .contains, pattern: "PAYPAL MSP/DIV",
+            priority: 10, displayNameTemplate: "iCloud"
+        )
+        let effects = RulesEngine.effects(
+            amountMinorUnits: -299, description: "PAYPAL MSP/DIV", rules: [general, specific]
+        )
+        #expect(effects.matchingRuleIDs == [specific.id, general.id])
+        #expect(effects.categoryID == groceries)
+        #expect(effects.displayName == "iCloud")
+        #expect(effects.makesCompact)
+    }
+
+    @Test("A regex capture can be inserted into a display name")
+    func regexName() {
+        let rule = RuleSnapshot(
+            id: UUID(), field: .payee, matchKind: .regularExpression,
+            pattern: #"INTERAC ETRANSFER SENT\s+(.+?)\s+[A-Za-z0-9]+$"#,
+            displayNameTemplate: "E-Transfer Sent to {1}"
+        )
+        let effects = RulesEngine.effects(
+            amountMinorUnits: -5_000,
+            description: "INTERAC ETRANSFER SENT FIRSTNAME LASTNAME 20262928609BVCXD8",
+            rules: [rule]
+        )
+        #expect(effects.displayName == "E-Transfer Sent to FIRSTNAME LASTNAME")
+    }
 }
 
 @Suite("Exporters")

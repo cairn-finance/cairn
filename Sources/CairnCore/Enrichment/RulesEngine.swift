@@ -1,5 +1,6 @@
 import Dispatch
 import Foundation
+import SwiftData
 
 /// A sendable snapshot of a persisted rule, so the pure rules engine never
 /// touches SwiftData model objects.
@@ -10,8 +11,11 @@ public struct RuleSnapshot: Sendable, Hashable, Identifiable {
     public let pattern: String
     public let minAmountMinorUnits: Int64?
     public let maxAmountMinorUnits: Int64?
-    public let categoryID: UUID
+    public let categoryID: UUID?
     public let priority: Int
+    public let displayNameTemplate: String?
+    public let makesCompact: Bool
+    public let appliedTagIDs: [PersistentIdentifier]
 
     public init(
         id: UUID,
@@ -20,8 +24,11 @@ public struct RuleSnapshot: Sendable, Hashable, Identifiable {
         pattern: String,
         minAmountMinorUnits: Int64? = nil,
         maxAmountMinorUnits: Int64? = nil,
-        categoryID: UUID,
-        priority: Int = 0
+        categoryID: UUID? = nil,
+        priority: Int = 0,
+        displayNameTemplate: String? = nil,
+        makesCompact: Bool = false,
+        appliedTagIDs: [PersistentIdentifier] = []
     ) {
         self.id = id
         self.field = field
@@ -31,11 +38,22 @@ public struct RuleSnapshot: Sendable, Hashable, Identifiable {
         self.maxAmountMinorUnits = maxAmountMinorUnits
         self.categoryID = categoryID
         self.priority = priority
+        self.displayNameTemplate = displayNameTemplate
+        self.makesCompact = makesCompact
+        self.appliedTagIDs = appliedTagIDs
     }
 }
 
-/// Local, deterministic categorization. Rules are evaluated by descending
-/// priority; the first match wins. No network, no data leaves the device.
+public struct RuleEffects: Sendable, Equatable {
+    public let matchingRuleIDs: [UUID]
+    public let categoryID: UUID?
+    public let displayName: String?
+    public let makesCompact: Bool
+    public let appliedTagIDs: [PersistentIdentifier]
+}
+
+/// Local, deterministic rule evaluation. Every matching rule contributes an
+/// action; the highest-priority rule wins when category or name conflicts.
 public enum RulesEngine {
     /// Returns the category id assigned by the highest-priority matching rule.
     public static func categoryID(
@@ -43,33 +61,69 @@ public enum RulesEngine {
         description: String,
         rules: [RuleSnapshot]
     ) -> UUID? {
+        effects(amountMinorUnits: amountMinorUnits, description: description, rules: rules).categoryID
+    }
+
+    public static func effects(
+        amountMinorUnits: Int64,
+        description: String,
+        rules: [RuleSnapshot]
+    ) -> RuleEffects {
         let ordered = rules.sorted {
             if $0.priority != $1.priority { return $0.priority > $1.priority }
-            return $0.pattern.count > $1.pattern.count
+            if $0.pattern.count != $1.pattern.count { return $0.pattern.count > $1.pattern.count }
+            return $0.id.uuidString < $1.id.uuidString
         }
-
+        var matchedIDs: [UUID] = []
+        var categoryID: UUID?
+        var displayName: String?
+        var makesCompact = false
+        var appliedTagIDs: [PersistentIdentifier] = []
+        var seenTags: Set<PersistentIdentifier> = []
         for rule in ordered {
-            guard matches(rule, amountMinorUnits: amountMinorUnits, description: description) else {
-                continue
+            guard let captures = capturesIfMatched(
+                rule, amountMinorUnits: amountMinorUnits, description: description
+            ) else { continue }
+            matchedIDs.append(rule.id)
+            if categoryID == nil { categoryID = rule.categoryID }
+            if displayName == nil, let template = rule.displayNameTemplate {
+                displayName = render(template: template, captures: captures)
             }
-            return rule.categoryID
+            makesCompact = makesCompact || rule.makesCompact
+            for tagID in rule.appliedTagIDs where seenTags.insert(tagID).inserted {
+                appliedTagIDs.append(tagID)
+            }
         }
-        return nil
+        return RuleEffects(
+            matchingRuleIDs: matchedIDs,
+            categoryID: categoryID,
+            displayName: displayName,
+            makesCompact: makesCompact,
+            appliedTagIDs: appliedTagIDs
+        )
     }
 
     /// Whether one rule's condition matches a transaction. Exposed so the rule
     /// editor can preview a draft without duplicating the matching logic.
     public static func matches(_ rule: RuleSnapshot, amountMinorUnits: Int64, description: String) -> Bool {
-        if let min = rule.minAmountMinorUnits, amountMinorUnits < min { return false }
-        if let max = rule.maxAmountMinorUnits, amountMinorUnits > max { return false }
+        capturesIfMatched(rule, amountMinorUnits: amountMinorUnits, description: description) != nil
+    }
+
+    private static func capturesIfMatched(
+        _ rule: RuleSnapshot,
+        amountMinorUnits: Int64,
+        description: String
+    ) -> [String]? {
+        if let min = rule.minAmountMinorUnits, amountMinorUnits < min { return nil }
+        if let max = rule.maxAmountMinorUnits, amountMinorUnits > max { return nil }
 
         switch rule.field {
         case .amount:
             // Amount rules with no explicit bounds would match everything; treat
             // the pattern as an exact amount when present at the rule's precision.
-            if rule.pattern.isEmpty { return true }
-            guard let target = MinorUnits.parse(rule.pattern, exponent: 2) else { return false }
-            return amountMinorUnits == target
+            if rule.pattern.isEmpty { return [] }
+            guard let target = MinorUnits.parse(rule.pattern, exponent: 2) else { return nil }
+            return amountMinorUnits == target ? [] : nil
         case .payee:
             return matchesText(rule, description: description)
         }
@@ -180,22 +234,45 @@ public enum RulesEngine {
         }
     }
 
-    private static func matchesText(_ rule: RuleSnapshot, description: String) -> Bool {
+    private static func matchesText(_ rule: RuleSnapshot, description: String) -> [String]? {
         let pattern = rule.pattern
-        guard !pattern.isEmpty else { return false }
+        guard !pattern.isEmpty else { return nil }
 
         switch rule.matchKind {
         case .contains:
-            return description.range(of: pattern, options: .caseInsensitive) != nil
+            return description.range(of: pattern, options: .caseInsensitive) != nil ? [] : nil
         case .beginsWith:
-            return description.range(of: pattern, options: [.caseInsensitive, .anchored]) != nil
+            return description.range(of: pattern, options: [.caseInsensitive, .anchored]) != nil ? [] : nil
         case .endsWith:
-            return description.lowercased().hasSuffix(pattern.lowercased())
+            return description.lowercased().hasSuffix(pattern.lowercased()) ? [] : nil
         case .equals:
-            return description.compare(pattern, options: .caseInsensitive) == .orderedSame
+            return description.compare(pattern, options: .caseInsensitive) == .orderedSame ? [] : nil
         case .regularExpression:
-            return matchesRegex(pattern, description: description)
+            return regexCaptures(pattern, description: description, budget: regexBudget)
         }
+    }
+
+    private static func render(template: String, captures: [String]) -> String? {
+        if captures.isEmpty {
+            let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        let token = try? NSRegularExpression(pattern: #"\{([0-9]+)\}"#)
+        let range = NSRange(template.startIndex..<template.endIndex, in: template)
+        guard let token else { return nil }
+        var output = ""
+        var position = template.startIndex
+        for match in token.matches(in: template, range: range) {
+            guard let full = Range(match.range, in: template),
+                  let numberRange = Range(match.range(at: 1), in: template),
+                  let index = Int(template[numberRange]) else { continue }
+            output += template[position..<full.lowerBound]
+            output += captures.indices.contains(index) ? captures[index] : String(template[full])
+            position = full.upperBound
+        }
+        output += template[position...]
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Evaluates a regex rule under a deadline.
@@ -215,19 +292,30 @@ public enum RulesEngine {
         description: String,
         budget: DispatchTimeInterval = regexBudget
     ) -> Bool {
-        guard let regex = RegexCache.shared.regex(for: pattern) else { return false }
+        regexCaptures(pattern, description: description, budget: budget) != nil
+    }
 
+    private static func regexCaptures(
+        _ pattern: String,
+        description: String,
+        budget: DispatchTimeInterval
+    ) -> [String]? {
+        guard let regex = RegexCache.shared.regex(for: pattern) else { return nil }
         let pending = PendingRegexMatch(
             regex: regex,
             text: description,
             range: NSRange(description.startIndex..<description.endIndex, in: description)
         )
         RegexCache.shared.queue.async { pending.run() }
-        guard let matched = pending.result(within: budget) else {
+        guard let result = pending.result(within: budget) else {
             RegexCache.shared.disable(pattern)
-            return false
+            return nil
         }
-        return matched
+        guard let result else { return nil }
+        return (0..<result.numberOfRanges).map { index in
+            guard let range = Range(result.range(at: index), in: description) else { return "" }
+            return String(description[range])
+        }
     }
 }
 
@@ -243,7 +331,7 @@ private final class PendingRegexMatch: @unchecked Sendable {
     private let text: String
     private let range: NSRange
     private let finished = DispatchSemaphore(value: 0)
-    private var matched = false
+    private var match: NSTextCheckingResult?
 
     init(regex: NSRegularExpression, text: String, range: NSRange) {
         self.regex = regex
@@ -252,15 +340,15 @@ private final class PendingRegexMatch: @unchecked Sendable {
     }
 
     func run() {
-        matched = regex.firstMatch(in: text, range: range) != nil
+        match = regex.firstMatch(in: text, range: range)
         finished.signal()
     }
 
     /// The result, or `nil` when the budget runs out first. The semaphore orders
     /// the write in `run()` before this read, so no lock is needed.
-    func result(within budget: DispatchTimeInterval) -> Bool? {
+    func result(within budget: DispatchTimeInterval) -> NSTextCheckingResult?? {
         guard finished.wait(timeout: .now() + budget) == .success else { return nil }
-        return matched
+        return .some(match)
     }
 }
 

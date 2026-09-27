@@ -6,8 +6,8 @@ import Testing
 @Suite("Schema migration")
 @MainActor
 struct SchemaMigrationTests {
-    @Test("A V1 disk store migrates to V2 without losing spending data")
-    func v1StoreMigratesToV2() throws {
+    @Test("A V1 disk store migrates to V3 without losing spending data")
+    func v1StoreMigratesToV3() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("cairn-migration-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -19,7 +19,7 @@ struct SchemaMigrationTests {
         // Close the V1 container before opening the same SQLite file as V2.
         try createV1Store(at: storeURL, categoryID: categoryID, postedDate: postedDate)
 
-        let schema = Schema(versionedSchema: CairnSchemaV2.self)
+        let schema = Schema(versionedSchema: CairnSchemaV3.self)
         let configuration = ModelConfiguration(
             "Cairn", schema: schema, url: storeURL, cloudKitDatabase: .none
         )
@@ -55,6 +55,9 @@ struct SchemaMigrationTests {
         #expect(transactions.first?.userCategory?.uuid == categoryID)
         #expect(transactions.first?.tags?.first?.name == "Migration Test Tag")
         #expect(rules.first?.assignedCategory?.uuid == categoryID)
+        #expect(rules.first?.displayNameTemplate == nil)
+        #expect(transactions.first?.autoDisplayName == nil)
+        #expect((transactions.first?.autoTags ?? []).isEmpty)
         #expect(settings.first?.onboardingComplete == true)
 
         let budget = CategoryBudget(
@@ -63,6 +66,60 @@ struct SchemaMigrationTests {
         context.insert(budget)
         try context.save()
         #expect(try context.fetch(FetchDescriptor<CategoryBudget>()).first?.amountMinorUnits == 50_000)
+    }
+
+    @Test("A V2 budget store migrates to V3 with its rules and tags")
+    func v2StoreMigratesToV3() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cairn-v2-migration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("Cairn.store")
+        let categoryID = UUID()
+        try createV2Store(at: storeURL, categoryID: categoryID)
+
+        let schema = Schema(versionedSchema: CairnSchemaV3.self)
+        let configuration = ModelConfiguration("Cairn", schema: schema, url: storeURL, cloudKitDatabase: .none)
+        let container = try ModelContainer(
+            for: schema, migrationPlan: CairnMigrationPlan.self, configurations: configuration
+        )
+        let context = container.mainContext
+        let transactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        let rules = try context.fetch(FetchDescriptor<CategorizationRule>())
+        let budgets = try context.fetch(FetchDescriptor<CategoryBudget>())
+        #expect(transactions.count == 1)
+        #expect(transactions.first?.tags?.first?.name == "Migration Tag")
+        #expect(transactions.first?.autoDisplayName == nil)
+        #expect((transactions.first?.autoTags ?? []).isEmpty)
+        #expect(rules.first?.assignedCategory?.uuid == categoryID)
+        #expect((rules.first?.appliedTags ?? []).isEmpty)
+        #expect(budgets.first?.amountMinorUnits == 50_000)
+    }
+
+    private func createV2Store(at url: URL, categoryID: UUID) throws {
+        let schema = Schema(versionedSchema: CairnSchemaV2.self)
+        let configuration = ModelConfiguration("Cairn", schema: schema, url: url, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let context = container.mainContext
+        let account = CairnSchemaV2.Account(bankAccountID: "v2-account", name: "Checking")
+        let category = CairnSchemaV2.Category(name: "Dining", uuid: categoryID)
+        let tag = CairnSchemaV2.Tag(name: "Migration Tag")
+        let transaction = CairnSchemaV2.LedgerTransaction(
+            bankTransactionID: "v2-transaction", payeeDescription: "Cafe", amountMinorUnits: -5_000
+        )
+        transaction.account = account
+        transaction.tags = [tag]
+        let rule = CairnSchemaV2.CategorizationRule(name: "Cafe", pattern: "Cafe", assignedCategory: category)
+        let budget = CairnSchemaV2.CategoryBudget(
+            categoryUUID: categoryID, monthKey: "2026-09", amountMinorUnits: 50_000
+        )
+        context.insert(account)
+        context.insert(category)
+        context.insert(tag)
+        context.insert(transaction)
+        context.insert(rule)
+        context.insert(budget)
+        try context.save()
     }
 
     private func createV1Store(at url: URL, categoryID: UUID, postedDate: Date) throws {
