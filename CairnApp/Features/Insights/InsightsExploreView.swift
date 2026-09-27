@@ -24,13 +24,7 @@ struct InsightTagsView: View {
                             scope: .tag(tag.persistentModelID)
                         )
                     } label: {
-                        HStack {
-                            TagChip(name: tag.name, colorHex: tag.colorHex)
-                            Spacer()
-                            Text("\(tag.transactions?.count ?? 0)")
-                                .font(.footnote.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
+                        TagChip(name: tag.name, colorHex: tag.colorHex)
                     }
                 }
             }

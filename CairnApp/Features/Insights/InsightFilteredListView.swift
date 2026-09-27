@@ -108,7 +108,7 @@ struct InsightFilteredListView: View {
         case let .tag(tagID):
             guard tags.contains(where: { $0.persistentModelID == tagID }) else { return [] }
             return allTransactions.filter { transaction in
-                (transaction.tags ?? []).contains { $0.persistentModelID == tagID }
+                transaction.rowValue().tagIDs.contains(tagID)
             }
         case let .rule(ruleID):
             guard let rule = rules.first(where: { $0.uuid == ruleID }) else { return [] }
