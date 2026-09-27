@@ -106,6 +106,37 @@ working against the old schema until a record carrying a new field is written,
 and then CloudKit rejects the export and iCloud Sync silently stops making
 progress.
 
+### Evolving a schema used by older app versions
+
+Treat a schema change as a rollout across app versions, not a single migration
+on one device. App Store and TestFlight builds both use Production CloudKit,
+and a person may keep an older build on another device for months.
+
+1. **Expand.** Add optional fields or new record types with safe defaults. Mark
+   sensitive fields for CloudKit encryption when first introduced. Keep existing
+   fields and meanings stable, and make the new app read both representations
+   when replacing one. If old clients still write the old representation, the
+   new app must continue to understand those writes.
+2. **Migrate.** Backfill on each device with stable identities and an idempotent
+   checkpoint. For a field replacement, write both representations while older
+   clients remain supported. Test a persisted store made by the released app,
+   then test two devices on separate app versions syncing through a disposable
+   Development account. Include a fresh install, an offline upgrade, and a
+   reconnect after each version has written data.
+3. **Deploy and release.** Initialize and inspect the complete Development
+   schema, then promote only the compatible additions to Production. Record the
+   promotion hash. Ship to a small TestFlight group and verify sync on real
+   signed-in devices before wider release.
+4. **Retire old behavior later.** Stop dual writes only after older clients no
+   longer need them. Leave already deployed CloudKit fields in the server schema;
+   turning off a feature or reverting an app build does not undo a Production
+   schema deployment.
+
+For a rename, type change, or encryption change, add a new field with a new
+name and migrate values through app code. Do not change the deployed field in
+place. Keep a documented recovery path that can stop new writes without
+discarding rows already created by the new version.
+
 ## Where the container comes from
 
 One build setting, `ICLOUD_CONTAINER_ID`, defines the CloudKit container. It is
