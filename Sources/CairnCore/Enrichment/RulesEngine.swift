@@ -365,7 +365,11 @@ private final class RegexCache: @unchecked Sendable {
     /// Evaluations run here, concurrently, so one slow pattern cannot block the
     /// next rule and never occupies the caller's thread for longer than the
     /// deadline allows.
-    let queue = DispatchQueue(label: "com.sehej.cairn.rules.regex", attributes: .concurrent)
+    let queue = DispatchQueue(
+        label: "com.sehej.cairn.rules.regex",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
 
     private let lock = NSLock()
     private var compiled: [String: NSRegularExpression] = [:]
