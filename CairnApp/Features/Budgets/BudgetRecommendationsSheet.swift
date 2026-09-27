@@ -221,11 +221,6 @@ struct BudgetRecommendationsSheet: View {
                             .multilineTextAlignment(.trailing)
                             .font(.title3.weight(.semibold).monospacedDigit())
                             .padding(.vertical, 8)
-                            .overlay(alignment: .bottom) {
-                                Rectangle()
-                                    .fill(CairnTheme.outline)
-                                    .frame(height: 1)
-                            }
                             .accessibilityLabel("\(recommendation.category.name) suggested monthly limit")
                             #if os(iOS)
                             .keyboardType(.decimalPad)
