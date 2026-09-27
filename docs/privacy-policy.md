@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: September 20, 2026_
+_Last updated: September 24, 2026_
 
 Cairn is a personal finance app that runs on your device. **Cairn has no
 backend, and the Cairn developer does not collect your personal data.**
@@ -24,13 +24,15 @@ account for you and cannot see your data.
   financial data.
 - **iCloud, only if you enable iCloud Sync.** Your data is stored in your own
   private CloudKit database. Amounts, balances, names, descriptions, notes,
-  merchant names, and dates use CloudKit encrypted fields, which are end-to-end
-  encrypted with keys from your iCloud Keychain. Apple operates that database
-  and can see that records exist, when they changed, and the structural metadata
-  around them — which category a transaction is linked to, category icons,
-  status flags such as pending or transfer, and sync times — but not their
-  financial content. If you choose "This Device Only," nothing is sent to iCloud
-  at all.
+  merchant names, dates, budget amounts, budget currencies, budget month keys,
+  and budget time-zone identifiers use CloudKit encrypted fields, which are
+  end-to-end encrypted with keys from your iCloud Keychain. Apple operates that
+  database and can see that
+  records exist, when they changed, and structural metadata around them — such
+  as which category a transaction or budget limit is linked to, whether a
+  budget record is a monthly override, category icons, pending or transfer
+  flags, and sync times — but not the encrypted financial fields. If you choose
+  "This Device Only," nothing is sent to iCloud at all.
 - **Apple Wallet, on-device.** If you connect Apple Wallet, Cairn reads Apple
   Card, Apple Cash, and Savings activity through FinanceKit and mirrors it into
   the same local store as everything else. The FinanceKit read happens on your
@@ -62,7 +64,8 @@ copy on another device stays until you remove it there too.
 
 ## Your control
 
-- **Export** every transaction to CSV or JSON at any time.
+- **Export** every transaction to CSV or JSON and category budget settings to
+  CSV at any time.
 - **Delete All Data** removes all local data and, if sync is enabled, your data
   in iCloud. You can also revoke Cairn's access at your SimpleFIN Bridge.
 

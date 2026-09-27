@@ -29,18 +29,19 @@ struct CategoriesView: View {
     @Environment(AppModel.self) private var model
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+            SortDescriptor(\CairnSchemaV2.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV2.Category.createdAt),
         ]
     )
-    private var categories: [CairnSchemaV1.Category]
+    private var categories: [CairnSchemaV2.Category]
+    @Query private var categoryBudgets: [CategoryBudget]
 
     @State private var editorTarget: EditorTarget?
-    @State private var pendingDeletion: CairnSchemaV1.Category?
+    @State private var pendingDeletion: CairnSchemaV2.Category?
 
     private enum EditorTarget: Identifiable {
         case create
-        case edit(CairnSchemaV1.Category)
+        case edit(CairnSchemaV2.Category)
 
         var id: String {
             switch self {
@@ -50,8 +51,8 @@ struct CategoriesView: View {
         }
     }
 
-    private var active: [CairnSchemaV1.Category] { categories.filter { !$0.isArchived } }
-    private var archived: [CairnSchemaV1.Category] { categories.filter(\.isArchived) }
+    private var active: [CairnSchemaV2.Category] { categories.filter { !$0.isArchived } }
+    private var archived: [CairnSchemaV2.Category] { categories.filter(\.isArchived) }
 
     var body: some View {
         List {
@@ -134,7 +135,7 @@ struct CategoriesView: View {
 
     // MARK: - Rows
 
-    private func row(_ category: CairnSchemaV1.Category, reorderable: Bool) -> some View {
+    private func row(_ category: CairnSchemaV2.Category, reorderable: Bool) -> some View {
         HStack(spacing: 12) {
             Button {
                 editorTarget = .edit(category)
@@ -177,7 +178,7 @@ struct CategoriesView: View {
         }
     }
 
-    private func archivedRow(_ category: CairnSchemaV1.Category) -> some View {
+    private func archivedRow(_ category: CairnSchemaV2.Category) -> some View {
         HStack(spacing: 12) {
             CategoryBadge(symbolName: category.symbolName, hex: category.colorHex, size: 36)
                 .opacity(0.55)
@@ -206,7 +207,7 @@ struct CategoriesView: View {
         }
     }
 
-    private func reorderControls(_ category: CairnSchemaV1.Category) -> some View {
+    private func reorderControls(_ category: CairnSchemaV2.Category) -> some View {
         HStack(spacing: 2) {
             Button {
                 Task { await model.moveCategory(id: category.uuid, direction: .up) }
@@ -230,42 +231,50 @@ struct CategoriesView: View {
 
     // MARK: - Deletion
 
-    private func deletionDecision(for category: CairnSchemaV1.Category) -> CategoryDeletionDecision {
+    private func deletionDecision(for category: CairnSchemaV2.Category) -> CategoryDeletionDecision {
         let transactionCount = (category.userTransactions?.count ?? 0)
             + (category.autoTransactions?.count ?? 0)
+        let budgetEntryCount = categoryBudgets.filter { $0.categoryUUID == category.uuid }.count
         return CategoryManagement.deletionDecision(
             isSystem: category.isSystem,
             transactionCount: transactionCount,
-            ruleCount: category.rules?.count ?? 0
+            ruleCount: category.rules?.count ?? 0,
+            budgetEntryCount: budgetEntryCount
         )
     }
 
-    private func deletionMessage(for category: CairnSchemaV1.Category) -> String {
+    private func deletionMessage(for category: CairnSchemaV2.Category) -> String {
         switch deletionDecision(for: category) {
         case .delete:
-            return "This category isn’t used by any transaction or rule, so it can be deleted for good."
+            return "This category isn’t used by any transaction, rule, or budget, so it can be deleted for good."
         case .archive:
+            let hasBudget = categoryBudgets.contains { $0.categoryUUID == category.uuid }
             if category.isArchived {
-                return "Transactions or rules still use “\(category.name)”, so it can’t be deleted. "
+                return "Transactions, rules, or budgets still use “\(category.name)”, so it can’t be deleted. "
                     + "It’s already hidden; unhide it first if you want it in pickers again."
             }
-            return "Transactions or rules still use “\(category.name)”. Deleting it would strip their label, "
+            let usage = hasBudget ? "Budget history or other records still use" : "Transactions or rules still use"
+            return "\(usage) “\(category.name)”. Deleting it would remove their category, "
                 + "so you can hide it instead. You can unhide it later."
         case .forbidden:
             return "“\(category.name)” is a built-in category. It can be recolored or reordered, but not removed."
         }
     }
 
-    private func referenceSummary(_ category: CairnSchemaV1.Category) -> String {
+    private func referenceSummary(_ category: CairnSchemaV2.Category) -> String {
         let transactionCount = (category.userTransactions?.count ?? 0)
             + (category.autoTransactions?.count ?? 0)
         let ruleCount = category.rules?.count ?? 0
+        let budgetEntryCount = categoryBudgets.filter { $0.categoryUUID == category.uuid }.count
         var parts: [String] = []
         if transactionCount > 0 {
             parts.append(String(localized: "^[\(transactionCount) transaction](inflect: true)"))
         }
         if ruleCount > 0 {
             parts.append(String(localized: "^[\(ruleCount) rule](inflect: true)"))
+        }
+        if budgetEntryCount > 0 {
+            parts.append(String(localized: "Budget history"))
         }
         return parts.isEmpty ? "Not used yet" : parts.joined(separator: " · ")
     }
@@ -277,7 +286,7 @@ struct CategoryEditorView: View {
     @Environment(AppModel.self) private var model
 
     /// When set, the editor edits this category instead of creating one.
-    var category: CairnSchemaV1.Category?
+    var category: CairnSchemaV2.Category?
 
     @State private var didLoad = false
     @State private var name = ""

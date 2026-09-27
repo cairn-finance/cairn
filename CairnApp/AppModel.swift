@@ -157,29 +157,29 @@ final class AppModel {
         SchemaInitializer.runIfRequested()
         #endif
 
+        #if DEBUG
+        let sampleMode = ProcessInfo.processInfo.arguments.contains(SampleData.launchArgument)
+        #else
+        let sampleMode = false
+        #endif
         let defaults = UserDefaults.standard
         // Local-first: iCloud sync is opted into, never assumed. The privacy
         // policy and README both promise that data reaches iCloud only if the
         // person chooses it, and the first connection's backfill would otherwise
         // upload before anyone was asked.
-        let cloud = (defaults.object(forKey: Self.Keys.useCloudKit) as? Bool) ?? false
+        let cloud = sampleMode ? false : ((defaults.object(forKey: Self.Keys.useCloudKit) as? Bool) ?? false)
         useCloudKit = cloud
         requestedCloud = cloud
         onboardingComplete = defaults.bool(forKey: Self.Keys.onboardingComplete)
         walletSyncEnabled = (defaults.object(forKey: Self.Keys.walletSyncEnabled) as? Bool) ?? true
         lock = AppLockController(
-            enabled: defaults.bool(forKey: Self.Keys.appLockEnabled),
+            enabled: !sampleMode && defaults.bool(forKey: Self.Keys.appLockEnabled),
             authenticator: LocalAuthenticator()
         )
         useAppleIntelligence = (defaults.object(forKey: Self.Keys.useAppleIntelligence) as? Bool) ?? true
         categorizeOnlyWhileCharging =
             (defaults.object(forKey: Self.Keys.categorizeOnlyWhileCharging) as? Bool) ?? true
 
-        #if DEBUG
-        let sampleMode = ProcessInfo.processInfo.arguments.contains(SampleData.launchArgument)
-        #else
-        let sampleMode = false
-        #endif
         isSampleMode = sampleMode
         credentials = (inMemory || sampleMode) ? InMemoryCredentialStore() : KeychainCredentialStore()
         client = SimpleFINClient(session: SimpleFINClient.ephemeralSession())
@@ -190,7 +190,7 @@ final class AppModel {
         // person sees an error instead of a silently empty app.
         switch ModelContainerFactory.openForLaunch(
             requestedMode: cloud ? .cloud : .local,
-            inMemory: inMemory
+            inMemory: inMemory || sampleMode
         ) {
         case let .ready(openedContainer, mode, reason):
             container = openedContainer
@@ -241,7 +241,10 @@ final class AppModel {
     /// and runs the normal startup. The on-disk store is only ever opened, never
     /// written to or removed by this.
     func retryStoreOpen() {
-        switch ModelContainerFactory.openForLaunch(requestedMode: requestedCloud ? .cloud : .local) {
+        switch ModelContainerFactory.openForLaunch(
+            requestedMode: requestedCloud ? .cloud : .local,
+            inMemory: isSampleMode
+        ) {
         case let .ready(openedContainer, mode, reason):
             container = openedContainer
             storeMode = mode
@@ -269,7 +272,6 @@ final class AppModel {
         if isSampleMode {
             try? await engine.seedDefaultCategoriesIfNeeded()
             SampleData.populate(context: container.mainContext)
-            UserDefaults.standard.set(true, forKey: Self.Keys.onboardingComplete)
             onboardingComplete = true
             // The sample connection has no credential and no server, so running
             // the network path would only report it as unable to sync. Present
@@ -1189,6 +1191,15 @@ final class AppModel {
             return json ? try await engine.exportJSON() : Data(try await engine.exportCSV().utf8)
         } catch {
             banner = String(localized: "Export failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func exportBudgetsCSV() async -> Data? {
+        do {
+            return Data(try await engine.exportBudgetsCSV().utf8)
+        } catch {
+            banner = String(localized: "Budget export failed: \(error.localizedDescription)")
             return nil
         }
     }

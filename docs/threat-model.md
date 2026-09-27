@@ -9,7 +9,7 @@ This document states honestly who they are.
 | --- | --- |
 | SimpleFIN Access URL | Bearer credential — grants read access to your bank data |
 | Account balances and transactions | Financial behavior |
-| Categories, notes, tags | Your annotations about your behavior |
+| Category budgets, notes, tags | Your plans and annotations about your behavior |
 | SimpleFIN setup token | One-time; compromised token means someone else can read your data |
 
 ## Trust parties
@@ -31,9 +31,13 @@ and your credential is stored non-synchronizably.
   stored at least as securely as the financial data. The URL is never written to
   SwiftData, logs, or URLs that are transmitted.
 - **Financial content** — `@Attribute(.allowsCloudEncryption)` for amounts,
-  balances, descriptions, notes, and names. These are encrypted with keys from
-  your iCloud Keychain, independent of Advanced Data Protection. Apple can see
-  that a record exists and when it changed, but not its financial content.
+  balances, descriptions, notes, names, budget amounts, budget currencies,
+  budget month keys, and budget time-zone identifiers. These are encrypted with
+  keys from your iCloud Keychain, independent of Advanced Data Protection.
+  Apple can see that a record exists,
+  when it changed, which category a budget record references, and whether it is
+  a recurring limit or a monthly override, but not its encrypted limit,
+  currency, month, or time zone.
 - **Transport** — HTTPS only, with the platform's default certificate
   verification. No certificate pinning (SimpleFIN endpoints vary).
 - **At rest** — iOS/macOS Data Protection; the store is not separately encrypted

@@ -198,10 +198,10 @@ struct RuleEditorView: View {
     @Environment(AppModel.self) private var model
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV1.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV1.Category.createdAt),
+            SortDescriptor(\CairnSchemaV2.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV2.Category.createdAt),
         ]
-    ) private var categories: [CairnSchemaV1.Category]
+    ) private var categories: [CairnSchemaV2.Category]
     @Query private var allTransactions: [LedgerTransaction]
     @Query private var settings: [AppSettings]
 
@@ -209,7 +209,7 @@ struct RuleEditorView: View {
     var rule: CategorizationRule?
     /// Prefills for a rule created from a transaction.
     var prefillPattern: String?
-    var prefillCategory: CairnSchemaV1.Category?
+    var prefillCategory: CairnSchemaV2.Category?
 
     @State private var didLoad = false
     @State private var name = ""
@@ -218,7 +218,7 @@ struct RuleEditorView: View {
     @State private var useAmountRange = false
     @State private var minAmountText = ""
     @State private var maxAmountText = ""
-    @State private var category: CairnSchemaV1.Category?
+    @State private var category: CairnSchemaV2.Category?
     @State private var isEnabled = true
 
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
@@ -229,7 +229,7 @@ struct RuleEditorView: View {
         return "-0\(separator)00"
     }
 
-    private var activeCategories: [CairnSchemaV1.Category] {
+    private var activeCategories: [CairnSchemaV2.Category] {
         categories.filter { !$0.isArchived }
     }
 
@@ -271,9 +271,9 @@ struct RuleEditorView: View {
 
                 Section("Category") {
                     Picker("Category", selection: $category) {
-                        Text("Choose a category").tag(CairnSchemaV1.Category?.none)
+                        Text("Choose a category").tag(CairnSchemaV2.Category?.none)
                         ForEach(activeCategories) { item in
-                            Label(item.name, systemImage: item.symbolName).tag(CairnSchemaV1.Category?.some(item))
+                            Label(item.name, systemImage: item.symbolName).tag(CairnSchemaV2.Category?.some(item))
                         }
                     }
                 }

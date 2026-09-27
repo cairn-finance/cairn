@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-/// Schema version 1. All persistent models live inside this `VersionedSchema`
-/// so that future changes can be expressed as explicit migration stages.
+/// Schema version 2. Existing models keep their version 1 shape, with encrypted
+/// budget values added as a new model.
 ///
 /// CloudKit compatibility rules obeyed here:
 /// - No `@Attribute(.unique)` / `#Unique`.
@@ -18,8 +18,8 @@ import SwiftData
 /// migration, so treat the encryption attribute as part of the field's type.
 /// `docs/releasing.md` covers the deployment step, and `ci.yml` fails when this
 /// file changes without a recorded promotion.
-public enum CairnSchemaV1: VersionedSchema {
-    public static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
+public enum CairnSchemaV2: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
 
     public static var models: [any PersistentModel.Type] {
         [
@@ -32,6 +32,7 @@ public enum CairnSchemaV1: VersionedSchema {
             CategorizationRule.self,
             BalanceSnapshot.self,
             AppSettings.self,
+            CategoryBudget.self,
         ]
     }
 
@@ -525,83 +526,97 @@ public enum CairnSchemaV1: VersionedSchema {
 
         public init() {}
     }
-}
 
-/// How a rule inspects a transaction.
-public enum RuleField: String, Sendable, CaseIterable, Codable {
-    case payee
-    case amount
+    /// A recurring monthly category limit or a one-month override. Budget values
+    /// and month keys are encrypted because together they reveal planned spending.
+    @Model
+    public final class CategoryBudget {
+        public var uuid: UUID = UUID()
+        public var categoryUUID: UUID = UUID()
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
+        @Attribute(.allowsCloudEncryption) public var currencyExponent: Int = 2
+        @Attribute(.allowsCloudEncryption) public var isCustomCurrency: Bool = false
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
+        @Attribute(.allowsCloudEncryption) public var monthKey: String = "1970-01"
+        @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
+        /// False makes this a recurring rule effective from monthKey onward;
+        /// true makes it an override for monthKey only.
+        public var isMonthOverride: Bool = false
+        /// An override can remove a recurring limit for just its month.
+        public var isEnabled: Bool = true
+        @Attribute(.allowsCloudEncryption) public var timeZoneIdentifier: String = "UTC"
+        public var modifiedAt: Date = Date.now
 
-    public var displayName: String {
-        switch self {
-        case .payee: "Description"
-        case .amount: "Amount"
+        public init(
+            categoryUUID: UUID = UUID(),
+            currency: Currency = .usd,
+            monthKey: String = "1970-01",
+            amountMinorUnits: Int64 = 0,
+            isMonthOverride: Bool = false,
+            isEnabled: Bool = true,
+            timeZoneIdentifier: String = "UTC"
+        ) {
+            self.categoryUUID = categoryUUID
+            self.currencyCode = currency.code
+            self.currencyExponent = currency.exponent
+            self.isCustomCurrency = currency.isCustom
+            self.customCurrencyName = currency.customName
+            self.customCurrencyAbbreviation = currency.customAbbreviation
+            self.monthKey = monthKey
+            self.amountMinorUnits = amountMinorUnits
+            self.isMonthOverride = isMonthOverride
+            self.isEnabled = isEnabled
+            self.timeZoneIdentifier = timeZoneIdentifier
         }
-    }
-}
 
-/// How a rule's pattern is compared.
-public enum RuleMatchKind: String, Sendable, CaseIterable, Codable {
-    case contains
-    case beginsWith
-    case endsWith
-    case equals
-    case regularExpression
-
-    public var displayName: String {
-        switch self {
-        case .contains: "Contains"
-        case .beginsWith: "Begins With"
-        case .endsWith: "Ends With"
-        case .equals: "Equals"
-        case .regularExpression: "Regular Expression"
-        }
-    }
-}
-
-/// Where an account's data comes from.
-public enum AccountSource: String, Sendable, CaseIterable, Codable {
-    /// Synced from SimpleFIN.
-    case simpleFIN = "simplefin"
-    /// Created by the user and filled by CSV import or manual entry.
-    case manual
-    /// Read from Apple Wallet through FinanceKit (Apple Card, Apple Cash,
-    /// Apple Savings). Read-only and never routed through SimpleFIN.
-    case financeKit = "financekit"
-
-    public var displayName: String {
-        switch self {
-        case .simpleFIN: "SimpleFIN"
-        case .manual: "Manual"
-        case .financeKit: "Apple Wallet"
-        }
-    }
-}
-
-/// The kind of account, used for grouping and net-worth classification.
-public enum AccountType: String, Sendable, CaseIterable, Codable {
-    case checking
-    case savings
-    case credit
-    case investment
-    case loan
-    case cash
-    case other
-
-    public var displayName: LocalizedStringResource {
-        switch self {
-        case .checking: "Checking"
-        case .savings: "Savings"
-        case .credit: "Credit Card"
-        case .investment: "Investment"
-        case .loan: "Loan"
-        case .cash: "Cash"
-        case .other: "Other"
+        public var currency: Currency {
+            Currency(
+                code: currencyCode,
+                exponent: currencyExponent,
+                isCustom: isCustomCurrency,
+                customName: customCurrencyName,
+                customAbbreviation: customCurrencyAbbreviation
+            )
         }
     }
 
-    /// Liabilities reduce net worth.
-    public var isLiability: Bool {
-        self == .credit || self == .loan
+}
+
+// MARK: - Short names
+
+public typealias Institution = CairnSchemaV2.Institution
+public typealias Account = CairnSchemaV2.Account
+public typealias Holding = CairnSchemaV2.Holding
+public typealias LedgerTransaction = CairnSchemaV2.LedgerTransaction
+public typealias Category = CairnSchemaV2.Category
+public typealias Tag = CairnSchemaV2.Tag
+public typealias CategorizationRule = CairnSchemaV2.CategorizationRule
+public typealias BalanceSnapshot = CairnSchemaV2.BalanceSnapshot
+public typealias AppSettings = CairnSchemaV2.AppSettings
+public typealias CategoryBudget = CairnSchemaV2.CategoryBudget
+
+// MARK: - How connections are listed
+
+extension Institution {
+    /// A connection-less record that owns one SimpleFIN Access URL. It holds the
+    /// credential; the per-connection institutions carry the accounts.
+    public var isCredentialHolder: Bool { bankConnectionID.isEmpty }
+
+    /// The institutions worth listing as banks. A credential holder is an
+    /// implementation detail: hide it once its per-connection institutions
+    /// exist, and show it only when it failed, so a broken connection can still
+    /// be disconnected. Without this, a holder that never produced children — an
+    /// interrupted connect, or a device that never received its credential —
+    /// shows up as a phantom bank named after the SimpleFIN host.
+    public static func listedAsBanks(_ all: [Institution]) -> [Institution] {
+        all.filter { institution in
+            guard institution.isCredentialHolder else { return true }
+            let hasPerConnection = all.contains {
+                $0.credentialID == institution.credentialID
+                    && $0.persistentModelID != institution.persistentModelID
+            }
+            return !hasPerConnection && institution.lastSyncError != nil
+        }
     }
 }
