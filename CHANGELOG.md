@@ -8,6 +8,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Insights now subtracts categorized reimbursements, such as roommate rent
+  payments, from the expense category they belong to.
 - Home and Insights use adaptive dashboard layouts on iPad and Mac, navigation
   adapts between tabs and sidebars, and key filters and actions use the current
   Apple control appearance. Home also shows this month's planned category

@@ -104,6 +104,48 @@ struct InsightsCalculatorTests {
         #expect(snapshot.categories.last?.name == "Dining")
     }
 
+    @Test("Nets categorized reimbursements against category spending")
+    func categoryReimbursements() {
+        let snapshot = InsightsCalculator.snapshot(
+            transactions: [
+                InsightTransaction(
+                    date: date(2026, 2, 3), amountMinorUnits: -200_000,
+                    categoryName: "Housing", merchant: "Landlord"
+                ),
+                InsightTransaction(
+                    date: date(2026, 2, 5), amountMinorUnits: 100_000,
+                    categoryName: "Housing", merchant: "Roommate"
+                ),
+            ],
+            month: date(2026, 2, 1),
+            calendar: Self.calendar
+        )
+
+        #expect(snapshot.categories.count == 1)
+        #expect(snapshot.categories.first?.name == "Housing")
+        #expect(snapshot.categories.first?.amountMinorUnits == 100_000)
+    }
+
+    @Test("Does not show a category whose reimbursement exceeds its charges")
+    func categoryReimbursementExceedsSpending() {
+        let snapshot = InsightsCalculator.snapshot(
+            transactions: [
+                InsightTransaction(
+                    date: date(2026, 2, 3), amountMinorUnits: -50_000,
+                    categoryName: "Housing"
+                ),
+                InsightTransaction(
+                    date: date(2026, 2, 5), amountMinorUnits: 75_000,
+                    categoryName: "Housing"
+                ),
+            ],
+            month: date(2026, 2, 1),
+            calendar: Self.calendar
+        )
+
+        #expect(snapshot.categories.isEmpty)
+    }
+
     @Test("Builds an ascending monthly trend")
     func monthlyTrend() {
         let snapshot = InsightsCalculator.snapshot(
