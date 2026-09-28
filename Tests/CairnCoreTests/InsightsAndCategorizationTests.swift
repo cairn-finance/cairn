@@ -104,6 +104,20 @@ struct InsightsCalculatorTests {
         #expect(snapshot.categories.last?.name == "Dining")
     }
 
+    @Test("Category shares use the total rather than the largest category")
+    func categoryShares() throws {
+        let snapshot = InsightsCalculator.snapshot(
+            transactions: transactions(),
+            month: date(2026, 2, 1),
+            calendar: Self.calendar
+        )
+        let groceries = try #require(snapshot.categories.first { $0.name == "Groceries" })
+        let dining = try #require(snapshot.categories.first { $0.name == "Dining" })
+
+        #expect(abs(InsightsCalculator.categoryShare(groceries, in: snapshot.categories) - 11.0 / 13.0) < 0.0001)
+        #expect(abs(InsightsCalculator.categoryShare(dining, in: snapshot.categories) - 2.0 / 13.0) < 0.0001)
+    }
+
     @Test("Nets categorized reimbursements against category spending")
     func categoryReimbursements() {
         let snapshot = InsightsCalculator.snapshot(

@@ -338,6 +338,22 @@ public enum InsightsCalculator {
         )
     }
 
+    /// Returns a category's share of the current category total.
+    ///
+    /// The category chart and its list use the same denominator so the
+    /// percentage label, progress bar, and donut slice describe the same
+    /// proportion.
+    public static func categoryShare(
+        _ category: CategoryBreakdown,
+        in categories: [CategoryBreakdown]
+    ) -> Double {
+        let total = categories.reduce(Int64(0)) {
+            MinorUnits.addClamped($0, $1.amountMinorUnits)
+        }
+        guard total > 0 else { return 0 }
+        return Double(category.amountMinorUnits) / Double(total)
+    }
+
     /// Cumulative spending within `month`, one point per day through the last
     /// day with data. Used to draw the pace line against an average reference.
     public static func cumulativeSpending(
