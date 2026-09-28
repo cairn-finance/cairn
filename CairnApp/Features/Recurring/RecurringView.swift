@@ -73,10 +73,12 @@ struct RecurringView: View {
                         confirmedSection.cairnAppear(delay: series.isEmpty ? 0 : 0.05)
                     }
                     if !outgoing.isEmpty {
-                        section("Subscriptions & bills", series: outgoing).cairnAppear(delay: visibleCommitments.isEmpty ? 0.05 : 0.1)
+                        section("Subscriptions & bills", series: outgoing)
+                            .cairnAppear(delay: visibleCommitments.isEmpty ? 0.05 : 0.1)
                     }
                     if !incoming.isEmpty {
-                        section("Recurring income", series: incoming).cairnAppear(delay: visibleCommitments.isEmpty ? 0.1 : 0.15)
+                        section("Recurring income", series: incoming)
+                            .cairnAppear(delay: visibleCommitments.isEmpty ? 0.1 : 0.15)
                     }
                     FootnoteText(
                         "Based on your synced and imported history. Cairn never sends merchant names off this device."
@@ -271,7 +273,7 @@ private struct ConfirmedCommitmentRow: View {
                 Text(commitment.name.isEmpty ? "Confirmed commitment" : commitment.name)
                     .font(.body.weight(.medium))
                     .lineLimit(1)
-                Text("\(commitment.cadence.displayName) · \(commitment.nextDueDate.formatted(.dateTime.month(.abbreviated).day())) · \(commitment.state.rawValue.capitalized)")
+                Text(commitmentDetail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -290,6 +292,14 @@ private struct ConfirmedCommitmentRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint("Double tap to edit this confirmed plan")
+    }
+
+    private var commitmentDetail: String {
+        [
+            String(localized: commitment.cadence.displayName),
+            commitment.nextDueDate.formatted(.dateTime.month(.abbreviated).day()),
+            commitment.state.rawValue.capitalized
+        ].joined(separator: " · ")
     }
 }
 
@@ -370,10 +380,15 @@ struct RecurringDetailView: View {
                     Button {
                         Task { isConfirmed = await model.confirmRecurring(series) }
                     } label: {
-                        Label(series.direction == .outgoing ? "Confirm as bill" : "Confirm as income", systemImage: "checkmark.circle")
+                        Label(
+                            series.direction == .outgoing ? "Confirm as bill" : "Confirm as income",
+                            systemImage: "checkmark.circle"
+                        )
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    // Keep this localized sentence as one catalog key.
+                    // swiftlint:disable:next line_length
                     Text("Confirmation creates your own plan. Future syncs can change the detected evidence without changing this plan.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -571,7 +586,11 @@ private struct CommitmentEditSheet: View {
                         }
                         commitment.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? commitment.name : name
                         commitment.amountMinorUnits = commitment.amountMinorUnits < 0 ? -abs(parsed) : abs(parsed)
-                        commitment.cadenceRaw = cadence.rawValue; commitment.nextDueDate = dueDate; commitment.stateRaw = state.rawValue; commitment.accountScope = scope; commitment.modifiedAt = .now
+                        commitment.cadenceRaw = cadence.rawValue
+                        commitment.nextDueDate = dueDate
+                        commitment.stateRaw = state.rawValue
+                        commitment.accountScope = scope
+                        commitment.modifiedAt = .now
                         do {
                             try modelContext.save()
                             dismiss()

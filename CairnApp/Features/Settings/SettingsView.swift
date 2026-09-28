@@ -164,6 +164,8 @@ struct SettingsView: View {
         } header: {
             Text("Alerts")
         } footer: {
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
             Text("Cairn schedules only actionable connection, forecast, and confirmed-commitment changes. It never claims live bank freshness or moves money.")
         }
     }
@@ -498,6 +500,8 @@ struct SettingsView: View {
             : String(localized: "Nothing leaves this device. No iCloud. No credential sync.")
         let deleteDataNote = model.storeMode == .cloud
             ? String(localized: "Delete All Data removes everything here and asks iCloud to remove it from your other devices.")
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
             : String(localized: "This device isn’t using iCloud, so Delete All Data removes everything here; nothing was uploaded to delete.")
         return [
             summary,
@@ -568,6 +572,8 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
             Text("Exports include transactions, categories, notes, budget limits, and confirmed commitments. You choose where they save.")
         }
     }

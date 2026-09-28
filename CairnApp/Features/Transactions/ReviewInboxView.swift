@@ -30,6 +30,8 @@ struct ReviewInboxView: View {
                         message: "New, uncategorized, or changed transactions will appear here."
                     )
                 } else {
+                    // Keep this localized sentence as one catalog key.
+                    // swiftlint:disable:next line_length
                     Text("Review each item, assign a category when needed, then mark it reviewed. Uncategorized rows remain until they have a category.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

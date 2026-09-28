@@ -9,11 +9,26 @@ public enum CommitmentStatus: String, Codable, Sendable {
 }
 
 public enum CommitmentStatusEvaluator {
-    public static func status(nextDueDate: Date, now: Date = .now, lastObservedDate: Date? = nil, expectedAmount: Int64 = 0, observedAmount: Int64? = nil, uncertain: Bool = false, calendar: Calendar = .current) -> CommitmentStatus {
+    public static func status(
+        nextDueDate: Date,
+        now: Date = .now,
+        lastObservedDate: Date? = nil,
+        expectedAmount: Int64 = 0,
+        observedAmount: Int64? = nil,
+        uncertain: Bool = false,
+        calendar: Calendar = .current
+    ) -> CommitmentStatus {
         if uncertain { return .uncertain }
         if let observedAmount, observedAmount != expectedAmount { return .changed }
-        if let lastObservedDate, calendar.isDate(lastObservedDate, inSameDayAs: nextDueDate) || lastObservedDate > nextDueDate { return .paid }
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: nextDueDate)).day ?? 0
+        if let lastObservedDate,
+           calendar.isDate(lastObservedDate, inSameDayAs: nextDueDate) || lastObservedDate > nextDueDate {
+            return .paid
+        }
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: now),
+            to: calendar.startOfDay(for: nextDueDate)
+        ).day ?? 0
         if days < 0 { return .missed }
         if days == 0 { return .due }
         return .upcoming
@@ -127,7 +142,19 @@ public struct ConfirmedCommitmentValue: Sendable, Equatable {
     public let nextDueDate: Date
     public let state: CommitmentState
     public let uncertain: Bool
-    public init(amountMinorUnits: Int64, currency: Currency = .usd, cadence: RecurringCadence = .monthly, nextDueDate: Date, state: CommitmentState = .active, uncertain: Bool = false) {
-        self.amountMinorUnits = amountMinorUnits; self.currency = currency; self.cadence = cadence; self.nextDueDate = nextDueDate; self.state = state; self.uncertain = uncertain
+    public init(
+        amountMinorUnits: Int64,
+        currency: Currency = .usd,
+        cadence: RecurringCadence = .monthly,
+        nextDueDate: Date,
+        state: CommitmentState = .active,
+        uncertain: Bool = false
+    ) {
+        self.amountMinorUnits = amountMinorUnits
+        self.currency = currency
+        self.cadence = cadence
+        self.nextDueDate = nextDueDate
+        self.state = state
+        self.uncertain = uncertain
     }
 }

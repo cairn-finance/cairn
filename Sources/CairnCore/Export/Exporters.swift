@@ -177,7 +177,8 @@ public enum Exporters {
             lines.append([
                 escapeCSV(row.name, neutralizeFormula: true), escapeCSV(row.amount),
                 escapeCSV(row.currency, neutralizeFormula: true), escapeCSV(row.cadence, neutralizeFormula: true),
-                escapeCSV(formatter.string(from: row.nextDue), neutralizeFormula: true), escapeCSV(row.state, neutralizeFormula: true),
+                escapeCSV(formatter.string(from: row.nextDue), neutralizeFormula: true),
+                escapeCSV(row.state, neutralizeFormula: true),
                 escapeCSV(row.accountScope, neutralizeFormula: true),
             ].joined(separator: ","))
         }

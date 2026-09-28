@@ -95,11 +95,10 @@ enum SystemSurfaceCoordinator {
     ) async {
         guard UserDefaults.standard.bool(forKey: "cairn.notifications.enabled") else { return }
         let now = Date.now
-        let values = commitments.map { (id: $0.id, status: $0.status, dueDate: $0.dueDate) }
         let plan = SystemNotificationPlanner.plan(
             snapshot: snapshot,
             lastSuccessfulSync: lastSuccessfulSync,
-            commitments: values,
+            commitments: commitments,
             now: now
         )
         let center = UNUserNotificationCenter.current()

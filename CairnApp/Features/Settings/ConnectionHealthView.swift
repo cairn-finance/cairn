@@ -20,6 +20,8 @@ struct ConnectionHealthView: View {
             Section {
                 Label("Connection Health", systemImage: "heart.text.square.fill")
                     .font(.headline)
+                // Keep this localized sentence as one catalog key.
+                // swiftlint:disable:next line_length
                 Text("Cairn shows when each source last succeeded and the oldest data currently stored. This is cached information, not a live bank balance.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -27,6 +29,8 @@ struct ConnectionHealthView: View {
 
             if visibleInstitutions.isEmpty {
                 Section {
+                    // Keep this localized sentence as one catalog key.
+                    // swiftlint:disable:next line_length
                     Text("No bank connections yet. Add a connection, or use a manual account and import a CSV for a source SimpleFIN cannot reach.")
                         .foregroundStyle(.secondary)
                     Button("Add a Connection", systemImage: "plus") { showingConnect = true }
@@ -43,7 +47,11 @@ struct ConnectionHealthView: View {
             }
 
             Section("If a source needs attention") {
+                // Keep this localized sentence as one catalog key.
+                // swiftlint:disable:next line_length
                 Label("Retry when you are online. If the saved connection no longer works, add it again with a new SimpleFIN setup token.", systemImage: "arrow.clockwise")
+                // Keep this localized sentence as one catalog key.
+                // swiftlint:disable:next line_length
                 Label("For a bank or account SimpleFIN cannot reach, create a manual account and import its CSV. Cairn never moves money.", systemImage: "doc.text.arrow.up")
             }
         }
@@ -178,7 +186,8 @@ struct ConnectionHealthView: View {
         case .stale: "No successful sync in the last day and a half. Retry to refresh; stored data may be out of date."
         case .failed: "The last attempt failed. Retry, or reconnect this source if its authorization has changed."
         case .limited: "SimpleFIN has no requests left for this connection today. It can try again tomorrow."
-        case .pending: "A sync is in progress. Until it completes, the information shown here is from the previous successful sync."
+        case .pending:
+            "A sync is in progress. Until it completes, the information shown here is from the previous successful sync."
         case .offline: "Sync is paused while offline. Stored data remains available and will refresh when the connection returns."
         case .reconnect: "This device cannot read the saved connection. Reconnect it, or connect again with a new setup token."
         }

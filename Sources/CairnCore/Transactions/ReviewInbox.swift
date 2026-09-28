@@ -38,7 +38,7 @@ public struct ReviewInboxItem: Sendable, Hashable, Identifiable {
         if row.needsCategory { reasons.append(.uncategorized) }
         if row.reviewedAt == nil {
             reasons.append(.notReviewed)
-        } else if row.modifiedAt > row.reviewedAt! {
+        } else if let reviewedAt = row.reviewedAt, row.modifiedAt > reviewedAt {
             reasons.append(.changedSinceReview)
         }
         guard !reasons.isEmpty else { return nil }

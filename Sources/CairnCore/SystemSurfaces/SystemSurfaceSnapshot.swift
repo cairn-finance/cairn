@@ -116,7 +116,7 @@ public enum SystemNotificationPlanner {
     public static func plan(
         snapshot: SystemSurfaceSnapshot,
         lastSuccessfulSync: Date?,
-        commitments: [(id: String, status: CommitmentStatus, dueDate: Date)],
+        commitments: [SystemSurfaceCommitment],
         now: Date = .now,
         staleAfter: TimeInterval = 36 * 60 * 60,
         upcomingWindow: TimeInterval = 7 * 24 * 60 * 60

@@ -38,17 +38,24 @@ struct SystemSurfaceTests {
         #expect(!snapshot.isFresh(at: generated.addingTimeInterval(-1)))
     }
 
-    @Test func plannerUsesStableIdentifiersAndAvoidsMerchantDetail() {
+    @Test func plannerUsesStableIdentifiersAndAvoidsMerchantDetail() throws {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let plan = SystemNotificationPlanner.plan(
             snapshot: SystemSurfaceSnapshot(status: .onTrack, asOf: now, generatedAt: now),
             lastSuccessfulSync: now.addingTimeInterval(-200_000),
-            commitments: [(id: "commitment-1", status: .upcoming, dueDate: now.addingTimeInterval(86_400))],
+            commitments: [
+                SystemSurfaceCommitment(
+                    id: "commitment-1",
+                    status: .upcoming,
+                    dueDate: now.addingTimeInterval(86_400)
+                )
+            ],
             now: now
         )
         #expect(plan.map(\.identifier) == ["cairn.stale-connection", "cairn.commitment.commitment-1"])
         #expect(plan.count == 2)
-        #expect(!plan.last!.body.localizedCaseInsensitiveContains("merchant"))
+        let lastBody = try #require(plan.last?.body)
+        #expect(!lastBody.localizedCaseInsensitiveContains("merchant"))
     }
 
     @Test("Planner includes due-today items and bounds upcoming alerts")
@@ -58,9 +65,17 @@ struct SystemSurfaceTests {
             snapshot: SystemSurfaceSnapshot(status: .onTrack, asOf: now, generatedAt: now),
             lastSuccessfulSync: now,
             commitments: [
-                (id: "due", status: .due, dueDate: now),
-                (id: "soon", status: .upcoming, dueDate: now.addingTimeInterval(3 * 86_400)),
-                (id: "later", status: .upcoming, dueDate: now.addingTimeInterval(30 * 86_400)),
+                SystemSurfaceCommitment(id: "due", status: .due, dueDate: now),
+                SystemSurfaceCommitment(
+                    id: "soon",
+                    status: .upcoming,
+                    dueDate: now.addingTimeInterval(3 * 86_400)
+                ),
+                SystemSurfaceCommitment(
+                    id: "later",
+                    status: .upcoming,
+                    dueDate: now.addingTimeInterval(30 * 86_400)
+                ),
             ],
             now: now
         )

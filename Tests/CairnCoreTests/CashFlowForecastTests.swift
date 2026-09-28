@@ -7,19 +7,26 @@ struct CashFlowForecastTests {
     private let day = Date(timeIntervalSince1970: 1_735_689_600) // 2025-01-01 UTC
 
     @Test("Applies signed commitments without mixing currencies")
-    func appliesCommitments() {
-        let due = Calendar(identifier: .gregorian).date(byAdding: .day, value: 2, to: day)!
+    func appliesCommitments() throws {
+        let due = try #require(
+            Calendar(identifier: .gregorian).date(byAdding: .day, value: 2, to: day)
+        )
         let item = ConfirmedCommitmentValue(amountMinorUnits: -2_500, nextDueDate: due)
-        let points = CashFlowForecast.balances(accounts: [ForecastAccount(balanceMinorUnits: 10_000, currency: .usd, asOf: day)], commitments: [item], through: 3, now: day)
+        let points = CashFlowForecast.balances(
+            accounts: [ForecastAccount(balanceMinorUnits: 10_000, currency: .usd, asOf: day)],
+            commitments: [item],
+            through: 3,
+            now: day
+        )
         #expect(points.count == 4)
         #expect(points[1].balanceMinorUnits == 10_000)
         #expect(points[2].balanceMinorUnits == 7_500)
     }
 
     @Test("Applies a commitment due today and repeats on calendar months")
-    func dueTodayAndCalendarRecurrence() {
+    func dueTodayAndCalendarRecurrence() throws {
         let calendar = Calendar(identifier: .gregorian)
-        let due = calendar.date(from: DateComponents(year: 2025, month: 1, day: 31))!
+        let due = try #require(calendar.date(from: DateComponents(year: 2025, month: 1, day: 31)))
         let item = ConfirmedCommitmentValue(
             amountMinorUnits: -1_000,
             cadence: .monthly,
@@ -58,18 +65,32 @@ struct CashFlowForecastTests {
 
     @Test("Missing or old balances mark the scenario uncertain")
     func staleIsUncertain() {
-        let points = CashFlowForecast.balances(accounts: [ForecastAccount(balanceMinorUnits: 1_000, currency: .usd)], commitments: [], through: 1, now: day)
+        let points = CashFlowForecast.balances(
+            accounts: [ForecastAccount(balanceMinorUnits: 1_000, currency: .usd)],
+            commitments: [],
+            through: 1,
+            now: day
+        )
         #expect(points.allSatisfy { point in point.uncertainty })
     }
 
     @Test("Commitment status distinguishes paid, changed, due, and missed")
-    func statuses() {
+    func statuses() throws {
         let calendar = Calendar(identifier: .gregorian)
-        let due = calendar.date(byAdding: .day, value: 2, to: day)!
+        let due = try #require(calendar.date(byAdding: .day, value: 2, to: day))
         #expect(CommitmentStatusEvaluator.status(nextDueDate: due, now: day) == .upcoming)
         #expect(CommitmentStatusEvaluator.status(nextDueDate: day, now: day) == .due)
-        #expect(CommitmentStatusEvaluator.status(nextDueDate: day, now: calendar.date(byAdding: .day, value: 1, to: day)!) == .missed)
-        #expect(CommitmentStatusEvaluator.status(nextDueDate: due, now: day, lastObservedDate: due, expectedAmount: 10, observedAmount: 10) == .paid)
+        let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: day))
+        #expect(CommitmentStatusEvaluator.status(nextDueDate: day, now: tomorrow) == .missed)
+        #expect(
+            CommitmentStatusEvaluator.status(
+                nextDueDate: due,
+                now: day,
+                lastObservedDate: due,
+                expectedAmount: 10,
+                observedAmount: 10
+            ) == .paid
+        )
         #expect(CommitmentStatusEvaluator.status(nextDueDate: due, now: day, expectedAmount: 10, observedAmount: 12) == .changed)
         #expect(CommitmentStatusEvaluator.status(nextDueDate: due, now: day, uncertain: true) == .uncertain)
     }

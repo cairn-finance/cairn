@@ -1133,13 +1133,12 @@ public actor SyncEngine {
                incoming != current {
                 return false
             }
-            if transaction.isSettlementLinked,
-               existing.isSettlementLinked,
-               (transaction.settlementRole != existing.settlementRole
+            let settlementChanged = transaction.settlementRole != existing.settlementRole
                 || transaction.settlementStatus != existing.settlementStatus
                 || transaction.settlementCounterparty != existing.settlementCounterparty
                 || transaction.settlementExpectedAmountMinorUnits != existing.settlementExpectedAmountMinorUnits
-                || transaction.settlementLinkedAmountMinorUnits != existing.settlementLinkedAmountMinorUnits) {
+                || transaction.settlementLinkedAmountMinorUnits != existing.settlementLinkedAmountMinorUnits
+            if transaction.isSettlementLinked, existing.isSettlementLinked, settlementChanged {
                 return false
             }
         }

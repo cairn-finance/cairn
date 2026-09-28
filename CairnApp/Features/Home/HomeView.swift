@@ -106,7 +106,13 @@ struct HomeView: View {
                     NavigationLink {
                         RecurringView()
                     } label: {
-                         RecurringSummaryCard(series: homeRecurring, currency: homeCurrency, confirmedCount: commitments.filter { $0.state == .active && $0.currency == homeCurrency }.count)
+                        RecurringSummaryCard(
+                            series: homeRecurring,
+                            currency: homeCurrency,
+                            confirmedCount: commitments
+                                .filter { $0.state == .active && $0.currency == homeCurrency }
+                                .count
+                        )
                     }
                     .buttonStyle(.pressableCard)
                 }
@@ -142,7 +148,14 @@ struct HomeView: View {
             .map(\.bankAccountID).sorted().joined(separator: ",")
         let categoryStamp = categories.map { "\($0.uuid.uuidString):\($0.name):\($0.isArchived)" }
             .joined(separator: ",")
-        return "\(budgetReloadToken)-\(budgetMonthKey)-\(budgetCurrency.stableIdentifier)-\(editStamp)-\(accountStamp)-\(categoryStamp)"
+        return [
+            String(budgetReloadToken),
+            budgetMonthKey,
+            budgetCurrency.stableIdentifier,
+            String(editStamp),
+            accountStamp,
+            categoryStamp
+        ].joined(separator: "-")
     }
 
     private var budgetSnapshot: BudgetSnapshot? {

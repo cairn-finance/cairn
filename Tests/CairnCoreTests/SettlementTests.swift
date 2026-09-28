@@ -27,7 +27,11 @@ struct SettlementTests {
             try SettlementCalculator.validate(expenseAmountMinorUnits: -10, reimbursementAmountMinorUnits: -10)
         }
         #expect(throws: SettlementValidationError.expectedAmountMustBePositive) {
-            try SettlementCalculator.validate(expenseAmountMinorUnits: -10, reimbursementAmountMinorUnits: 10, expectedAmountMinorUnits: 0)
+            try SettlementCalculator.validate(
+                expenseAmountMinorUnits: -10,
+                reimbursementAmountMinorUnits: 10,
+                expectedAmountMinorUnits: 0
+            )
         }
     }
 
@@ -46,11 +50,32 @@ struct SettlementTests {
     func currenciesMustMatchFully() {
         let expense = LedgerTransaction(amountMinorUnits: -1_000)
         let reimbursement = LedgerTransaction(amountMinorUnits: 1_000)
-        expense.account = Account(currency: Currency(code: "PTS", exponent: 0, isCustom: true, customName: "Points", customAbbreviation: "P"))
-        reimbursement.account = Account(currency: Currency(code: "PTS", exponent: 2, isCustom: true, customName: "Points", customAbbreviation: "P"))
+        expense.account = Account(
+            currency: Currency(
+                code: "PTS",
+                exponent: 0,
+                isCustom: true,
+                customName: "Points",
+                customAbbreviation: "P"
+            )
+        )
+        reimbursement.account = Account(
+            currency: Currency(
+                code: "PTS",
+                exponent: 2,
+                isCustom: true,
+                customName: "Points",
+                customAbbreviation: "P"
+            )
+        )
 
         #expect(throws: SettlementValidationError.currenciesMustMatch) {
-            try LedgerTransaction.linkSettlement(expense: expense, reimbursement: reimbursement, counterparty: nil, expectedAmountMinorUnits: nil)
+            try LedgerTransaction.linkSettlement(
+                expense: expense,
+                reimbursement: reimbursement,
+                counterparty: nil,
+                expectedAmountMinorUnits: nil
+            )
         }
     }
 }

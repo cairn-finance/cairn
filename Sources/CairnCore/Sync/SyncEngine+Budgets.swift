@@ -32,8 +32,10 @@ public struct BudgetLimitSelection: Sendable, Hashable {
 }
 
 public extension SyncEngine {
-    /// Saves a recurring limit or a one-month override. Encrypted fields are
-    /// matched in memory because CloudKit cannot query them.
+    // Each parameter maps directly to a persisted budget field.
+    // Saves a recurring limit or a one-month override. Encrypted fields are
+    // matched in memory because CloudKit cannot query them.
+    // swiftlint:disable:next function_parameter_count
     func setBudgetLimit(
         categoryUUID: UUID,
         currency: Currency,

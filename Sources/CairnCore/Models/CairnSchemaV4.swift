@@ -654,7 +654,15 @@ public enum CairnSchemaV4: VersionedSchema {
             self.stateRaw = state.rawValue
         }
 
-        public var currency: Currency { Currency(code: currencyCode, exponent: currencyExponent, isCustom: isCustomCurrency, customName: customCurrencyName, customAbbreviation: customCurrencyAbbreviation) }
+        public var currency: Currency {
+            Currency(
+                code: currencyCode,
+                exponent: currencyExponent,
+                isCustom: isCustomCurrency,
+                customName: customCurrencyName,
+                customAbbreviation: customCurrencyAbbreviation
+            )
+        }
         public var cadence: RecurringCadence { RecurringCadence(rawValue: cadenceRaw) ?? .monthly }
         public var state: CommitmentState { CommitmentState(rawValue: stateRaw) ?? .active }
     }

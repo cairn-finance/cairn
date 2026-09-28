@@ -741,9 +741,17 @@ struct TransactionDetailView: View {
                         detailRow("Counterparty", transaction.settlementCounterparty ?? "—")
                         detailRow("Status", transaction.settlementStatus.displayName)
                         detailRow("Gross expense", settlementSummary.map { formatted($0.grossExpenseMinorUnits) } ?? "—")
-                        detailRow("Reimbursement received", settlementSummary.map { formatted($0.reimbursementReceivedMinorUnits) } ?? "—")
-                        detailRow("Net personal cost", settlementSummary.map { formatted($0.netPersonalCostMinorUnits) } ?? "—")
+                        detailRow(
+                            "Reimbursement received",
+                            settlementSummary.map { formatted($0.reimbursementReceivedMinorUnits) } ?? "—"
+                        )
+                        detailRow(
+                            "Net personal cost",
+                            settlementSummary.map { formatted($0.netPersonalCostMinorUnits) } ?? "—"
+                        )
                         detailRow("Outstanding", settlementSummary.map { formatted($0.outstandingMinorUnits) } ?? "—")
+                        // Keep this localized sentence as one catalog key.
+                        // swiftlint:disable:next line_length
                         Text("Insights and budgets net the incoming row against the linked expense category rather than treating it as a transfer.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -1063,7 +1071,11 @@ private struct SettlementLinkSheet: View {
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading) {
-                                        Text(candidate.displayDescription.isEmpty ? "Incoming transaction" : candidate.displayDescription)
+                                        Text(
+                                            candidate.displayDescription.isEmpty
+                                                ? "Incoming transaction"
+                                                : candidate.displayDescription
+                                        )
                                         Text(candidate.effectiveDate, format: .dateTime.month().day().year())
                                             .font(.caption)
                                             .foregroundStyle(.secondary)

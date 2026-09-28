@@ -15,7 +15,13 @@ struct ReviewInboxTests {
     @Test("A changed row is included after it was reviewed")
     func changedAfterReview() {
         let reviewed = Date(timeIntervalSince1970: 100)
-        let item = ReviewInboxItem(row: row(categoryName: "Food", reviewedAt: reviewed, modifiedAt: Date(timeIntervalSince1970: 101)))
+        let item = ReviewInboxItem(
+            row: row(
+                categoryName: "Food",
+                reviewedAt: reviewed,
+                modifiedAt: Date(timeIntervalSince1970: 101)
+            )
+        )
 
         #expect(item?.reasons == [.changedSinceReview])
     }

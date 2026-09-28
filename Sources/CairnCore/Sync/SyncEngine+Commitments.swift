@@ -8,7 +8,15 @@ public extension SyncEngine {
 
     func exportCommitmentsCSV() throws -> String {
         let rows = try confirmedCommitments().map {
-            CommitmentExportRow(name: $0.name, amount: Money(minorUnits: $0.amountMinorUnits, currency: $0.currency).formatted(), currency: $0.currency.code, cadence: String(localized: "\($0.cadence.displayName)"), nextDue: $0.nextDueDate, state: $0.state.rawValue, accountScope: $0.accountScope)
+            CommitmentExportRow(
+                name: $0.name,
+                amount: Money(minorUnits: $0.amountMinorUnits, currency: $0.currency).formatted(),
+                currency: $0.currency.code,
+                cadence: String(localized: "\($0.cadence.displayName)"),
+                nextDue: $0.nextDueDate,
+                state: $0.state.rawValue,
+                accountScope: $0.accountScope
+            )
         }
         return Exporters.commitmentsCSV(rows: rows)
     }
@@ -16,7 +24,15 @@ public extension SyncEngine {
     func confirm(_ series: RecurringSeries, name: String? = nil, now: Date = .now) throws {
         try reconcileCommitments(with: [series], now: now)
         if try confirmedCommitments().contains(where: { $0.detectorID == series.id }) { return }
-        let commitment = ConfirmedCommitment(detectorID: series.id, name: name ?? series.displayName, amountMinorUnits: series.averageAmountMinorUnits, currency: series.currency, cadence: series.cadence, nextDueDate: series.nextExpectedDate, accountScope: series.accountID)
+        let commitment = ConfirmedCommitment(
+            detectorID: series.id,
+            name: name ?? series.displayName,
+            amountMinorUnits: series.averageAmountMinorUnits,
+            currency: series.currency,
+            cadence: series.cadence,
+            nextDueDate: series.nextExpectedDate,
+            accountScope: series.accountID
+        )
         commitment.lastObservedDate = series.lastDate
         commitment.lastObservedAmountMinorUnits = series.latestAmountMinorUnits
         commitment.modifiedAt = now
@@ -75,15 +91,48 @@ public extension SyncEngine {
         if changed { try modelContext.save() }
     }
 
-    func updateCommitment(_ commitment: ConfirmedCommitment, name: String, amountMinorUnits: Int64, cadence: RecurringCadence, nextDueDate: Date, state: CommitmentState, accountScope: String, now: Date = .now) throws {
-        commitment.name = name; commitment.amountMinorUnits = amountMinorUnits; commitment.cadenceRaw = cadence.rawValue
-        commitment.nextDueDate = nextDueDate; commitment.stateRaw = state.rawValue; commitment.accountScope = accountScope; commitment.modifiedAt = now
+    // Each parameter maps directly to an editable commitment field.
+    // swiftlint:disable:next function_parameter_count
+    func updateCommitment(
+        _ commitment: ConfirmedCommitment,
+        name: String,
+        amountMinorUnits: Int64,
+        cadence: RecurringCadence,
+        nextDueDate: Date,
+        state: CommitmentState,
+        accountScope: String,
+        now: Date = .now
+    ) throws {
+        commitment.name = name
+        commitment.amountMinorUnits = amountMinorUnits
+        commitment.cadenceRaw = cadence.rawValue
+        commitment.nextDueDate = nextDueDate
+        commitment.stateRaw = state.rawValue
+        commitment.accountScope = accountScope
+        commitment.modifiedAt = now
         try modelContext.save()
     }
 
     func forecast(days: Int = 30, now: Date = .now) throws -> [ForecastBalance] {
-        let accounts = try modelContext.fetch(FetchDescriptor<Account>()).filter { !$0.isHidden }.map { ForecastAccount(balanceMinorUnits: $0.balanceMinorUnits, currency: $0.currency, asOf: $0.balanceDate ?? $0.lastSyncedAt) }
-        let values = try confirmedCommitments().map { ConfirmedCommitmentValue(amountMinorUnits: $0.amountMinorUnits, currency: $0.currency, cadence: $0.cadence, nextDueDate: $0.nextDueDate, state: $0.state, uncertain: $0.state == .active && $0.lastObservedDate == nil) }
+        let accounts = try modelContext.fetch(FetchDescriptor<Account>())
+            .filter { !$0.isHidden }
+            .map {
+                ForecastAccount(
+                    balanceMinorUnits: $0.balanceMinorUnits,
+                    currency: $0.currency,
+                    asOf: $0.balanceDate ?? $0.lastSyncedAt
+                )
+            }
+        let values = try confirmedCommitments().map {
+            ConfirmedCommitmentValue(
+                amountMinorUnits: $0.amountMinorUnits,
+                currency: $0.currency,
+                cadence: $0.cadence,
+                nextDueDate: $0.nextDueDate,
+                state: $0.state,
+                uncertain: $0.state == .active && $0.lastObservedDate == nil
+            )
+        }
         return CashFlowForecast.balances(accounts: accounts, commitments: values, through: days, now: now)
     }
 
