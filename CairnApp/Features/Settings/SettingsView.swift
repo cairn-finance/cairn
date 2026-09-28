@@ -9,6 +9,7 @@ import UserNotifications
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("cairn.compactTransactions") private var compactTransactions = false
+    @AppStorage(AppFeature.budgeting.storageKey) private var budgetingEnabled = AppFeature.budgeting.defaultEnabled
     @Query(sort: \Institution.name) private var institutions: [Institution]
     @Query(filter: #Predicate<Account> { $0.sourceRaw == "financekit" })
     private var walletAccounts: [Account]
@@ -56,6 +57,7 @@ struct SettingsView: View {
             alertsSection
             institutionsSection
             categorizationSection
+            featuresSection
             organizationSection
             displaySection
             navigationSection
@@ -385,6 +387,27 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Features
+
+    private var featuresSection: some View {
+        Section {
+            Toggle(isOn: $budgetingEnabled) {
+                IconRow(
+                    AppFeature.budgeting.title,
+                    subtitle: AppFeature.budgeting.subtitle,
+                    systemImage: AppFeature.budgeting.systemImage,
+                    tint: CairnTheme.accent
+                )
+            }
+        } header: {
+            Text("Features")
+        } footer: {
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
+            Text("Turn off optional surfaces you do not use. Turning a feature off hides its shortcuts; it does not delete saved data.")
+        }
+    }
+
     // MARK: - Organization
 
     private var organizationSection: some View {
@@ -557,8 +580,10 @@ struct SettingsView: View {
             Button { export(json: true) } label: {
                 IconRow("Export as JSON", systemImage: "curlybraces", tint: .indigo)
             }
-            Button { exportBudgets() } label: {
-                IconRow("Export budgets as CSV", systemImage: "chart.pie", tint: CairnTheme.accent)
+            if budgetingEnabled {
+                Button { exportBudgets() } label: {
+                    IconRow("Export budgets as CSV", systemImage: "chart.pie", tint: CairnTheme.accent)
+                }
             }
             Button { exportCommitments() } label: {
                 IconRow("Export commitments as CSV", systemImage: "calendar.badge.clock", tint: .orange)
@@ -572,9 +597,13 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
-            // Keep this localized sentence as one catalog key.
-            // swiftlint:disable:next line_length
-            Text("Exports include transactions, categories, notes, budget limits, and confirmed commitments. You choose where they save.")
+            Text(
+                budgetingEnabled
+                    // Keep this localized sentence as one catalog key.
+                    // swiftlint:disable:next line_length
+                    ? "Exports include transactions, categories, notes, budget limits, and confirmed commitments. You choose where they save."
+                    : "Exports include transactions, categories, notes, and confirmed commitments. You choose where they save."
+            )
         }
     }
 

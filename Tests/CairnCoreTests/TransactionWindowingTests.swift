@@ -292,6 +292,21 @@ struct TransactionFetchTests {
         #expect(!(try refined(seeded.container, filter: byTag, pending: false)).contains("A-1"))
     }
 
+    @Test("Drill-down refinement can constrain category, currency, and month")
+    func drilldownFilters() throws {
+        let seeded = try seed()
+        let start = Date(timeIntervalSince1970: Double(4 * 86_400))
+        let end = Date(timeIntervalSince1970: Double(12 * 86_400))
+        let filter = TransactionFilter(
+            categoryName: "Groceries",
+            currencyIdentifier: Currency.usd.stableIdentifier,
+            startDate: start,
+            endDate: end
+        )
+
+        #expect(try refined(seeded.container, filter: filter, pending: false) == ["A-8", "A-4"])
+    }
+
     @Test("Search matches payee, note, category, account, and tag")
     func searchFilter() throws {
         let seeded = try seed()
