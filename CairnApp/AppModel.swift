@@ -515,6 +515,12 @@ final class AppModel {
         let host: String
     }
 
+    /// Whether this device can currently sync an institution. The credential
+    /// itself is never returned to the UI.
+    func hasCredential(for institution: Institution) -> Bool {
+        (try? credentials.secret(for: institution.credentialID)) != nil
+    }
+
     /// Reconnects an orphaned credential from its stored Access URL, reusing the
     /// same institution path as a fresh connect and keeping the existing
     /// credential id, so no second copy is stored.

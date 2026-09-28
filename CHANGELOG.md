@@ -10,6 +10,9 @@ All notable changes to Cairn are documented here. This project follows
 
 - Added a Review Inbox in Activity for uncategorized, unreviewed, and changed
   transactions, with explanations, category editing, review actions, and undo.
+- Settings now includes a Connection Health center showing each source's last
+  successful sync, transaction coverage, request-limit state, and stale or failed
+  status with retry, reconnect, and manual-account guidance.
 - Insights now subtracts categorized reimbursements, such as roommate rent
   payments, from the expense category they belong to.
 - Home and Insights use adaptive dashboard layouts on iPad and Mac, navigation

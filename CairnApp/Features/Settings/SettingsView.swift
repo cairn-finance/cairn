@@ -179,6 +179,11 @@ struct SettingsView: View {
             }
             .disabled(model.syncState == .syncing || institutions.isEmpty)
             NavigationLink {
+                ConnectionHealthView()
+            } label: {
+                IconRow("Connection Health", systemImage: "heart.text.square", tint: CairnTheme.positive)
+            }
+            NavigationLink {
                 SyncDiagnosticsView()
             } label: {
                 IconRow("Sync Diagnostics", systemImage: "doc.text.magnifyingglass", tint: .gray)
