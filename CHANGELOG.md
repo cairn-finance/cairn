@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-28
+
 ### Changed
 
 - Insights category progress bars now use the same total-spending percentage as
