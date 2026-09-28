@@ -228,6 +228,7 @@ struct RecurringRow: View {
 struct RecurringSummaryCard: View {
     let series: [RecurringSeries]
     let currency: Currency
+    var confirmedCount: Int = 0
 
     private var outgoing: [RecurringSeries] {
         series.filter { $0.direction == .outgoing }
@@ -274,6 +275,7 @@ struct RecurringSummaryCard: View {
     private var subtitle: LocalizedStringKey {
         guard !series.isEmpty else { return "None detected yet" }
         let subscriptions = series.filter(\.isSubscription).count
+        if confirmedCount > 0 { return "\(confirmedCount) confirmed · \(series.count) detected" }
         return "\(series.count) detected · ^[\(subscriptions) subscription](inflect: true)"
     }
 }
@@ -281,9 +283,13 @@ struct RecurringSummaryCard: View {
 /// The detail behind one detected series: the summary and every charge in it.
 struct RecurringDetailView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.modelContext) private var modelContext
+    @Query private var commitments: [ConfirmedCommitment]
     @State private var charges: [TransactionRowValue] = []
     @State private var isLoadingCharges = true
     @State private var chargeLoadFailed = false
+    @State private var isConfirmed = false
+    @State private var showingEdit = false
 
     let series: RecurringSeries
 
@@ -291,6 +297,28 @@ struct RecurringDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
                 header
+                if !isConfirmed {
+                    Button {
+                        Task { isConfirmed = await model.confirmRecurring(series) }
+                    } label: {
+                        Label(series.direction == .outgoing ? "Confirm as bill" : "Confirm as income", systemImage: "checkmark.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text("Confirmation creates your own plan. Future syncs can change the detected evidence without changing this plan.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let commitment {
+                    HStack {
+                        Label("Confirmed commitment", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(CairnTheme.positive)
+                        Spacer()
+                        Button("Edit") { showingEdit = true }
+                    }
+                    .sheet(isPresented: $showingEdit) {
+                        CommitmentEditSheet(commitment: commitment)
+                    }
+                }
                 summary
                 if isLoadingCharges {
                     ProgressView("Loading charges…")
@@ -313,6 +341,7 @@ struct RecurringDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task(id: series.id) {
+            isConfirmed = commitments.contains { $0.detectorID == series.id }
             isLoadingCharges = true
             do {
                 let rows = try await model.recurringChargeRows(for: series)
@@ -326,6 +355,10 @@ struct RecurringDetailView: View {
             }
             isLoadingCharges = false
         }
+    }
+
+    private var commitment: ConfirmedCommitment? {
+        commitments.first { $0.detectorID == series.id }
     }
 
     private var header: some View {
@@ -388,6 +421,7 @@ struct RecurringDetailView: View {
                     series.nextExpectedDate.formatted(date: .abbreviated, time: .omitted)
                 )
                 detailRow("Accounts", series.accountNames.joined(separator: ", "))
+                detailRow("Evidence", series.confidenceLabel.map { String(localized: $0) } ?? "Based on synced history")
                 if let categoryName = series.categoryName {
                     detailRow("Category", categoryName)
                 }
@@ -405,5 +439,66 @@ struct RecurringDetailView: View {
                 .multilineTextAlignment(.trailing)
         }
         .font(.subheadline)
+    }
+}
+
+private struct CommitmentEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    let commitment: ConfirmedCommitment
+    @State private var name: String
+    @State private var amount: String
+    @State private var cadence: RecurringCadence
+    @State private var dueDate: Date
+    @State private var state: CommitmentState
+    @State private var scope: String
+
+    init(commitment: ConfirmedCommitment) {
+        self.commitment = commitment
+        _name = State(initialValue: commitment.name)
+        _amount = State(initialValue: String(Double(abs(commitment.amountMinorUnits)) / pow(10, Double(commitment.currency.exponent))))
+        _cadence = State(initialValue: commitment.cadence)
+        _dueDate = State(initialValue: commitment.nextDueDate)
+        _state = State(initialValue: commitment.state)
+        _scope = State(initialValue: commitment.accountScope)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Name", text: $name)
+                TextField("Expected amount", text: $amount)
+                    #if os(iOS)
+                    .keyboardType(.decimalPad)
+                    #endif
+                Picker("Cadence", selection: $cadence) {
+                    ForEach(RecurringCadence.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                DatePicker("Next due", selection: $dueDate, displayedComponents: .date)
+                Picker("State", selection: $state) {
+                    ForEach(CommitmentState.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }
+                TextField("Account scope (optional)", text: $scope)
+                Text("Forecasts use this saved amount and date. They do not move money or predict a bank's settlement time.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .navigationTitle("Edit commitment")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let parsed = MinorUnits.parse(amount, exponent: commitment.currency.exponent) ?? abs(commitment.amountMinorUnits)
+                        commitment.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? commitment.name : name
+                        commitment.amountMinorUnits = commitment.amountMinorUnits < 0 ? -abs(parsed) : abs(parsed)
+                        commitment.cadenceRaw = cadence.rawValue; commitment.nextDueDate = dueDate; commitment.stateRaw = state.rawValue; commitment.accountScope = scope; commitment.modifiedAt = .now
+                        try? modelContext.save(); dismiss()
+                    }
+                }
+            }
+        }
     }
 }

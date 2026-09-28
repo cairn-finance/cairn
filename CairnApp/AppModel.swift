@@ -1157,6 +1157,16 @@ final class AppModel {
         try await engine.recurringChargeRows(for: series)
     }
 
+    @discardableResult
+    func confirmRecurring(_ series: RecurringSeries) async -> Bool {
+        do { try await engine.confirm(series); return true }
+        catch { banner = error.localizedDescription; return false }
+    }
+
+    func forecast(days: Int = 30) async -> [ForecastBalance] {
+        (try? await engine.forecast(days: days)) ?? []
+    }
+
     /// Called right after the person changes a transaction's category, so the
     /// same merchant's other automatic rows pick the correction up immediately.
     func propagateUserCategory(of transactionID: PersistentIdentifier) {

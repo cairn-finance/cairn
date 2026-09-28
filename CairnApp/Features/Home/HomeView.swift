@@ -16,6 +16,7 @@ struct HomeView: View {
     @Query private var settings: [AppSettings]
     @Query private var categories: [CairnSchemaV3.Category]
     @Query private var budgetSettings: [CategoryBudget]
+    @Query private var commitments: [ConfirmedCommitment]
 
     @State private var showingConnect = false
     @State private var showingManualAccount = false
@@ -105,7 +106,7 @@ struct HomeView: View {
                     NavigationLink {
                         RecurringView()
                     } label: {
-                        RecurringSummaryCard(series: homeRecurring, currency: homeCurrency)
+                         RecurringSummaryCard(series: homeRecurring, currency: homeCurrency, confirmedCount: commitments.filter { $0.state == .active && $0.currency.code == homeCurrency.code }.count)
                     }
                     .buttonStyle(.pressableCard)
                 }

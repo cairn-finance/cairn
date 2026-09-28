@@ -93,6 +93,16 @@ public struct BudgetExportRow: Sendable {
     }
 }
 
+public struct CommitmentExportRow: Sendable {
+    public var name: String
+    public var amount: String
+    public var currency: String
+    public var cadence: String
+    public var nextDue: Date
+    public var state: String
+    public var accountScope: String
+}
+
 /// CSV and JSON writers. "Your data is yours" is only true if you can get it
 /// out in an open format, so these ship in the first release.
 public enum Exporters {
@@ -155,6 +165,20 @@ public enum Exporters {
                 escapeCSV(row.applies, neutralizeFormula: true),
                 row.enabled ? "true" : "false",
                 escapeCSV(row.timeZone, neutralizeFormula: true),
+            ].joined(separator: ","))
+        }
+        return lines.joined(separator: "\r\n") + "\r\n"
+    }
+
+    public static func commitmentsCSV(rows: [CommitmentExportRow]) -> String {
+        let formatter = ISO8601DateFormatter()
+        var lines = ["Name,Amount,Currency,Cadence,Next Due,State,Account Scope"]
+        for row in rows {
+            lines.append([
+                escapeCSV(row.name, neutralizeFormula: true), escapeCSV(row.amount),
+                escapeCSV(row.currency, neutralizeFormula: true), escapeCSV(row.cadence, neutralizeFormula: true),
+                escapeCSV(formatter.string(from: row.nextDue), neutralizeFormula: true), escapeCSV(row.state, neutralizeFormula: true),
+                escapeCSV(row.accountScope, neutralizeFormula: true),
             ].joined(separator: ","))
         }
         return lines.joined(separator: "\r\n") + "\r\n"

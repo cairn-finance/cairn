@@ -8,6 +8,10 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Recurring detections can become user-owned bill or income commitments, with a
+  per-currency cash-flow forecast that labels stale sources and uncertainty.
+  Forecasts are estimates, not real-time bank balances or guarantees.
+
 - Shared expenses can link one outgoing bank row to one incoming reimbursement
   while preserving both original rows and showing gross, received, net, and
   outstanding amounts.

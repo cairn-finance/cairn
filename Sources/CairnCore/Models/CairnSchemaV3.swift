@@ -33,6 +33,7 @@ public enum CairnSchemaV3: VersionedSchema {
             BalanceSnapshot.self,
             AppSettings.self,
             CategoryBudget.self,
+            ConfirmedCommitment.self,
         ]
     }
 
@@ -610,6 +611,54 @@ public enum CairnSchemaV3: VersionedSchema {
         }
     }
 
+    /// A user-owned recurring bill or income plan. Detector output is deliberately
+    /// copied into this record at confirmation time: later syncs may change or
+    /// remove evidence without erasing a person's plan.
+    @Model
+    public final class ConfirmedCommitment {
+        public var uuid: UUID = UUID()
+        @Attribute(.allowsCloudEncryption) public var detectorID: String = ""
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
+        @Attribute(.allowsCloudEncryption) public var currencyExponent: Int = 2
+        @Attribute(.allowsCloudEncryption) public var isCustomCurrency: Bool = false
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
+        @Attribute(.allowsCloudEncryption) public var cadenceRaw: String = RecurringCadence.monthly.rawValue
+        @Attribute(.allowsCloudEncryption) public var nextDueDate: Date = Date.now
+        @Attribute(.allowsCloudEncryption) public var accountScope: String = ""
+        @Attribute(.allowsCloudEncryption) public var stateRaw: String = CommitmentState.active.rawValue
+        @Attribute(.allowsCloudEncryption) public var lastObservedDate: Date?
+        @Attribute(.allowsCloudEncryption) public var lastObservedAmountMinorUnits: Int64 = 0
+        public var modifiedAt: Date = Date.now
+        public var createdAt: Date = Date.now
+
+        public init(
+            detectorID: String = "", name: String = "", amountMinorUnits: Int64 = 0,
+            currency: Currency = .usd, cadence: RecurringCadence = .monthly,
+            nextDueDate: Date = .now, accountScope: String = "",
+            state: CommitmentState = .active
+        ) {
+            self.detectorID = detectorID
+            self.name = name
+            self.amountMinorUnits = amountMinorUnits
+            self.currencyCode = currency.code
+            self.currencyExponent = currency.exponent
+            self.isCustomCurrency = currency.isCustom
+            self.customCurrencyName = currency.customName
+            self.customCurrencyAbbreviation = currency.customAbbreviation
+            self.cadenceRaw = cadence.rawValue
+            self.nextDueDate = nextDueDate
+            self.accountScope = accountScope
+            self.stateRaw = state.rawValue
+        }
+
+        public var currency: Currency { Currency(code: currencyCode, exponent: currencyExponent, isCustom: isCustomCurrency, customName: customCurrencyName, customAbbreviation: customCurrencyAbbreviation) }
+        public var cadence: RecurringCadence { RecurringCadence(rawValue: cadenceRaw) ?? .monthly }
+        public var state: CommitmentState { CommitmentState(rawValue: stateRaw) ?? .active }
+    }
+
 }
 
 // MARK: - Short names
@@ -624,6 +673,7 @@ public typealias CategorizationRule = CairnSchemaV3.CategorizationRule
 public typealias BalanceSnapshot = CairnSchemaV3.BalanceSnapshot
 public typealias AppSettings = CairnSchemaV3.AppSettings
 public typealias CategoryBudget = CairnSchemaV3.CategoryBudget
+public typealias ConfirmedCommitment = CairnSchemaV3.ConfirmedCommitment
 
 // MARK: - How connections are listed
 
