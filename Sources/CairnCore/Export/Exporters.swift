@@ -15,6 +15,12 @@ public struct TransactionExportRow: Sendable {
     public var note: String?
     public var tags: [String]
     public var transactionID: String
+    public var settlementID: String?
+    public var settlementRole: String?
+    public var settlementStatus: String?
+    public var settlementCounterparty: String?
+    public var settlementExpectedAmount: String?
+    public var settlementLinkedAmount: String?
 
     public init(
         institution: String,
@@ -29,7 +35,13 @@ public struct TransactionExportRow: Sendable {
         isIgnored: Bool = false,
         note: String? = nil,
         tags: [String] = [],
-        transactionID: String
+        transactionID: String,
+        settlementID: String? = nil,
+        settlementRole: String? = nil,
+        settlementStatus: String? = nil,
+        settlementCounterparty: String? = nil,
+        settlementExpectedAmount: String? = nil,
+        settlementLinkedAmount: String? = nil
     ) {
         self.institution = institution
         self.account = account
@@ -44,6 +56,12 @@ public struct TransactionExportRow: Sendable {
         self.note = note
         self.tags = tags
         self.transactionID = transactionID
+        self.settlementID = settlementID
+        self.settlementRole = settlementRole
+        self.settlementStatus = settlementStatus
+        self.settlementCounterparty = settlementCounterparty
+        self.settlementExpectedAmount = settlementExpectedAmount
+        self.settlementLinkedAmount = settlementLinkedAmount
     }
 }
 
@@ -81,7 +99,9 @@ public enum Exporters {
     public static let csvHeader = [
         "Institution", "Account", "Date", "Amount", "Currency",
         "Description", "Category", "Pending", "Transfer", "Ignored",
-        "Note", "Tags", "Transaction ID",
+        "Note", "Tags", "Transaction ID", "Settlement ID", "Settlement Role",
+        "Settlement Status", "Settlement Counterparty", "Settlement Expected Amount",
+        "Settlement Linked Amount",
     ]
 
     public static func csv(rows: [TransactionExportRow], locale: Locale = Locale(identifier: "en_US_POSIX")) -> String {
@@ -107,6 +127,12 @@ public enum Exporters {
                 (row.note ?? "", true),
                 (row.tags.joined(separator: "; "), true),
                 (row.transactionID, true),
+                (row.settlementID ?? "", true),
+                (row.settlementRole ?? "", true),
+                (row.settlementStatus ?? "", true),
+                (row.settlementCounterparty ?? "", true),
+                (row.settlementExpectedAmount ?? "", false),
+                (row.settlementLinkedAmount ?? "", false),
             ]
             lines.append(
                 fields
@@ -193,6 +219,12 @@ public enum Exporters {
         let note: String?
         let tags: [String]
         let transactionID: String
+        let settlementID: String?
+        let settlementRole: String?
+        let settlementStatus: String?
+        let settlementCounterparty: String?
+        let settlementExpectedAmount: String?
+        let settlementLinkedAmount: String?
 
         init(_ row: TransactionExportRow) {
             institution = row.institution
@@ -208,6 +240,12 @@ public enum Exporters {
             note = row.note
             tags = row.tags
             transactionID = row.transactionID
+            settlementID = row.settlementID
+            settlementRole = row.settlementRole
+            settlementStatus = row.settlementStatus
+            settlementCounterparty = row.settlementCounterparty
+            settlementExpectedAmount = row.settlementExpectedAmount
+            settlementLinkedAmount = row.settlementLinkedAmount
         }
     }
 }

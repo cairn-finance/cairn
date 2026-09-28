@@ -468,12 +468,14 @@ struct TransactionDetailView: View {
     @Query(sort: \Tag.name) private var allTags: [Tag]
     @Query(sort: \CategorizationRule.priority, order: .reverse)
     private var allRules: [CategorizationRule]
+    @Query private var allTransactions: [LedgerTransaction]
 
     let transaction: LedgerTransaction
 
     @State private var showingNewTag = false
     @State private var showingRuleEditor = false
     @State private var ruleToEdit: CategorizationRule?
+    @State private var showingSettlementLink = false
 
     private let columns = [GridItem(.adaptive(minimum: 148), spacing: 8)]
 
@@ -482,6 +484,7 @@ struct TransactionDetailView: View {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
                 header
                 categoryCard
+                settlementCard
                 optionsCard
                 noteCard
                 tagsCard
@@ -513,6 +516,10 @@ struct TransactionDetailView: View {
         }
         .sheet(item: $ruleToEdit) { rule in
             RuleEditorView(rule: rule)
+                .cairnLockCover()
+        }
+        .sheet(isPresented: $showingSettlementLink) {
+            SettlementLinkSheet(expense: transaction)
                 .cairnLockCover()
         }
         .sensoryFeedback(.selection, trigger: transaction.effectiveCategory?.uuid)
@@ -706,6 +713,59 @@ struct TransactionDetailView: View {
                 .padding(.vertical, 12)
             }
         }
+    }
+
+    @ViewBuilder
+    private var settlementCard: some View {
+        if transaction.amountMinorUnits < 0 {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    CardHeader(
+                        "Shared expense",
+                        subtitle: transaction.isSettlementLinked
+                            ? "The reimbursement remains visible as its own bank transaction."
+                            : "Link one incoming reimbursement without changing either bank row."
+                    )
+                    if transaction.isSettlementLinked {
+                        detailRow("Counterparty", transaction.settlementCounterparty ?? "—")
+                        detailRow("Status", transaction.settlementStatus.displayName)
+                        detailRow("Gross expense", settlementSummary.map { formatted($0.grossExpenseMinorUnits) } ?? "—")
+                        detailRow("Reimbursement received", settlementSummary.map { formatted($0.reimbursementReceivedMinorUnits) } ?? "—")
+                        detailRow("Net personal cost", settlementSummary.map { formatted($0.netPersonalCostMinorUnits) } ?? "—")
+                        detailRow("Outstanding", settlementSummary.map { formatted($0.outstandingMinorUnits) } ?? "—")
+                        Text("Cash flow: both original bank rows stay visible; Insights nets the incoming row against its category rather than treating it as a transfer.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button("Link reimbursement…", systemImage: "link") {
+                            showingSettlementLink = true
+                        }
+                        .font(.subheadline.weight(.medium))
+                    }
+                }
+            }
+        }
+    }
+
+    private var settlementSummary: SettlementSummary? {
+        guard let id = transaction.settlementID else { return nil }
+        let reimbursement = allTransactions.first {
+            $0.settlementID == id && $0.settlementRole == .reimbursement
+        }
+        return SettlementCalculator.summary(
+            expenseAmountMinorUnits: transaction.settlementRole == .expense
+                ? transaction.amountMinorUnits
+                : (reimbursement?.amountMinorUnits ?? transaction.amountMinorUnits),
+            reimbursementAmountMinorUnits: transaction.settlementRole == .reimbursement
+                ? transaction.amountMinorUnits
+                : (reimbursement?.amountMinorUnits ?? 0),
+            expectedAmountMinorUnits: transaction.settlementExpectedAmountMinorUnits,
+            status: transaction.settlementStatus
+        )
+    }
+
+    private func formatted(_ minorUnits: Int64) -> String {
+        Money(minorUnits: minorUnits, currency: transaction.amount.currency).formatted()
     }
 
     private var noteCard: some View {
@@ -927,5 +987,115 @@ struct TransactionDetailView: View {
         transaction.reviewedAt = .now
         transaction.modifiedAt = .now
         try? modelContext.save()
+    }
+}
+
+private struct SettlementLinkSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \LedgerTransaction.createdAt, order: .reverse)
+    private var transactions: [LedgerTransaction]
+
+    let expense: LedgerTransaction
+    @State private var selectedBankTransactionID: String?
+    @State private var counterparty = ""
+    @State private var expectedAmount = ""
+    @State private var status: SettlementStatus = .expected
+    @State private var errorMessage: String?
+
+    private var candidates: [LedgerTransaction] {
+        transactions.filter {
+            $0.persistentModelID != expense.persistentModelID
+                && $0.amountMinorUnits > 0
+                && !$0.isSettlementLinked
+                && $0.account?.currencyCode == expense.account?.currencyCode
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Reimbursement") {
+                    TextField("Counterparty or label", text: $counterparty)
+                    TextField("Expected amount (optional)", text: $expectedAmount)
+                        #if os(iOS)
+                        .keyboardType(.decimalPad)
+                        #endif
+                    Picker("Status", selection: $status) {
+                        ForEach(SettlementStatus.allCases, id: \.self) { value in
+                            Text(value.displayName).tag(value)
+                        }
+                    }
+                }
+                Section("Choose the incoming bank row") {
+                    if candidates.isEmpty {
+                        Text("No unlinked incoming transactions in this currency.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(candidates) { candidate in
+                            Button {
+                                selectedBankTransactionID = candidate.bankTransactionID
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(candidate.displayDescription.isEmpty ? "Incoming transaction" : candidate.displayDescription)
+                                        Text(candidate.effectiveDate, format: .dateTime.month().day().year())
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    AmountText(money: candidate.amount)
+                                    if selectedBankTransactionID == candidate.bankTransactionID {
+                                        Image(systemName: "checkmark.circle.fill")
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if let errorMessage {
+                    Section { Text(errorMessage).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle("Link reimbursement")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Link") { link() }
+                        .disabled(selectedBankTransactionID == nil)
+                }
+            }
+        }
+    }
+
+    private func link() {
+        guard let id = selectedBankTransactionID,
+              let reimbursement = candidates.first(where: { $0.bankTransactionID == id }) else { return }
+        let parsedExpected = expectedAmount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil
+            : MinorUnits.parse(expectedAmount, exponent: expense.amount.currency.exponent)
+        guard expectedAmount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || parsedExpected != nil else {
+            errorMessage = "Enter a valid expected amount."
+            return
+        }
+        do {
+            try LedgerTransaction.linkSettlement(
+                expense: expense,
+                reimbursement: reimbursement,
+                counterparty: counterparty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : counterparty,
+                expectedAmountMinorUnits: parsedExpected,
+                status: status
+            )
+            try modelContext.save()
+            dismiss()
+        } catch {
+            errorMessage = "These rows cannot be linked. Choose an outgoing expense and an incoming reimbursement."
+        }
     }
 }

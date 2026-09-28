@@ -8,6 +8,9 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Shared expenses can link one outgoing bank row to one incoming reimbursement
+  while preserving both original rows and showing gross, received, net, and
+  outstanding amounts.
 - Added a Review Inbox in Activity for uncategorized, unreviewed, and changed
   transactions, with explanations, category editing, review actions, and undo.
 - Settings now includes a Connection Health center showing each source's last

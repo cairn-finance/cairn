@@ -901,7 +901,7 @@ public actor SyncEngine {
         let retiring = Set(retirementTargets.keys)
         if !retiring.isEmpty {
             let current = try modelContext.fetch(FetchDescriptor<Institution>())
-            for institution in current where institution.isCredentialHolder
+            for institution in current where institution.bankConnectionID.isEmpty
                 && retiring.contains(institution.credentialID) {
                 let hasConnectionSibling = current.contains {
                     $0.credentialID == institution.credentialID
@@ -1608,6 +1608,14 @@ public actor SyncEngine {
         posted.isTransfer = pending.isTransfer
         posted.isIgnored = pending.isIgnored
         posted.reviewedAt = pending.reviewedAt ?? posted.reviewedAt
+        posted.settlementID = pending.settlementID ?? posted.settlementID
+        if pending.settlementRole != .none {
+            posted.settlementRoleRaw = pending.settlementRoleRaw
+            posted.settlementStatusRaw = pending.settlementStatusRaw
+            posted.settlementCounterparty = pending.settlementCounterparty
+            posted.settlementExpectedAmountMinorUnits = pending.settlementExpectedAmountMinorUnits
+            posted.settlementLinkedAmountMinorUnits = pending.settlementLinkedAmountMinorUnits
+        }
 
         if let pendingTags = pending.tags, !pendingTags.isEmpty {
             var merged = posted.tags ?? []
@@ -2932,7 +2940,17 @@ public actor SyncEngine {
                 isIgnored: txn.isIgnored,
                 note: txn.note,
                 tags: txn.effectiveTags.map(\.name).sorted(),
-                transactionID: txn.bankTransactionID
+                transactionID: txn.bankTransactionID,
+                settlementID: txn.settlementID?.uuidString,
+                settlementRole: txn.isSettlementLinked ? txn.settlementRole.rawValue : nil,
+                settlementStatus: txn.isSettlementLinked ? txn.settlementStatus.rawValue : nil,
+                settlementCounterparty: txn.settlementCounterparty,
+                settlementExpectedAmount: txn.settlementExpectedAmountMinorUnits.map {
+                    MinorUnits.string($0, exponent: currency.exponent)
+                },
+                settlementLinkedAmount: txn.settlementLinkedAmountMinorUnits.map {
+                    MinorUnits.string($0, exponent: currency.exponent)
+                }
             )
         }
     }

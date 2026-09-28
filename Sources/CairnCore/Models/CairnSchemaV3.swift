@@ -303,6 +303,15 @@ public enum CairnSchemaV3: VersionedSchema {
         public var isIgnored: Bool = false
         public var reviewedAt: Date?
 
+        // User-owned settlement metadata. Bank-owned fields above remain
+        // unchanged when a reimbursement is linked.
+        @Attribute(.allowsCloudEncryption) public var settlementID: UUID?
+        @Attribute(.allowsCloudEncryption) public var settlementRoleRaw: String = SettlementRole.none.rawValue
+        @Attribute(.allowsCloudEncryption) public var settlementStatusRaw: String = SettlementStatus.expected.rawValue
+        @Attribute(.allowsCloudEncryption) public var settlementCounterparty: String?
+        @Attribute(.allowsCloudEncryption) public var settlementExpectedAmountMinorUnits: Int64?
+        @Attribute(.allowsCloudEncryption) public var settlementLinkedAmountMinorUnits: Int64?
+
         public var modifiedAt: Date = Date.now
         public var modifiedByDeviceID: String = ""
         public var createdAt: Date = Date.now
