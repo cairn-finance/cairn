@@ -4,6 +4,9 @@ import CairnCore
 
 /// Monthly category limits and actual spending for one account currency.
 struct BudgetView: View {
+    private let initialMonthKey: String?
+    private let initialCurrencyCode: String?
+
     @Environment(AppModel.self) private var model
     @Query(filter: #Predicate<Account> { $0.isHidden == false }, sort: \Account.displayOrder)
     private var accounts: [Account]
@@ -12,16 +15,24 @@ struct BudgetView: View {
     @Query private var appSettings: [AppSettings]
     @Query private var savedSettings: [CategoryBudget]
 
-    @State private var monthKey = BudgetCalculator.monthKey(for: .now)
-    @State private var selectedCurrencyCode = ""
+    @State private var monthKey: String
+    @State private var selectedCurrencyCode: String
     @State private var transactions: [BudgetTransaction] = []
     @State private var reloadToken = 0
     @State private var isLoading = false
     @State private var loadFailed = false
+    @State private var didInitializeSelection = false
     @State private var editTarget: BudgetLine?
     @State private var showingRecommendations = false
     @State private var showingResetConfirmation = false
     @State private var isResetting = false
+
+    init(initialMonthKey: String? = nil, initialCurrencyCode: String? = nil) {
+        self.initialMonthKey = initialMonthKey
+        self.initialCurrencyCode = initialCurrencyCode
+        _monthKey = State(initialValue: initialMonthKey ?? BudgetCalculator.monthKey(for: .now))
+        _selectedCurrencyCode = State(initialValue: initialCurrencyCode ?? "")
+    }
 
     private var currencies: [Currency] {
         var seen = Set<String>()
@@ -41,14 +52,31 @@ struct BudgetView: View {
     }
 
     private var budgetTimeZone: TimeZone {
+        budgetTimeZone(forCurrencyCode: currency.code)
+    }
+
+    private func budgetTimeZone(forCurrencyCode code: String) -> TimeZone {
         savedSettings
-            .filter { $0.currencyCode == currency.code }
+            .filter { $0.currencyCode == code }
             .sorted {
                 if $0.monthKey != $1.monthKey { return $0.monthKey < $1.monthKey }
                 return $0.uuid.uuidString < $1.uuid.uuidString
             }
             .compactMap { TimeZone(identifier: $0.timeZoneIdentifier) }
             .first ?? .current
+    }
+
+    private var currencySelection: Binding<String> {
+        Binding(
+            get: { selectedCurrencyCode },
+            set: { code in
+                selectedCurrencyCode = code
+                monthKey = BudgetCalculator.monthKey(
+                    for: .now,
+                    timeZone: budgetTimeZone(forCurrencyCode: code)
+                )
+            }
+        )
     }
 
     private var monthStart: Date {
@@ -157,8 +185,9 @@ struct BudgetView: View {
                     }
                 }
             }
-            .cairnScreen()
+            .cairnScreen(maxWidth: 920)
         }
+        .cairnScrollEdge()
         .cairnCanvas()
         .navigationTitle("Budget")
         .toolbar {
@@ -198,18 +227,23 @@ struct BudgetView: View {
             Text("This removes recurring limits and monthly overrides in every currency. Your accounts and transactions stay.")
         }
         .task {
-            if selectedCurrencyCode.isEmpty {
-                selectedCurrencyCode = defaultCurrency.code
-                monthKey = BudgetCalculator.monthKey(for: .now, timeZone: budgetTimeZone)
+            if !didInitializeSelection {
+                selectedCurrencyCode = currencies.first(where: { $0.code == initialCurrencyCode })?.code
+                    ?? defaultCurrency.code
+                let timeZone = budgetTimeZone(forCurrencyCode: selectedCurrencyCode)
+                if let initialMonthKey,
+                   BudgetCalculator.startOfMonth(initialMonthKey, timeZone: timeZone) != nil {
+                    monthKey = initialMonthKey
+                } else {
+                    monthKey = BudgetCalculator.monthKey(for: .now, timeZone: timeZone)
+                }
+                didInitializeSelection = true
             }
             for await _ in NotificationCenter.default.notifications(named: ModelContext.didSave) {
                 reloadToken &+= 1
             }
         }
         .task(id: reloadKey) { await loadTransactions() }
-        .onChange(of: selectedCurrencyCode) { _, _ in
-            monthKey = BudgetCalculator.monthKey(for: .now, timeZone: budgetTimeZone)
-        }
         .sheet(item: $editTarget) { line in
             BudgetLimitEditor(
                 category: line.category,
@@ -257,7 +291,7 @@ struct BudgetView: View {
     }
 
     private var currencyPicker: some View {
-        Picker("Currency", selection: $selectedCurrencyCode) {
+        Picker("Currency", selection: currencySelection) {
             ForEach(currencies, id: \.code) { option in
                 Text(option.isCustom ? (option.customName ?? option.customAbbreviation ?? "Custom") : option.code)
                     .tag(option.code)
@@ -274,8 +308,12 @@ struct BudgetView: View {
                     monthKey = previous
                 }
             } label: {
-                Image(systemName: "chevron.left").frame(width: 36, height: 36)
+                Image(systemName: "chevron.left")
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
             }
+            .buttonStyle(.glass(.regular))
+            .foregroundStyle(.primary)
             .accessibilityLabel("Previous month")
 
             Spacer()
@@ -289,11 +327,14 @@ struct BudgetView: View {
                     monthKey = next
                 }
             } label: {
-                Image(systemName: "chevron.right").frame(width: 36, height: 36)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
             }
+            .buttonStyle(.glass(.regular))
+            .foregroundStyle(.primary)
             .accessibilityLabel("Next month")
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 4)
     }
 

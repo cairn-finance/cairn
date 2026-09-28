@@ -75,9 +75,10 @@ struct TransactionsView: View {
                     }
                 }
             }
-            .cairnScreen()
+            .cairnScreen(maxWidth: 920)
             .animation(CairnTheme.Motion.standard, value: feed?.rows.count ?? 0)
         }
+        .cairnScrollEdge()
         .cairnCanvas()
         .navigationTitle("Activity")
         .searchable(text: $searchText, prompt: "Merchant, note, tag, or category")
@@ -107,40 +108,68 @@ struct TransactionsView: View {
 
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(QuickFilter.allCases) { quick in
-                    Button {
-                        withAnimation(CairnTheme.Motion.quick) { filter.quick = quick.query }
-                    } label: {
-                        Chip(title: quick.title, systemImage: quick.systemImage, isSelected: filter.quick == quick.query)
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(QuickFilter.allCases) { quick in
+                        if filter.quick == quick.query {
+                            quickFilterButton(quick)
+                                .buttonStyle(.glassProminent)
+                                .tint(CairnTheme.ink)
+                        } else {
+                            quickFilterButton(quick)
+                                .buttonStyle(.glass(.regular))
+                                .foregroundStyle(.primary)
+                        }
                     }
-                    .buttonStyle(.plain)
-                }
-                if let categoryFilter {
-                    activeFilterChip(
-                        categoryFilter.name,
-                        systemImage: categoryFilter.symbolName,
-                        tint: CairnTheme.color(hex: categoryFilter.colorHex)
-                    ) {
-                        filter.categoryID = nil
+                    if let categoryFilter {
+                        activeFilterChip(
+                            categoryFilter.name,
+                            systemImage: categoryFilter.symbolName,
+                            tint: CairnTheme.color(hex: categoryFilter.colorHex)
+                        ) {
+                            filter.categoryID = nil
+                        }
+                    }
+                    if let accountFilter {
+                        activeFilterChip(accountFilter.displayName, systemImage: "building.columns", tint: CairnTheme.accent) {
+                            filter.accountID = nil
+                        }
+                    }
+                    if let tagFilter {
+                        activeFilterChip(
+                            tagFilter.name,
+                            systemImage: "tag.fill",
+                            tint: CairnTheme.color(hex: tagFilter.colorHex)
+                        ) {
+                            filter.tagID = nil
+                        }
                     }
                 }
-                if let accountFilter {
-                    activeFilterChip(accountFilter.displayName, systemImage: "building.columns", tint: CairnTheme.accent) {
-                        filter.accountID = nil
-                    }
-                }
-                if let tagFilter {
-                    activeFilterChip(tagFilter.name, systemImage: "tag.fill", tint: CairnTheme.color(hex: tagFilter.colorHex)) {
-                        filter.tagID = nil
-                    }
-                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 4)
             }
-            .padding(.horizontal, 2)
-            .padding(.vertical, 2)
         }
         .scrollClipDisabled()
         .sensoryFeedback(.selection, trigger: filter.quick)
+    }
+
+    private func quickFilterButton(_ quick: QuickFilter) -> some View {
+        Button {
+            withAnimation(CairnTheme.Motion.quick) { filter.quick = quick.query }
+        } label: {
+            HStack(spacing: 5) {
+                if let systemImage = quick.systemImage {
+                    Image(systemName: systemImage)
+                        .font(.caption.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+                Text(quick.title)
+                    .font(.subheadline.weight(filter.quick == quick.query ? .semibold : .medium))
+            }
+            .foregroundStyle(.primary)
+            .frame(minHeight: 32)
+        }
+        .accessibilityAddTraits(filter.quick == quick.query ? .isSelected : [])
     }
 
     private func activeFilterChip(_ title: String, systemImage: String, tint: Color, clear: @escaping () -> Void) -> some View {
@@ -150,12 +179,11 @@ struct TransactionsView: View {
                 Text(title).font(.subheadline.weight(.semibold))
                 Image(systemName: "xmark").font(.caption2.weight(.bold)).opacity(0.7)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
             .foregroundStyle(tint)
-            .background(tint.opacity(0.14), in: Capsule())
+            .frame(minHeight: 32)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass(.regular))
+        .tint(tint)
         .transition(.scale(scale: 0.9).combined(with: .opacity))
     }
 

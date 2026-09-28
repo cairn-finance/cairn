@@ -6,6 +6,16 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Home and Insights use adaptive dashboard layouts on iPad and Mac, navigation
+  adapts between tabs and sidebars, and key filters and actions use the current
+  Apple control appearance. Home also shows this month's planned category
+  budget, and Insights opens the budget for the selected month and currency.
+- Insights controls keep inactive month choices legible in dark mode, and the
+  category chart now supports single-tap selection with category-level detail.
+  The category list expands to its content without an inner scroll view.
+
 ## [1.1.0] - 2026-09-27
 
 ### Added

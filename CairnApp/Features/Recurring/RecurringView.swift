@@ -239,27 +239,36 @@ struct RecurringSummaryCard: View {
 
     var body: some View {
         Card {
-            HStack(spacing: 12) {
-                SettingsIcon(systemImage: "repeat", tint: Color(red: 0.62, green: 0.36, blue: 0.87))
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    SettingsIcon(systemImage: "repeat", tint: Color(red: 0.62, green: 0.36, blue: 0.87))
                     Text("Subscriptions & recurring")
                         .font(.headline)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
-                Spacer(minLength: 8)
+
                 if monthlyOutgoing > 0 {
                     AmountText(
                         money: Money(minorUnits: monthlyOutgoing, currency: currency),
-                        font: .subheadline.weight(.semibold)
+                        font: .title3.weight(.semibold),
+                        deemphasizeFraction: true
                     )
+                    Text("Estimated monthly outgoing")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var subtitle: LocalizedStringKey {

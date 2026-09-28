@@ -76,7 +76,11 @@ enum CairnTheme {
     static let cardRadius: CGFloat = 22
     static let tileRadius: CGFloat = 14
     static let controlRadius: CGFloat = 12
-    static let screenMaxWidth: CGFloat = 720
+    /// Comfortable line length for forms and detail screens.
+    static let screenMaxWidth: CGFloat = 760
+    /// A wider canvas for dashboards that can form multiple columns on iPad
+    /// and Mac while remaining a single column on iPhone.
+    static let dashboardMaxWidth: CGFloat = 1_080
 
     // MARK: Spacing
 
@@ -267,8 +271,7 @@ private struct CardSurfaceModifier: ViewModifier {
         content
             .background(CairnTheme.surface, in: shape)
             .overlay(shape.strokeBorder(scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.04), lineWidth: 1))
-            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 14, y: 5)
-            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.03), radius: 2, y: 1)
+            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.035), radius: 8, y: 3)
     }
 }
 
@@ -294,6 +297,63 @@ struct SectionLabel: View {
             }
         }
         .padding(.horizontal, 4)
+    }
+}
+
+/// A screen-level section heading. The stronger, left-aligned hierarchy follows
+/// the current Apple design system while the older uppercase label remains
+/// useful for compact groups inside a section.
+struct ScreenSectionHeader<Trailing: View>: View {
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey?
+    @ViewBuilder var trailing: Trailing
+
+    init(
+        _ title: LocalizedStringKey,
+        subtitle: LocalizedStringKey? = nil,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: CairnTheme.Spacing.m) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: CairnTheme.Spacing.s)
+            trailing
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+/// A dashboard grid that naturally becomes one column on iPhone and multiple
+/// columns when the window has room. This preserves one content anatomy across
+/// iPhone, iPad, and Mac instead of maintaining separate screen designs.
+struct DashboardGrid<Content: View>: View {
+    var minimumColumnWidth: CGFloat = 320
+    var spacing: CGFloat = CairnTheme.Spacing.l
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: minimumColumnWidth), spacing: spacing, alignment: .top)],
+            alignment: .leading,
+            spacing: spacing
+        ) {
+            content
+        }
     }
 }
 
@@ -742,7 +802,8 @@ struct PressableCardStyle: ButtonStyle {
     }
 }
 
-/// The prominent call-to-action: a full-width, ink-filled capsule.
+/// The prominent call-to-action: a full-width, brand-tinted Liquid Glass
+/// control. Glass stays in the functional layer and never decorates content.
 struct CairnProminentButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -753,19 +814,17 @@ struct CairnProminentButtonStyle: ButtonStyle {
             .padding(.vertical, 14)
             .padding(.horizontal, 22)
             .frame(maxWidth: .infinity)
-            .background(
-                CairnTheme.inkGradient
-                    .opacity(isEnabled ? 1 : 0.45),
+            .glassEffect(
+                .regular.tint(CairnTheme.ink).interactive(isEnabled),
                 in: Capsule()
             )
-            .shadow(color: CairnTheme.ink.opacity(isEnabled ? 0.25 : 0), radius: 12, y: 6)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .opacity(configuration.isPressed ? 0.9 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.9 : 1) : 0.5)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
-/// A quiet secondary button.
+/// A quiet secondary Liquid Glass action.
 struct CairnSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -774,8 +833,7 @@ struct CairnSecondaryButtonStyle: ButtonStyle {
             .padding(.vertical, 12)
             .padding(.horizontal, 18)
             .frame(maxWidth: .infinity)
-            .background(CairnTheme.surfaceInset, in: Capsule())
-            .overlay(Capsule().strokeBorder(CairnTheme.outline, lineWidth: 1))
+            .glassEffect(.regular.interactive(), in: Capsule())
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
@@ -905,17 +963,23 @@ extension View {
     }
 
     /// Consistent page padding and max width for scroll-based screens.
-    func cairnScreen() -> some View {
+    func cairnScreen(maxWidth: CGFloat = CairnTheme.screenMaxWidth) -> some View {
         padding(.horizontal, CairnTheme.Spacing.l)
             .padding(.top, CairnTheme.Spacing.s)
             .padding(.bottom, CairnTheme.Spacing.xxl)
-            .frame(maxWidth: CairnTheme.screenMaxWidth)
+            .frame(maxWidth: maxWidth)
             .frame(maxWidth: .infinity)
     }
 
     /// The page background for scroll screens.
     func cairnCanvas() -> some View {
         background(CairnTheme.canvas.ignoresSafeArea())
+    }
+
+    /// Keeps floating navigation and toolbar controls legible as content moves
+    /// beneath them, using the system's current scroll-edge treatment.
+    func cairnScrollEdge() -> some View {
+        scrollEdgeEffectStyle(.soft, for: .top)
     }
 
     /// Hides the default list row chrome so a card can be placed in a `List`.

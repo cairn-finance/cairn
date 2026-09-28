@@ -16,6 +16,7 @@ struct InsightsView: View {
     @State private var month: Date = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .now
     @State private var showAllCategories = false
     @State private var categoryPage = 0
+    @State private var categorySelection: Double?
     @State private var paceSelection: Int?
     @State private var trendSelection: Date?
     /// Calculator input, fetched and mapped on a background actor. The view
@@ -31,27 +32,6 @@ struct InsightsView: View {
         let data = snapshot
         return ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
-                NavigationLink {
-                    BudgetView()
-                } label: {
-                    Card(padding: 14) {
-                        HStack(spacing: 12) {
-                            SettingsIcon(systemImage: "chart.pie.fill", tint: CairnTheme.accent)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Monthly budget").font(.subheadline.weight(.semibold))
-                                Text("Set category limits and track what remains.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-
                 monthPicker
 
                 if currencyAccounts.isEmpty {
@@ -64,21 +44,42 @@ struct InsightsView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                         .padding(.top, 24)
+                    monthlyBudgetLink
                 } else if !hasInsightData {
                     insufficientData
+                    monthlyBudgetLink
                 } else {
                     heroCard(data).cairnAppear()
-                    paceCard(data).cairnAppear(delay: 0.05)
+                    monthlyBudgetLink
+
+                    ScreenSectionHeader(
+                        "Spending patterns",
+                        subtitle: "Pace, history, and where this month's money went."
+                    )
+                    DashboardGrid(minimumColumnWidth: 420) {
+                        paceCard(data).cairnAppear(delay: 0.05)
+                        trendCard(data).cairnAppear(delay: 0.1)
+                    }
                     categoryCard(data).cairnAppear(delay: 0.1)
-                    trendCard(data).cairnAppear(delay: 0.15)
-                    merchantsCard(data).cairnAppear(delay: 0.2)
-                    recurringCard.cairnAppear(delay: 0.24)
-                    categorizeCard.cairnAppear(delay: 0.28)
+
+                    ScreenSectionHeader(
+                        "Details",
+                        subtitle: "Merchants, recurring charges, and ways to organize activity."
+                    )
+                    DashboardGrid(minimumColumnWidth: 320) {
+                        merchantsCard(data).cairnAppear(delay: 0.15)
+                        recurringCard.cairnAppear(delay: 0.2)
+                        categorizeCard.cairnAppear(delay: 0.24)
+                        exploreCard.cairnAppear(delay: 0.28)
+                    }
                 }
-                exploreCard
+                if !hasInsightData {
+                    exploreCard
+                }
             }
-            .cairnScreen()
+            .cairnScreen(maxWidth: CairnTheme.dashboardMaxWidth)
         }
+        .cairnScrollEdge()
         .cairnCanvas()
         .navigationTitle("Insights")
         .task {
@@ -96,6 +97,7 @@ struct InsightsView: View {
         .onChange(of: month) { _, _ in
             paceSelection = nil
             trendSelection = nil
+            categorySelection = nil
             hasLoadedInsights = false
         }
         .sensoryFeedback(.selection, trigger: month)
@@ -141,6 +143,42 @@ struct InsightsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 24)
+    }
+
+    private var monthlyBudgetLink: some View {
+        NavigationLink {
+            BudgetView(
+                initialMonthKey: BudgetCalculator.monthKey(for: month),
+                initialCurrencyCode: primaryCurrency.code
+            )
+        } label: {
+            HStack(spacing: 8) {
+                Label("Review budget", systemImage: "chart.pie")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 6)
+
+                Text(month.formatted(.dateTime.month(.wide).year()))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                if Set(accounts.map(\.currency.code)).count > 1 {
+                    Text(primaryCurrency.code)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.glass(.regular))
+        .foregroundStyle(.primary)
     }
 
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
@@ -196,25 +234,23 @@ struct InsightsView: View {
 
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(recentMonths, id: \.self) { candidate in
-                            Button {
-                                withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { month = candidate }
-                            } label: {
-                                Chip(
-                                     title: LocalizedStringKey(
-                                         candidate.formatted(.dateTime.month(.abbreviated).year(.twoDigits))
-                                     ),
-                                    isSelected: isSelected(candidate),
-                                    tint: CairnTheme.ink
-                                )
+                    GlassEffectContainer(spacing: 6) {
+                        HStack(spacing: 6) {
+                            ForEach(recentMonths, id: \.self) { candidate in
+                                if isSelected(candidate) {
+                                    monthButton(candidate)
+                                        .buttonStyle(.glassProminent)
+                                        .tint(CairnTheme.ink)
+                                } else {
+                                    monthButton(candidate)
+                                        .buttonStyle(.glass(.regular))
+                                        .foregroundStyle(.primary)
+                                }
                             }
-                            .buttonStyle(.plain)
-                            .id(candidate)
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 2)
                 }
                 .mask(
                     LinearGradient(
@@ -234,8 +270,21 @@ struct InsightsView: View {
 
             stepButton("chevron.right", label: "Next month") { shiftMonth(1) }
                 .disabled(isCurrentMonth)
-                .opacity(isCurrentMonth ? 0.3 : 1)
+                .foregroundStyle(isCurrentMonth ? Color.secondary : Color.primary)
         }
+    }
+
+    private func monthButton(_ candidate: Date) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { month = candidate }
+        } label: {
+            Text(candidate.formatted(.dateTime.month(.abbreviated).year(.twoDigits)))
+                .font(.subheadline.weight(isSelected(candidate) ? .semibold : .medium))
+                .foregroundStyle(.primary)
+                .frame(minHeight: 32)
+        }
+        .id(candidate)
+        .accessibilityAddTraits(isSelected(candidate) ? .isSelected : [])
     }
 
     private func stepButton(
@@ -247,11 +296,10 @@ struct InsightsView: View {
             Image(systemName: symbol)
                 .font(.footnote.weight(.bold))
                 .foregroundStyle(.primary)
-                .frame(width: 32, height: 32)
-                .background(CairnTheme.surfaceInset, in: Circle())
-                .overlay(Circle().strokeBorder(CairnTheme.outline, lineWidth: 1))
+                .frame(width: 36, height: 36)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass(.regular))
+        .foregroundStyle(.primary)
         .accessibilityLabel(Text(label))
     }
 
@@ -602,11 +650,7 @@ struct InsightsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 CardHeader("Spending by category")
 
-                if data.categories.isEmpty {
-                    Text("No spending recorded this month.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                } else {
+                if data.categories.contains(where: { $0.amountMinorUnits > 0 }) {
                     Picker("Category view", selection: $categoryPage) {
                         Text("Chart").tag(0)
                         Text("List").tag(1)
@@ -614,80 +658,152 @@ struct InsightsView: View {
                     .pickerStyle(.segmented)
                     .accessibilityLabel("Category view")
 
-                    #if os(iOS)
-                    TabView(selection: $categoryPage) {
-                        categoryChart(data).tag(0)
-                        categoryList(data).tag(1)
-                    }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
-                    .frame(height: 325)
-                    #else
                     Group {
                         if categoryPage == 0 { categoryChart(data) }
                         else { categoryList(data) }
                     }
-                    .frame(height: 325)
-                    #endif
+                    .animation(reduceMotion ? nil : CairnTheme.Motion.standard, value: categoryPage)
+                } else {
+                    Text("No spending recorded this month.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
     }
 
     private func categoryChart(_ data: InsightsSnapshot) -> some View {
-        let total = data.categories.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
+        let categories = data.categories.filter { $0.amountMinorUnits > 0 }
+        let total = categories.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
+        let selected = selectedCategory(in: categories)
         return VStack(spacing: 12) {
-            Chart(data.categories) { slice in
+            Chart(categories) { slice in
                 SectorMark(
-                    angle: .value("Spending", max(0, slice.amountMinorUnits)),
+                    angle: .value("Spending", slice.amountMinorUnits),
                     innerRadius: .ratio(0.62),
+                    outerRadius: selected?.id == slice.id ? .inset(0) : .inset(8),
                     angularInset: 2
                 )
                 .foregroundStyle(CairnTheme.color(hex: slice.colorHex))
+                .opacity(selected == nil || selected?.id == slice.id ? 1 : 0.38)
                 .cornerRadius(3)
+                .accessibilityLabel(Text(slice.name))
+                .accessibilityValue(Text(moneyText(slice.amountMinorUnits)))
             }
             .chartLegend(.hidden)
+            // Replace Charts' default press/drag interaction with a true
+            // single-tap gesture while keeping the angle-selection binding for
+            // the selected slice and VoiceOver adjustable actions.
+            .chartAngleSelection(value: $categorySelection)
+            .chartGesture { proxy in
+                SpatialTapGesture()
+                    .onEnded { event in
+                        proxy.selectAngleValue(at: proxy.angle(at: event.location))
+                    }
+            }
             .overlay {
                 VStack(spacing: 2) {
-                    Text("Spent").font(.caption).foregroundStyle(.secondary)
-                    Text(moneyText(total)).font(.headline).minimumScaleFactor(0.7).lineLimit(1)
+                    if let selected {
+                        Text(selected.name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Text(moneyText(selected.amountMinorUnits))
+                            .font(.headline)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+                    } else {
+                        Text("Spent")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(moneyText(total))
+                            .font(.headline)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+                    }
                 }
                 .padding(30)
+                .allowsHitTesting(false)
             }
             .frame(height: 245)
             .accessibilityLabel("Category spending chart")
-            .accessibilityValue(Text("\(data.categories.count) categories, \(moneyText(total)) spent"))
+            .accessibilityValue(
+                Text(
+                    selected.map {
+                        "\($0.name), \(moneyText($0.amountMinorUnits))"
+                    } ?? "\(categories.count) categories, \(moneyText(total)) spent"
+                )
+            )
+            .accessibilityHint("Tap a slice to see that category's spending.")
+            .accessibilityRespondsToUserInteraction(true)
+            .accessibilityAdjustableAction { direction in
+                guard !categories.isEmpty else { return }
+                let currentIndex = selected.flatMap { category in
+                    categories.firstIndex { $0.id == category.id }
+                }
+                let nextIndex: Int
+                switch direction {
+                case .increment:
+                    nextIndex = min((currentIndex ?? -1) + 1, categories.count - 1)
+                case .decrement:
+                    nextIndex = max((currentIndex ?? categories.count) - 1, 0)
+                @unknown default:
+                    return
+                }
+                categorySelection = categorySelectionValue(for: categories[nextIndex], in: categories)
+            }
 
-            Text("Swipe to see category amounts")
+            Text(selected == nil ? "Tap a slice to see category details" : "Tap another slice to compare")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
 
+    private func selectedCategory(in categories: [CategoryBreakdown]) -> CategoryBreakdown? {
+        guard let categorySelection else { return nil }
+        var runningTotal = 0.0
+        for category in categories {
+            runningTotal += Double(category.amountMinorUnits)
+            if categorySelection <= runningTotal {
+                return category
+            }
+        }
+        return categories.last
+    }
+
+    private func categorySelectionValue(
+        for category: CategoryBreakdown,
+        in categories: [CategoryBreakdown]
+    ) -> Double {
+        categories.prefix { $0.id != category.id }
+            .reduce(0.0) { $0 + Double($1.amountMinorUnits) }
+            + Double(category.amountMinorUnits) / 2
+    }
+
     private func categoryList(_ data: InsightsSnapshot) -> some View {
-        let visible = showAllCategories ? data.categories : Array(data.categories.prefix(6))
-        return ScrollView {
-            VStack(spacing: 6) {
-                ForEach(visible) { slice in
-                    NavigationLink {
-                        InsightFilteredListView(
-                            title: slice.name,
-                            emptyMessage: "No transactions in this category for this month.",
-                            currency: primaryCurrency,
-                            scope: .category(name: slice.name, month: data.monthStart)
-                        )
-                    } label: {
-                        categoryRow(slice, in: data)
-                    }
-                    .buttonStyle(.plain)
+        let categories = data.categories.filter { $0.amountMinorUnits > 0 }
+        let visible = showAllCategories ? categories : Array(categories.prefix(6))
+        return VStack(spacing: 6) {
+            ForEach(visible) { slice in
+                NavigationLink {
+                    InsightFilteredListView(
+                        title: slice.name,
+                        emptyMessage: "No transactions in this category for this month.",
+                        currency: primaryCurrency,
+                        scope: .category(name: slice.name, month: data.monthStart)
+                    )
+                } label: {
+                    categoryRow(slice, in: data)
                 }
-                if data.categories.count > 6 {
-                    Button(showAllCategories ? "Show fewer" : "Show all categories") {
-                        withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { showAllCategories.toggle() }
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .padding(.top, 8)
+                .buttonStyle(.plain)
+            }
+            if categories.count > 6 {
+                Button(showAllCategories ? "Show fewer" : "Show all categories") {
+                    withAnimation(reduceMotion ? nil : CairnTheme.Motion.quick) { showAllCategories.toggle() }
                 }
+                .font(.subheadline.weight(.medium))
+                .padding(.top, 8)
             }
         }
     }
