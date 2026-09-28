@@ -9,6 +9,7 @@ import CairnCore
 struct InsightsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(AppFeature.budgeting.storageKey) private var budgetingEnabled = AppFeature.budgeting.defaultEnabled
     @Query(filter: #Predicate<Account> { $0.isHidden == false })
     private var accounts: [Account]
     @Query private var settings: [AppSettings]
@@ -145,40 +146,43 @@ struct InsightsView: View {
         .padding(.top, 24)
     }
 
+    @ViewBuilder
     private var monthlyBudgetLink: some View {
-        NavigationLink {
-            BudgetView(
-                initialMonthKey: BudgetCalculator.monthKey(for: month),
-                initialCurrency: primaryCurrency
-            )
-        } label: {
-            HStack(spacing: 8) {
-                Label("Review budget", systemImage: "chart.pie")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
+        if budgetingEnabled {
+            NavigationLink {
+                BudgetView(
+                    initialMonthKey: BudgetCalculator.monthKey(for: month),
+                    initialCurrency: primaryCurrency
+                )
+            } label: {
+                HStack(spacing: 8) {
+                    Label("Review budget", systemImage: "chart.pie")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
 
-                Spacer(minLength: 6)
+                    Spacer(minLength: 6)
 
-                Text(month.formatted(.dateTime.month(.wide).year()))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                if Set(accounts.map(\.currency)).count > 1 {
-                    Text(primaryCurrency.code)
+                    Text(month.formatted(.dateTime.month(.wide).year()))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
-                }
 
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+                    if Set(accounts.map(\.currency)).count > 1 {
+                        Text(primaryCurrency.code)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 44)
             }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(.glass(.regular))
+            .foregroundStyle(.primary)
         }
-        .buttonStyle(.glass(.regular))
-        .foregroundStyle(.primary)
     }
 
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }

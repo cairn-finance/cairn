@@ -7,6 +7,7 @@ import CairnCore
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @AppStorage(AppFeature.budgeting.storageKey) private var budgetingEnabled = AppFeature.budgeting.defaultEnabled
     @Query(sort: \Institution.name) private var institutions: [Institution]
     @Query(
         filter: #Predicate<Account> { $0.isHidden == false },
@@ -65,7 +66,10 @@ struct HomeView: View {
         .cairnCanvas()
         .navigationTitle("Home")
         .toolbar { toolbarContent }
-        .task(id: budgetReloadKey) { await loadBudgetSummary() }
+        .task(id: budgetReloadKey) {
+            guard budgetingEnabled else { return }
+            await loadBudgetSummary()
+        }
         .task {
             for await _ in NotificationCenter.default.notifications(named: ModelContext.didSave) {
                 budgetReloadToken &+= 1
@@ -84,37 +88,42 @@ struct HomeView: View {
 
     // MARK: - Sections
 
+    @ViewBuilder
     private var planningSection: some View {
-        VStack(alignment: .leading, spacing: CairnTheme.Spacing.m) {
-            ScreenSectionHeader(
-                "Planning",
-                subtitle: "What this month is committed to and what remains."
-            )
+        if budgetingEnabled || !homeRecurring.isEmpty {
+            VStack(alignment: .leading, spacing: CairnTheme.Spacing.m) {
+                ScreenSectionHeader(
+                    "Planning",
+                    subtitle: "What this month is committed to and what remains."
+                )
 
-            DashboardGrid(minimumColumnWidth: 340) {
-                NavigationLink {
-                    BudgetView(
-                        initialMonthKey: budgetMonthKey,
-                        initialCurrency: budgetCurrency
-                    )
-                } label: {
-                    budgetSummaryCard
-                }
-                .buttonStyle(.pressableCard)
-
-                if !homeRecurring.isEmpty {
-                    NavigationLink {
-                        RecurringView()
-                    } label: {
-                        RecurringSummaryCard(
-                            series: homeRecurring,
-                            currency: homeCurrency,
-                            confirmedCount: commitments
-                                .filter { $0.state == .active && $0.currency == homeCurrency }
-                                .count
-                        )
+                DashboardGrid(minimumColumnWidth: 340) {
+                    if budgetingEnabled {
+                        NavigationLink {
+                            BudgetView(
+                                initialMonthKey: budgetMonthKey,
+                                initialCurrency: budgetCurrency
+                            )
+                        } label: {
+                            budgetSummaryCard
+                        }
+                        .buttonStyle(.pressableCard)
                     }
-                    .buttonStyle(.pressableCard)
+
+                    if !homeRecurring.isEmpty {
+                        NavigationLink {
+                            RecurringView()
+                        } label: {
+                            RecurringSummaryCard(
+                                series: homeRecurring,
+                                currency: homeCurrency,
+                                confirmedCount: commitments
+                                    .filter { $0.state == .active && $0.currency == homeCurrency }
+                                    .count
+                            )
+                        }
+                        .buttonStyle(.pressableCard)
+                    }
                 }
             }
         }
@@ -143,6 +152,7 @@ struct HomeView: View {
     }
 
     private var budgetReloadKey: String {
+        guard budgetingEnabled else { return "budgeting-disabled" }
         let editStamp = budgetSettings.map(\.modifiedAt).max()?.timeIntervalSince1970 ?? 0
         let accountStamp = accounts.filter { $0.currency == budgetCurrency }
             .map(\.bankAccountID).sorted().joined(separator: ",")

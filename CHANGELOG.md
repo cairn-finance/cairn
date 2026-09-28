@@ -8,6 +8,12 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Budget category drill-downs now use the same bounded, read-only transaction
+  feed as Activity instead of materializing the full ledger on navigation.
+
+- Budgeting can be turned off in Settings to hide budget cards, Insights links,
+  and budget exports without deleting saved limits.
+
 - Forecasts, budgets, net worth, insights, and recurring views now keep full
   currency descriptors separate instead of grouping by currency code alone.
 

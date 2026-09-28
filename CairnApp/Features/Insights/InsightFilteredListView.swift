@@ -7,7 +7,6 @@ import CairnCore
 struct InsightFilteredListView: View {
     enum Scope: Hashable {
         case category(name: String, month: Date)
-        case budgetCategory(name: String, month: Date, currency: Currency, timeZoneIdentifier: String)
         case tag(PersistentIdentifier)
         case rule(UUID)
         case needingCategory
@@ -45,7 +44,7 @@ struct InsightFilteredListView: View {
     @ViewBuilder
     private var summary: some View {
         switch scope {
-        case let .category(_, month), let .budgetCategory(_, month, _, _):
+        case let .category(_, month):
             Card {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -89,19 +88,6 @@ struct InsightFilteredListView: View {
                 let categoryName = categoryName(for: transaction)
                 guard categoryName == name else { return false }
                 guard let interval else { return true }
-                return interval.contains(transaction.effectiveDate)
-            }
-        case let .budgetCategory(name, month, selectedCurrency, timeZoneIdentifier):
-            var calendar = Calendar.current
-            if let timeZone = TimeZone(identifier: timeZoneIdentifier) { calendar.timeZone = timeZone }
-            let interval = calendar.dateInterval(of: .month, for: month)
-            return allTransactions.filter { transaction in
-                guard categoryName(for: transaction) == name,
-                      transaction.account?.currency == selectedCurrency,
-                      !transaction.countsAsTransfer,
-                      !transaction.isIgnored,
-                      !transaction.isPending,
-                      let interval else { return false }
                 return interval.contains(transaction.effectiveDate)
             }
         case let .tag(tagID):
@@ -148,7 +134,7 @@ struct InsightFilteredListView: View {
 
     private var totalSpent: Int64 {
         switch scope {
-        case .budgetCategory, .category:
+        case .category:
             return netCategorySpending(filtered)
         case .tag, .rule, .needingCategory:
             return filtered

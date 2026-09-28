@@ -392,16 +392,11 @@ struct BudgetView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     NavigationLink {
-                        InsightFilteredListView(
-                            title: line.category.name,
-                            emptyMessage: "No transactions in this category for this month.",
+                        BudgetCategoryTransactionsView(
+                            categoryName: line.category.name,
                             currency: currency,
-                            scope: .budgetCategory(
-                                name: line.category.name,
-                                month: month,
-                                currency: currency,
-                                timeZoneIdentifier: budgetTimeZone.identifier
-                            )
+                            month: month,
+                            timeZoneIdentifier: budgetTimeZone.identifier
                         )
                     } label: {
                         HStack(spacing: 10) {

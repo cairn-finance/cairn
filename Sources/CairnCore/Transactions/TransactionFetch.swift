@@ -36,22 +36,37 @@ public struct TransactionFilter: Sendable, Equatable {
 
     public var quick: Quick
     public var categoryID: PersistentIdentifier?
+    /// An exact category name filter for drill-downs that do not hold a model
+    /// identity, such as a budget line's value snapshot.
+    public var categoryName: String?
     public var accountID: PersistentIdentifier?
     public var tagID: PersistentIdentifier?
     public var searchText: String
+    /// An exact currency descriptor identity for cross-account drill-downs.
+    public var currencyIdentifier: String?
+    public var startDate: Date?
+    public var endDate: Date?
 
     public init(
         quick: Quick = .all,
         categoryID: PersistentIdentifier? = nil,
         accountID: PersistentIdentifier? = nil,
         tagID: PersistentIdentifier? = nil,
-        searchText: String = ""
+        searchText: String = "",
+        categoryName: String? = nil,
+        currencyIdentifier: String? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil
     ) {
         self.quick = quick
         self.categoryID = categoryID
+        self.categoryName = categoryName
         self.accountID = accountID
         self.tagID = tagID
         self.searchText = searchText
+        self.currencyIdentifier = currencyIdentifier
+        self.startDate = startDate
+        self.endDate = endDate
     }
 
     /// The search term with surrounding whitespace removed. Spaces-only input
@@ -61,7 +76,15 @@ public struct TransactionFilter: Sendable, Equatable {
     }
 
     public var isActive: Bool {
-        quick != .all || categoryID != nil || accountID != nil || tagID != nil || !trimmedSearch.isEmpty
+        quick != .all
+            || categoryID != nil
+            || categoryName != nil
+            || accountID != nil
+            || tagID != nil
+            || !trimmedSearch.isEmpty
+            || currencyIdentifier != nil
+            || startDate != nil
+            || endDate != nil
     }
 
     /// A stable name for the current filter universe. The list uses it to
@@ -70,9 +93,13 @@ public struct TransactionFilter: Sendable, Equatable {
         let parts: [String] = [
             quick.rawValue,
             categoryID.map(String.init(describing:)) ?? "-",
+            categoryName ?? "-",
             accountID.map(String.init(describing:)) ?? "-",
             tagID.map(String.init(describing:)) ?? "-",
             trimmedSearch,
+            currencyIdentifier ?? "-",
+            startDate.map { String($0.timeIntervalSinceReferenceDate) } ?? "-",
+            endDate.map { String($0.timeIntervalSinceReferenceDate) } ?? "-",
         ]
         return parts.joined(separator: "|")
     }
@@ -145,7 +172,7 @@ public enum TransactionFetch {
 public enum TransactionRefinement {
     /// Whether a row survives the active filter. The SQL predicate has already
     /// applied the sign and relationship parts; this adds the money-movement
-    /// exclusion, the tag match, and the free-text search.
+    /// exclusion, drill-down bounds, the tag match, and the free-text search.
     public static func matches(_ row: TransactionRowValue, filter: TransactionFilter) -> Bool {
         switch filter.quick {
         case .all, .pending:
@@ -160,7 +187,24 @@ public enum TransactionRefinement {
             return false
         }
 
+        if let categoryName = filter.categoryName, row.categoryName != categoryName {
+            return false
+        }
+
         if let tagID = filter.tagID, !row.tagIDs.contains(tagID) {
+            return false
+        }
+
+        if let currencyIdentifier = filter.currencyIdentifier,
+           row.currency.stableIdentifier != currencyIdentifier {
+            return false
+        }
+
+        if let startDate = filter.startDate, row.effectiveDate < startDate {
+            return false
+        }
+
+        if let endDate = filter.endDate, row.effectiveDate >= endDate {
             return false
         }
 
