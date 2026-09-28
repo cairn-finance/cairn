@@ -138,18 +138,24 @@ struct InsightFilteredListView: View {
 
     private var totalSpent: Int64 {
         switch scope {
-        case .budgetCategory:
-            return filtered.filter { !$0.countsAsTransfer && !$0.isIgnored && !$0.isPending }
-                .reduce(Int64(0)) { total, transaction in
-                    let delta = transaction.amountMinorUnits < 0
-                        ? MinorUnits.absClamped(transaction.amountMinorUnits)
-                        : -transaction.amountMinorUnits
-                    return MinorUnits.addClamped(total, delta)
-                }
-        case .category, .tag, .rule, .needingCategory:
+        case .budgetCategory, .category:
+            return netCategorySpending(filtered)
+        case .tag, .rule, .needingCategory:
             return filtered
                 .filter { $0.amountMinorUnits < 0 && !$0.countsAsTransfer }
                 .reduce(Int64(0)) { MinorUnits.addClamped($0, MinorUnits.absClamped($1.amountMinorUnits)) }
         }
+    }
+
+    private func netCategorySpending(_ transactions: [LedgerTransaction]) -> Int64 {
+        let net = transactions
+            .filter { !$0.countsAsTransfer && !$0.isIgnored && !$0.isPending }
+            .reduce(Int64(0)) { total, transaction in
+                if transaction.amountMinorUnits < 0 {
+                    return MinorUnits.addClamped(total, MinorUnits.absClamped(transaction.amountMinorUnits))
+                }
+                return MinorUnits.subtractClamped(total, transaction.amountMinorUnits)
+            }
+        return max(0, net)
     }
 }

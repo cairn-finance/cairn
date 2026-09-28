@@ -112,8 +112,10 @@ public struct InsightsSnapshot: Sendable {
     public let current: MonthlyTotals
     public let previous: MonthlyTotals
 
-    /// Categories with spending this month, largest first. Categories that only
-    /// had spending last month are still included so a drop to zero is visible.
+    /// Categories with net spending this month, largest first. Positive
+    /// transactions in an expense category reduce its total, so reimbursements
+    /// can offset the charge they belong to. Categories that only had spending
+    /// last month are still included so a drop to zero is visible.
     public let categories: [CategoryBreakdown]
 
     /// Ascending monthly totals ending at `monthStart`, for the trend chart.
@@ -438,12 +440,16 @@ public enum InsightsCalculator {
         transactions: [InsightTransaction],
         calendar: Calendar
     ) -> [CategoryBreakdown] {
-        var currentSpend: [String: Int64] = [:]
+        var currentNet: [String: Int64] = [:]
         var currentColor: [String: String] = [:]
-        var previousSpend: [String: Int64] = [:]
+        var previousNet: [String: Int64] = [:]
 
         for transaction in transactions
-            where transaction.includedInInsights && transaction.amountMinorUnits < 0 {
+            where transaction.includedInInsights && transaction.amountMinorUnits != 0 {
+            if transaction.amountMinorUnits > 0,
+               transaction.categoryName?.caseInsensitiveCompare("Income") == .orderedSame {
+                continue
+            }
             let name: String
             if let categoryName = transaction.categoryName, !categoryName.isEmpty {
                 name = categoryName
@@ -451,29 +457,32 @@ public enum InsightsCalculator {
                 name = uncategorizedName
             }
             if isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
-                currentSpend[name] = MinorUnits.addClamped(
-                    currentSpend[name] ?? 0,
-                    MinorUnits.absClamped(transaction.amountMinorUnits)
+                currentNet[name] = addingNetSpending(
+                    transaction.amountMinorUnits,
+                    to: currentNet[name] ?? 0
                 )
                 if let hex = transaction.categoryColorHex, !hex.isEmpty {
                     currentColor[name] = hex
                 }
             } else if isInMonth(transaction.date, monthStart: previousStart, calendar: calendar) {
-                previousSpend[name] = MinorUnits.addClamped(
-                    previousSpend[name] ?? 0,
-                    MinorUnits.absClamped(transaction.amountMinorUnits)
+                previousNet[name] = addingNetSpending(
+                    transaction.amountMinorUnits,
+                    to: previousNet[name] ?? 0
                 )
             }
         }
 
-        let names = Set(currentSpend.keys).union(previousSpend.keys)
+        let names = Set(currentNet.keys).union(previousNet.keys)
         return names
-            .map { name in
-                CategoryBreakdown(
+            .compactMap { name in
+                let currentAmount = max(0, currentNet[name] ?? 0)
+                let previousAmount = max(0, previousNet[name] ?? 0)
+                guard currentAmount > 0 || previousAmount > 0 else { return nil }
+                return CategoryBreakdown(
                     name: name,
                     colorHex: currentColor[name] ?? uncategorizedColorHex,
-                    amountMinorUnits: currentSpend[name] ?? 0,
-                    previousAmountMinorUnits: previousSpend[name] ?? 0
+                    amountMinorUnits: currentAmount,
+                    previousAmountMinorUnits: previousAmount
                 )
             }
             .sorted {
@@ -482,6 +491,16 @@ public enum InsightsCalculator {
                 }
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
+    }
+
+    /// Adds a signed transaction to a category's net spending without
+    /// overflowing. Outgoing amounts increase spending; incoming amounts such
+    /// as reimbursements reduce it.
+    private static func addingNetSpending(_ amount: Int64, to total: Int64) -> Int64 {
+        if amount < 0 {
+            return MinorUnits.addClamped(total, MinorUnits.absClamped(amount))
+        }
+        return MinorUnits.subtractClamped(total, amount)
     }
 
     static func topMerchants(
