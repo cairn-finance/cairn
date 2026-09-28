@@ -6,13 +6,19 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and upload
+        required: true
+        type: string
 
 # Needed for the final job to create the GitHub Release.
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -21,18 +27,27 @@ jobs:
   prepare:
     runs-on: macos-26
     outputs:
+      tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
       build: ${{ steps.version.outputs.build }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Refuse tags that are not on main
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tags must look like vX.Y.Z (got $RELEASE_TAG)."
+            exit 1
+          fi
           git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::Tag $GITHUB_REF_NAME is not contained in main; refusing to release."
+          tag_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo "::error::Tag $RELEASE_TAG is not contained in main; refusing to release."
             exit 1
           fi
 
@@ -57,16 +72,19 @@ jobs:
 
       - name: Resolve version and build number
         id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Tags must look like vX.Y.Z (got $GITHUB_REF_NAME)."
+            echo "::error::Tags must look like vX.Y.Z (got $RELEASE_TAG)."
             exit 1
           fi
           # Commit count is deterministic, grows along main, and keeps re-runs of
           # the same tag on the same build number.
-          build="$(git rev-list --count HEAD)"
+          build="$(git rev-list --count "$RELEASE_TAG^{commit}")"
           echo "Releasing $version (build $build)"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
 
@@ -92,6 +110,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
 
       - name: Select Xcode
@@ -116,7 +135,7 @@ jobs:
           fi
           cat > Config/Signing.local.xcconfig <<EOF
           DEVELOPMENT_TEAM = $TEAM
-          PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID
+          CAIRN_HOST_BUNDLE_IDENTIFIER = $BUNDLE_ID
           ICLOUD_CONTAINER_ID = $CONTAINER_ID
           EOF
 
@@ -175,6 +194,7 @@ jobs:
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "${{ secrets.APPSTORE_API_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.APPSTORE_API_ISSUER_ID }}" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
@@ -215,10 +235,11 @@ jobs:
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           # The job has no checkout, so tell gh which repo to act on.
           GH_REPO: ${{ github.repository }}
         run: |
-          tag="$GITHUB_REF_NAME"
+          tag="$RELEASE_TAG"
           title="Cairn ${tag#v}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dSYMs/*.zip --clobber
