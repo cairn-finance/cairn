@@ -121,6 +121,7 @@ public extension LedgerTransaction {
             expenseAmountMinorUnits: expense.amountMinorUnits,
             reimbursementAmountMinorUnits: reimbursement.amountMinorUnits,
             sameRow: expense.persistentModelID == reimbursement.persistentModelID,
+            currenciesMatch: expense.amount.currency == reimbursement.amount.currency,
             expectedAmountMinorUnits: expectedAmountMinorUnits
         )
         guard !expense.isSettlementLinked && !reimbursement.isSettlementLinked else {

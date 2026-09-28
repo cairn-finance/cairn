@@ -37,6 +37,10 @@ targets:
         product: CairnCore
       - target: CairnWidgets
         embed: true
+        # The widget is iOS-only. Keep the app's macOS target independent of
+        # the extension so Xcode does not build or embed an iOS extension in a
+        # macOS application.
+        destinationFilters: [iOS]
     configFiles:
       # Signing settings live in xcconfig so team and bundle id stay out of git.
       Debug: Config/Signing.xcconfig

@@ -1008,7 +1008,7 @@ private struct SettlementLinkSheet: View {
             $0.persistentModelID != expense.persistentModelID
                 && $0.amountMinorUnits > 0
                 && !$0.isSettlementLinked
-                && $0.account?.currencyCode == expense.account?.currencyCode
+                && $0.amount.currency == expense.amount.currency
         }
     }
 

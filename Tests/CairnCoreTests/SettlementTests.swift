@@ -41,4 +41,16 @@ struct SettlementTests {
         #expect(summary.netPersonalCostMinorUnits == 0)
         #expect(summary.outstandingMinorUnits == 0)
     }
+
+    @Test("Rejects rows with matching currency codes but different currency descriptors")
+    func currenciesMustMatchFully() {
+        let expense = LedgerTransaction(amountMinorUnits: -1_000)
+        let reimbursement = LedgerTransaction(amountMinorUnits: 1_000)
+        expense.account = Account(currency: Currency(code: "PTS", exponent: 0, isCustom: true, customName: "Points", customAbbreviation: "P"))
+        reimbursement.account = Account(currency: Currency(code: "PTS", exponent: 2, isCustom: true, customName: "Points", customAbbreviation: "P"))
+
+        #expect(throws: SettlementValidationError.currenciesMustMatch) {
+            try LedgerTransaction.linkSettlement(expense: expense, reimbursement: reimbursement, counterparty: nil, expectedAmountMinorUnits: nil)
+        }
+    }
 }

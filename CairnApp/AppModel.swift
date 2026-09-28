@@ -1227,6 +1227,15 @@ final class AppModel {
         }
     }
 
+    func exportCommitmentsCSV() async -> Data? {
+        do {
+            return Data(try await engine.exportCommitmentsCSV().utf8)
+        } catch {
+            banner = String(localized: "Commitment export failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     func deleteAllData() async {
         do {
             try await engine.deleteAllData()

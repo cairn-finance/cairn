@@ -556,6 +556,9 @@ struct SettingsView: View {
             Button { exportBudgets() } label: {
                 IconRow("Export budgets as CSV", systemImage: "chart.pie", tint: CairnTheme.accent)
             }
+            Button { exportCommitments() } label: {
+                IconRow("Export commitments as CSV", systemImage: "calendar.badge.clock", tint: .orange)
+            }
             Button(role: .destructive) {
                 showingDeleteConfirm = true
             } label: {
@@ -565,7 +568,7 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Exports include transactions, categories, notes, and budget limits. You choose where they save.")
+            Text("Exports include transactions, categories, notes, budget limits, and confirmed commitments. You choose where they save.")
         }
     }
 
@@ -652,6 +655,16 @@ struct SettingsView: View {
             exportDocument = ExportFile(data: data)
             exportType = .commaSeparatedText
             exportFileName = "cairn-budgets"
+            showingExporter = true
+        }
+    }
+
+    private func exportCommitments() {
+        Task {
+            guard let data = await model.exportCommitmentsCSV() else { return }
+            exportDocument = ExportFile(data: data)
+            exportType = .commaSeparatedText
+            exportFileName = "cairn-commitments"
             showingExporter = true
         }
     }

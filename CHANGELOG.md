@@ -8,6 +8,10 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Confirmed commitments can now be exported as CSV alongside transactions and
+  budgets, and the generated macOS app no longer builds or embeds the iOS-only
+  widget extension.
+
 - Added a redacted forecast-status widget, intentional local alerts for stale or
   actionable financial states, and read-only Shortcuts actions for review and
   forecast status. System surfaces show aggregate status and freshness only;
