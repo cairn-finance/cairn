@@ -21,6 +21,7 @@ struct TransactionsView: View {
     private var tags: [Tag]
     @Query(sort: [SortDescriptor(\Account.displayOrder)])
     private var accounts: [Account]
+    @Query private var reviewTransactions: [LedgerTransaction]
 
     @State private var feed: TransactionsFeed?
     @State private var filter = TransactionFilter()
@@ -62,6 +63,7 @@ struct TransactionsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.l) {
+                reviewInboxEntryPoint
                 filterBar
                 if let feed {
                     if feed.rows.isEmpty {
@@ -102,6 +104,37 @@ struct TransactionsView: View {
         .onChange(of: filter) { _, newValue in
             feed?.filter = newValue
         }
+    }
+
+    private var reviewInboxEntryPoint: some View {
+        let count = ReviewInboxItem.items(from: reviewTransactions.map { $0.rowValue() }).count
+        return NavigationLink {
+            ReviewInboxView()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "tray.full.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(CairnTheme.accent)
+                    .frame(width: 38, height: 38)
+                    .background(CairnTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Review Inbox")
+                        .font(.headline)
+                    Text(count == 0 ? "You're all caught up" : "\(count) transaction\(count == 1 ? "" : "s") need attention")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(CairnTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(CairnTheme.outline))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows transactions that need your attention")
     }
 
     // MARK: - Filters

@@ -28,6 +28,9 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
     public let isPending: Bool
     public let isIgnored: Bool
     public let isTransfer: Bool
+    public let reviewedAt: Date?
+    public let modifiedAt: Date
+    public let autoCategorySource: String?
     /// True when either the user's or the automatic category is a built-in
     /// money-movement category. Computed at mapping time because it considers
     /// both categories, not just the effective one.
@@ -60,6 +63,9 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
         isPending: Bool,
         isIgnored: Bool,
         isTransfer: Bool,
+        reviewedAt: Date? = nil,
+        modifiedAt: Date = .distantPast,
+        autoCategorySource: String? = nil,
         countsAsTransfer: Bool,
         categoryName: String?,
         categorySymbolName: String?,
@@ -81,6 +87,9 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
         self.isPending = isPending
         self.isIgnored = isIgnored
         self.isTransfer = isTransfer
+        self.reviewedAt = reviewedAt
+        self.modifiedAt = modifiedAt
+        self.autoCategorySource = autoCategorySource
         self.countsAsTransfer = countsAsTransfer
         self.categoryName = categoryName
         self.categorySymbolName = categorySymbolName
@@ -140,6 +149,9 @@ extension CairnSchemaV3.LedgerTransaction {
             isPending: isPending,
             isIgnored: isIgnored,
             isTransfer: isTransfer,
+            reviewedAt: reviewedAt,
+            modifiedAt: modifiedAt,
+            autoCategorySource: autoCategorySource,
             countsAsTransfer: countsAsTransfer,
             categoryName: category?.name,
             categorySymbolName: category?.symbolName,

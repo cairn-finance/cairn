@@ -8,6 +8,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Added a Review Inbox in Activity for uncategorized, unreviewed, and changed
+  transactions, with explanations, category editing, review actions, and undo.
 - Insights now subtracts categorized reimbursements, such as roommate rent
   payments, from the expense category they belong to.
 - Home and Insights use adaptive dashboard layouts on iPad and Mac, navigation
