@@ -13,22 +13,23 @@ struct CairnStatusProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (CairnStatusEntry) -> Void) {
-        completion(CairnStatusEntry(date: .now, snapshot: load()))
+        completion(CairnStatusEntry(date: .now, snapshot: load(at: .now)))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<CairnStatusEntry>) -> Void) {
         let now = Date.now
-        let entry = CairnStatusEntry(date: now, snapshot: load())
+        let entry = CairnStatusEntry(date: now, snapshot: load(at: now))
         completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60 * 60))))
     }
 
-    private func load() -> SystemSurfaceSnapshot {
+    private func load(at now: Date) -> SystemSurfaceSnapshot {
         guard let identifier = Bundle.main.object(forInfoDictionaryKey: "CairnAppGroupIdentifier") as? String,
               let defaults = UserDefaults(suiteName: identifier),
               let data = defaults.data(forKey: "cairn.system-surface.snapshot"),
-              let snapshot = try? JSONDecoder().decode(SystemSurfaceSnapshot.self, from: data)
+              let snapshot = try? JSONDecoder().decode(SystemSurfaceSnapshot.self, from: data),
+              snapshot.isFresh(at: now)
         else {
-            return SystemSurfaceSnapshot(status: .unavailable)
+            return SystemSurfaceSnapshot(status: .unavailable, generatedAt: now)
         }
         return snapshot
     }
@@ -59,6 +60,9 @@ struct CairnStatusWidget: Widget {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Cairn forecast status")
+            .accessibilityValue(entry.snapshot.statusLabel)
             .widgetURL(URL(string: "cairn://insights"))
         }
         .configurationDisplayName("Cairn status")

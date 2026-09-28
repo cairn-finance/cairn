@@ -333,7 +333,7 @@ public enum BudgetCalculator {
         monthKey: String,
         currency: Currency
     ) -> [UUID: BudgetSetting] {
-        let relevant = settings.filter { $0.currency.code == currency.code }
+        let relevant = settings.filter { $0.currency == currency }
         let rules = latestSettings(relevant.filter { !$0.isMonthOverride && $0.monthKey <= monthKey })
         let overrides = latestSettings(relevant.filter { $0.isMonthOverride && $0.monthKey == monthKey })
         var effective: [UUID: BudgetSetting] = [:]
@@ -385,6 +385,12 @@ public enum BudgetCalculator {
                 )
             }
         }
+
+        // A reimbursement can arrive after, or exceed, the expense it offsets.
+        // Keep a category's reported spending non-negative rather than letting
+        // a correction create negative budget usage.
+        spending = spending.mapValues { max(0, $0) }
+        uncategorized = max(0, uncategorized)
 
         let categoriesByID = Dictionary(categories.map { ($0.uuid, $0) }, uniquingKeysWith: { first, _ in first })
         let categoryIDs = Set(planned.keys)

@@ -14,10 +14,11 @@ struct SyncCairnIntent: AppIntent {
     )
 
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    static var openAppWhenRun: Bool { true }
 
     func perform() async throws -> some IntentResult {
-        await MainActor.run { IntentBridge.shared.requestSync() }
-        return .result()
+        _ = try await IntentBridge.shared.requestSync()
+        return .result(dialog: "Cairn finished syncing.")
     }
 }
 
@@ -29,7 +30,7 @@ struct ReviewPendingItemsIntent: AppIntent {
     static var openAppWhenRun: Bool { true }
 
     func perform() async throws -> some IntentResult {
-        let count = await MainActor.run { IntentBridge.shared.pendingReviewCount() }
+        let count = try await MainActor.run { try IntentBridge.shared.pendingReviewCount() }
         return .result(dialog: count == 0 ? "Your Cairn review inbox is clear." : "Cairn has \(count) items to review.")
     }
 }
@@ -43,7 +44,7 @@ struct CheckForecastStatusIntent: AppIntent {
     static var openAppWhenRun: Bool { true }
 
     func perform() async throws -> some IntentResult {
-        let summary = await IntentBridge.shared.forecastSummary()
+        let summary = try await IntentBridge.shared.forecastSummary()
         return .result(dialog: IntentDialog(stringLiteral: summary))
     }
 }

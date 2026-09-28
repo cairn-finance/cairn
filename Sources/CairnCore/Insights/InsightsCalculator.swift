@@ -14,6 +14,9 @@ public struct InsightTransaction: Sendable, Hashable {
     public let isTransfer: Bool
     public let isIgnored: Bool
     public let isPending: Bool
+    /// A linked incoming reimbursement offsets the shared expense instead of
+    /// being counted as ordinary income.
+    public let isSettlementReimbursement: Bool
 
     public init(
         date: Date,
@@ -25,7 +28,8 @@ public struct InsightTransaction: Sendable, Hashable {
         accountName: String = "",
         isTransfer: Bool = false,
         isIgnored: Bool = false,
-        isPending: Bool = false
+        isPending: Bool = false,
+        isSettlementReimbursement: Bool = false
     ) {
         self.date = date
         self.amountMinorUnits = amountMinorUnits
@@ -37,6 +41,7 @@ public struct InsightTransaction: Sendable, Hashable {
         self.isTransfer = isTransfer
         self.isIgnored = isIgnored
         self.isPending = isPending
+        self.isSettlementReimbursement = isSettlementReimbursement
     }
 }
 
@@ -346,23 +351,34 @@ public enum InsightsCalculator {
         let isCurrent = calendar.isDate(monthStart, equalTo: now, toGranularity: .month)
         let lastDay = isCurrent ? min(max(1, calendar.component(.day, from: now)), daysInMonth) : daysInMonth
 
-        var daily = [Int64](repeating: 0, count: lastDay + 1)
+        var dailyExpenses = [Int64](repeating: 0, count: lastDay + 1)
+        var dailyReimbursements = [Int64](repeating: 0, count: lastDay + 1)
         for transaction in transactions
             where transaction.includedInInsights
-            && transaction.amountMinorUnits < 0
             && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
             let day = calendar.component(.day, from: transaction.date)
             guard day >= 1, day <= lastDay else { continue }
-            daily[day] = MinorUnits.addClamped(
-                daily[day],
-                MinorUnits.absClamped(transaction.amountMinorUnits)
-            )
+            if transaction.amountMinorUnits < 0 {
+                dailyExpenses[day] = MinorUnits.addClamped(
+                    dailyExpenses[day],
+                    MinorUnits.absClamped(transaction.amountMinorUnits)
+                )
+            } else if transaction.isSettlementReimbursement {
+                dailyReimbursements[day] = MinorUnits.addClamped(
+                    dailyReimbursements[day],
+                    max(0, transaction.amountMinorUnits)
+                )
+            }
         }
 
         var running: Int64 = 0
         var points: [PacePoint] = []
         for day in 1...lastDay {
-            running = MinorUnits.addClamped(running, daily[day])
+            running = MinorUnits.addClamped(running, dailyExpenses[day])
+            running = max(
+                0,
+                MinorUnits.subtractClamped(running, dailyReimbursements[day])
+            )
             points.append(PacePoint(day: day, amountMinorUnits: running))
         }
         return points
@@ -406,15 +422,19 @@ public enum InsightsCalculator {
         let monthStart = startOfMonth(month, calendar: calendar)
         var income: Int64 = 0
         var spending: Int64 = 0
+        var reimbursements: Int64 = 0
         for transaction in transactions
             where transaction.includedInInsights
             && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
-            if transaction.amountMinorUnits >= 0 {
+            if transaction.isSettlementReimbursement {
+                reimbursements = MinorUnits.addClamped(reimbursements, max(0, transaction.amountMinorUnits))
+            } else if transaction.amountMinorUnits >= 0 {
                 income = MinorUnits.addClamped(income, transaction.amountMinorUnits)
             } else {
                 spending = MinorUnits.addClamped(spending, MinorUnits.absClamped(transaction.amountMinorUnits))
             }
         }
+        spending = max(0, MinorUnits.subtractClamped(spending, reimbursements))
         return MonthlyTotals(monthStart: monthStart, incomeMinorUnits: income, spendingMinorUnits: spending)
     }
 
@@ -447,6 +467,7 @@ public enum InsightsCalculator {
         for transaction in transactions
             where transaction.includedInInsights && transaction.amountMinorUnits != 0 {
             if transaction.amountMinorUnits > 0,
+               !transaction.isSettlementReimbursement,
                transaction.categoryName?.caseInsensitiveCompare("Income") == .orderedSame {
                 continue
             }

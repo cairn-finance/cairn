@@ -24,11 +24,18 @@ public struct SystemSurfaceSnapshot: Codable, Equatable, Sendable {
 
     public var statusLabel: String {
         switch status {
-        case .onTrack: "On track"
-        case .review: "Review forecast"
-        case .needsAttention: "Needs attention"
-        case .unavailable: "Not available"
+        case .onTrack: String(localized: "On track")
+        case .review: String(localized: "Review forecast")
+        case .needsAttention: String(localized: "Needs attention")
+        case .unavailable: String(localized: "Not available")
         }
+    }
+
+    /// Prevents a system surface from presenting an old financial state when
+    /// the app has not refreshed its local snapshot for a long time.
+    public func isFresh(at now: Date = .now, maximumAge: TimeInterval = 26 * 60 * 60) -> Bool {
+        let age = now.timeIntervalSince(generatedAt)
+        return age >= 0 && age <= maximumAge
     }
 }
 
@@ -40,16 +47,18 @@ public enum SystemSurfaceSnapshotBuilder {
         lastSuccessfulSync: Date?,
         now: Date = .now
     ) -> SystemSurfaceSnapshot {
-        guard let first = forecast.first else {
+        guard !forecast.isEmpty else {
             return SystemSurfaceSnapshot(status: .unavailable, asOf: lastSuccessfulSync, generatedAt: now)
         }
 
-        let currency = first.currency.code
-        let points = forecast.filter { $0.currency.code == currency }
-        let minimum = points.map(\.balanceMinorUnits).min() ?? 0
-        let uncertain = points.contains(where: \.uncertainty)
+        let minimumByCurrency = Dictionary(grouping: forecast, by: \.currency)
+            .values
+            .map { $0.map(\.balanceMinorUnits).min() ?? 0 }
+        let minimumIsNegative = minimumByCurrency.contains { $0 < 0 }
+        let uncertain = forecast.contains(where: \.uncertainty)
+        let currencies = Set(forecast.map(\.currency))
         let status: SystemSurfaceSnapshot.Status
-        if minimum < 0 {
+        if minimumIsNegative {
             status = .needsAttention
         } else if uncertain {
             status = .review
@@ -58,7 +67,7 @@ public enum SystemSurfaceSnapshotBuilder {
         }
         return SystemSurfaceSnapshot(
             status: status,
-            currencyCode: currency,
+            currencyCode: currencies.count == 1 ? currencies.first?.code : nil,
             asOf: lastSuccessfulSync,
             generatedAt: now
         )
@@ -71,6 +80,7 @@ public struct SystemNotification: Equatable, Sendable {
         case budgetRisk
         case upcomingCommitment
         case missedCommitment
+        case changedCommitment
     }
 
     public let identifier: String
@@ -108,36 +118,61 @@ public enum SystemNotificationPlanner {
         lastSuccessfulSync: Date?,
         commitments: [(id: String, status: CommitmentStatus, dueDate: Date)],
         now: Date = .now,
-        staleAfter: TimeInterval = 36 * 60 * 60
+        staleAfter: TimeInterval = 36 * 60 * 60,
+        upcomingWindow: TimeInterval = 7 * 24 * 60 * 60
     ) -> [SystemNotification] {
         var result: [SystemNotification] = []
         if let lastSuccessfulSync, now.timeIntervalSince(lastSuccessfulSync) > staleAfter {
             result.append(SystemNotification(
                 identifier: "cairn.stale-connection",
                 kind: .staleConnection,
-                title: "Cairn connection needs attention",
-                body: "Stored financial data may be out of date. Open Cairn to review connection health."
+                title: String(localized: "Cairn connection needs attention"),
+                body: String(localized: "Stored financial data may be out of date. Open Cairn to review connection health.")
             ))
         }
         if snapshot.status == .needsAttention {
             result.append(SystemNotification(
                 identifier: "cairn.forecast-risk",
                 kind: .budgetRisk,
-                title: "Cairn forecast needs attention",
-                body: "A confirmed commitment may take the forecast below zero. Review the forecast in Cairn."
+                title: String(localized: "Cairn forecast needs attention"),
+                body: String(localized: "A confirmed commitment may take the forecast below zero. Review the forecast in Cairn.")
             ))
         }
-        for commitment in commitments where commitment.status == .upcoming || commitment.status == .missed || commitment.status == .changed {
-            let kind: SystemNotification.Kind = commitment.status == .upcoming ? .upcomingCommitment : .missedCommitment
-            let title = commitment.status == .upcoming ? "Upcoming confirmed commitment" : "Confirmed commitment changed"
+        for commitment in commitments {
+            let isUpcoming = commitment.status == .upcoming
+                && commitment.dueDate.timeIntervalSince(now) >= 0
+                && commitment.dueDate.timeIntervalSince(now) <= upcomingWindow
+            let isDue = commitment.status == .due
+            let isActionable = isUpcoming || isDue || commitment.status == .missed || commitment.status == .changed
+            guard isActionable else { continue }
+
+            let kind: SystemNotification.Kind
+            let title: String
+            let body: String
+            switch commitment.status {
+            case .upcoming:
+                kind = .upcomingCommitment
+                title = String(localized: "Upcoming confirmed commitment")
+                body = String(localized: "A confirmed commitment is coming up. Open Cairn to review it.")
+            case .due:
+                kind = .upcomingCommitment
+                title = String(localized: "Confirmed commitment due today")
+                body = String(localized: "A confirmed commitment is due today. Open Cairn to review it.")
+            case .changed:
+                kind = .changedCommitment
+                title = String(localized: "Confirmed commitment changed")
+                body = String(localized: "A confirmed commitment needs review in Cairn.")
+            default:
+                kind = .missedCommitment
+                title = String(localized: "Confirmed commitment missed")
+                body = String(localized: "A confirmed commitment needs review in Cairn.")
+            }
             result.append(SystemNotification(
                 identifier: "cairn.commitment.\(commitment.id)",
                 kind: kind,
                 title: title,
-                body: commitment.status == .upcoming
-                    ? "A confirmed commitment is coming up. Open Cairn to review it."
-                    : "A confirmed commitment needs review in Cairn.",
-                date: commitment.status == .upcoming ? commitment.dueDate : nil
+                body: body,
+                date: isUpcoming && commitment.dueDate > now ? commitment.dueDate : nil
             ))
         }
         return result

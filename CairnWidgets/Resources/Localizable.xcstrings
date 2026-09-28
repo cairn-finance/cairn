@@ -1,0 +1,15 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Aggregate status · no merchant detail" : {
+      "comment" : "Privacy note shown below the aggregate widget status."
+    },
+    "As of %@" : {
+      "comment" : "Relative freshness timestamp shown in the widget."
+    },
+    "As of: unavailable" : {
+      "comment" : "Shown when the widget has no usable snapshot timestamp."
+    }
+  },
+  "version" : "1.1"
+}

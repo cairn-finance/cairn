@@ -47,19 +47,15 @@ public enum CashFlowForecast {
         through days: Int = 30, now: Date = .now, calendar: Calendar = .current,
         staleAfter: TimeInterval = 48 * 60 * 60
     ) -> [ForecastBalance] {
-        let grouped = Dictionary(grouping: accounts, by: { $0.currency.code })
+        let grouped = Dictionary(grouping: accounts, by: \.currency)
         return grouped.values.flatMap { (accounts: [ForecastAccount]) -> [ForecastBalance] in
             guard let currency = accounts.first?.currency else { return [] }
             var balance = accounts.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.balanceMinorUnits) }
             var result: [ForecastBalance] = []
             for offset in 0...max(0, days) {
                 let date = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)) ?? now
-                if offset > 0 {
-                    for item in commitments {
-                        if Self.isDue(item, currency: currency, date: date, calendar: calendar, now: now) {
-                            balance = MinorUnits.addClamped(balance, item.amountMinorUnits)
-                        }
-                    }
+                for item in commitments where Self.isDue(item, currency: currency, date: date, calendar: calendar) {
+                    balance = MinorUnits.addClamped(balance, item.amountMinorUnits)
                 }
                 let stale = accounts.contains { Self.isStale($0, now: now, threshold: staleAfter) }
                 let hasUncertainCommitment = commitments.contains { Self.isUncertain($0, currency: currency) }
@@ -68,7 +64,15 @@ public enum CashFlowForecast {
                 result.append(point)
             }
             return result
-        }.sorted { $0.currency.code == $1.currency.code ? $0.date < $1.date : $0.currency.code < $1.currency.code }
+        }.sorted {
+            if $0.currency.code != $1.currency.code { return $0.currency.code < $1.currency.code }
+            if $0.currency.exponent != $1.currency.exponent { return $0.currency.exponent < $1.currency.exponent }
+            if $0.currency.isCustom != $1.currency.isCustom { return !$0.currency.isCustom }
+            if $0.currency.stableIdentifier != $1.currency.stableIdentifier {
+                return $0.currency.stableIdentifier < $1.currency.stableIdentifier
+            }
+            return $0.date < $1.date
+        }
     }
 
     private static func isStale(_ account: ForecastAccount, now: Date, threshold: TimeInterval) -> Bool {
@@ -76,19 +80,43 @@ public enum CashFlowForecast {
         return now.timeIntervalSince(asOf) > threshold
     }
 
-    private static func isDue(_ item: ConfirmedCommitmentValue, currency: Currency, date: Date, calendar: Calendar, now: Date) -> Bool {
-        guard item.currency.code == currency.code, item.state == .active else { return false }
-        var occurrence = item.nextDueDate
-        let start = calendar.startOfDay(for: now)
-        while occurrence < start {
-            guard let next = calendar.date(byAdding: .day, value: max(1, Int(item.cadence.approximateDays.rounded())), to: occurrence) else { return false }
+    private static func isDue(_ item: ConfirmedCommitmentValue, currency: Currency, date: Date, calendar: Calendar) -> Bool {
+        guard item.currency == currency, item.state == .active else { return false }
+        let target = calendar.startOfDay(for: date)
+        var occurrence = calendar.startOfDay(for: item.nextDueDate)
+        guard occurrence <= target else { return false }
+        while occurrence < target {
+            guard let next = nextOccurrence(after: occurrence, cadence: item.cadence, calendar: calendar) else {
+                return false
+            }
             occurrence = next
         }
-        return calendar.isDate(occurrence, inSameDayAs: date)
+        return calendar.isDate(occurrence, inSameDayAs: target)
+    }
+
+    private static func nextOccurrence(
+        after date: Date,
+        cadence: RecurringCadence,
+        calendar: Calendar
+    ) -> Date? {
+        switch cadence {
+        case .weekly:
+            return calendar.date(byAdding: .day, value: 7, to: date)
+        case .biweekly:
+            return calendar.date(byAdding: .day, value: 14, to: date)
+        case .monthly:
+            return calendar.date(byAdding: .month, value: 1, to: date)
+        case .quarterly:
+            return calendar.date(byAdding: .month, value: 3, to: date)
+        case .semiannual:
+            return calendar.date(byAdding: .month, value: 6, to: date)
+        case .yearly:
+            return calendar.date(byAdding: .year, value: 1, to: date)
+        }
     }
 
     private static func isUncertain(_ item: ConfirmedCommitmentValue, currency: Currency) -> Bool {
-        item.currency.code == currency.code && item.state == .active && item.uncertain
+        item.currency == currency && item.state == .active && item.uncertain
     }
 }
 

@@ -8,7 +8,13 @@ struct ReviewInboxView: View {
     @Query(sort: \LedgerTransaction.modifiedAt, order: .reverse)
     private var transactions: [LedgerTransaction]
 
-    @State private var undo: (PersistentIdentifier, Date?)?
+    private struct UndoState {
+        let persistentID: PersistentIdentifier
+        let reviewedAt: Date?
+        let modifiedAt: Date
+    }
+
+    @State private var undo: UndoState?
 
     private var items: [ReviewInboxItem] {
         ReviewInboxItem.items(from: transactions.map { $0.rowValue() })
@@ -24,7 +30,7 @@ struct ReviewInboxView: View {
                         message: "New, uncategorized, or changed transactions will appear here."
                     )
                 } else {
-                    Text("Review each item, assign a category when needed, then mark it reviewed.")
+                    Text("Review each item, assign a category when needed, then mark it reviewed. Uncategorized rows remain until they have a category.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     ForEach(items) { item in
@@ -89,7 +95,11 @@ struct ReviewInboxView: View {
     private func markReviewed(_ item: ReviewInboxItem) {
         guard let id = item.row.persistentID,
               let transaction = modelContext.model(for: id) as? LedgerTransaction else { return }
-        undo = (id, transaction.reviewedAt)
+        undo = UndoState(
+            persistentID: id,
+            reviewedAt: transaction.reviewedAt,
+            modifiedAt: transaction.modifiedAt
+        )
         let now = Date.now
         transaction.reviewedAt = now
         transaction.modifiedAt = now
@@ -109,9 +119,9 @@ struct ReviewInboxView: View {
 
     private func undoLast() {
         guard let undo,
-              let transaction = modelContext.model(for: undo.0) as? LedgerTransaction else { return }
-        transaction.reviewedAt = undo.1
-        transaction.modifiedAt = .now
+              let transaction = modelContext.model(for: undo.persistentID) as? LedgerTransaction else { return }
+        transaction.reviewedAt = undo.reviewedAt
+        transaction.modifiedAt = undo.modifiedAt
         try? modelContext.save()
         self.undo = nil
     }

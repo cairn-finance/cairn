@@ -210,6 +210,7 @@ final class AppModel {
             storeMode = placeholder.mode
             cloudFallbackReason = nil
             storeFailure = message
+            Task { await SystemSurfaceCoordinator.clear() }
         }
 
         engine = SyncEngine(modelContainer: container)
@@ -260,6 +261,7 @@ final class AppModel {
             Task { await bootstrap() }
         case let .failed(message):
             storeFailure = message
+            Task { await SystemSurfaceCoordinator.clear() }
         }
     }
 
@@ -725,7 +727,8 @@ final class AppModel {
 
     // MARK: - Sync
 
-    func syncAll(force: Bool) async {
+    @discardableResult
+    func syncAll(force: Bool) async -> SyncState {
         let context = container.mainContext
         let institutions = (try? context.fetch(FetchDescriptor<Institution>())) ?? []
         // Apple Wallet is refreshed through FinanceKit, so a device with only
@@ -734,7 +737,7 @@ final class AppModel {
 
         guard walletReady || !institutions.isEmpty else {
             syncState = .idle
-            return
+            return syncState
         }
 
         syncState = .syncing
@@ -864,6 +867,7 @@ final class AppModel {
 
         // Categorize in the background so the sync UI finishes immediately.
         Task { await autoCategorize() }
+        return syncState
     }
 
     /// Fetches older transactions for a credential until the institution's
@@ -1153,7 +1157,9 @@ final class AppModel {
     /// background can delete a duplicate row mid-pass. Mapping a stale
     /// main-context copy would trap in SwiftData.
     func refreshRecurring() async {
-        recurringSeries = (try? await engine.recurringSeries()) ?? []
+        let detected = (try? await engine.recurringSeries()) ?? []
+        recurringSeries = detected
+        try? await engine.reconcileCommitments(with: detected)
     }
 
     func recurringChargeRows(for series: RecurringSeries) async throws -> [TransactionRowValue] {
@@ -1205,6 +1211,13 @@ final class AppModel {
         }
         UserDefaults.standard.set(lock.isEnabled, forKey: Self.Keys.appLockEnabled)
         Task { try? await engine.setAppLock(enabled: lock.isEnabled) }
+        Task {
+            if lock.isEnabled {
+                await SystemSurfaceCoordinator.clear()
+            } else {
+                await refreshSystemSurfaces()
+            }
+        }
     }
 
     // MARK: - Export & deletion
@@ -1247,6 +1260,8 @@ final class AppModel {
             return
         }
 
+        await SystemSurfaceCoordinator.clear()
+
         do {
             try credentials.deleteAll()
         } catch {
@@ -1259,6 +1274,7 @@ final class AppModel {
         // who deletes their data must not be silently switched to iCloud. The
         // app lock is part of "everything", so it is turned off and forgotten.
         UserDefaults.standard.removeObject(forKey: Self.Keys.appLockEnabled)
+        UserDefaults.standard.removeObject(forKey: "cairn.notifications.enabled")
         lock.setEnabled(false)
         // Wallet access is granted to the system rather than to us, so it can't
         // be revoked here. Leaving the flag on would quietly re-import Apple Card

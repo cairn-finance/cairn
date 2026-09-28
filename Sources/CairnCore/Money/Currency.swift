@@ -73,5 +73,19 @@ public struct Currency: Hashable, Sendable, Codable {
         return LocalizedStringResource(stringLiteral: code)
     }
 
+    /// A stable, non-user-facing identity for picker selections and cache keys.
+    /// The code alone is insufficient: two descriptors with the same code can
+    /// still use different minor-unit exponents or represent different custom
+    /// currencies.
+    public var stableIdentifier: String {
+        [
+            code,
+            String(exponent),
+            isCustom ? "custom" : "iso",
+            customName ?? "",
+            customAbbreviation ?? "",
+        ].joined(separator: "\u{1F}")
+    }
+
     public static let usd = Currency(code: "USD")
 }

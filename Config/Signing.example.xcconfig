@@ -11,7 +11,8 @@ DEVELOPMENT_TEAM = ABCDE12345
 
 // A bundle identifier unique to your team. Use reverse-DNS for a domain you
 // control. Apple registers this as your App ID.
-PRODUCT_BUNDLE_IDENTIFIER = com.yourname.cairn
+CAIRN_HOST_BUNDLE_IDENTIFIER = com.yourname.cairn
+PRODUCT_BUNDLE_IDENTIFIER = $(CAIRN_HOST_BUNDLE_IDENTIFIER)
 
 // The CloudKit container the app syncs through, and the same value its
 // entitlement requests. It defaults to the bundle-id convention, so most people

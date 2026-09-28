@@ -6,15 +6,17 @@
 // automatically when present:
 //
 //     DEVELOPMENT_TEAM = YOUR_TEAM_ID
-//     PRODUCT_BUNDLE_IDENTIFIER = com.yourname.cairn
+//     CAIRN_HOST_BUNDLE_IDENTIFIER = com.yourname.cairn
 //     ICLOUD_CONTAINER_ID = iCloud.com.yourname.cairn.sync   # only when it is
 //                                                            # not derived from
 //                                                            # the bundle id
 //
 // See Config/Signing.example.xcconfig and CONTRIBUTING.md.
 
-// A harmless placeholder. Override it locally with a bundle id you own.
-PRODUCT_BUNDLE_IDENTIFIER = com.example.cairn
+// A harmless placeholder. Override the host identifier locally with a bundle
+// id you own. The app and widget derive their identifiers from this one value.
+CAIRN_HOST_BUNDLE_IDENTIFIER = com.example.cairn
+PRODUCT_BUNDLE_IDENTIFIER = $(CAIRN_HOST_BUNDLE_IDENTIFIER)
 
 // The CloudKit container to sync through, and the value the entitlement
 // requests. Derived from the bundle id by default so a fresh clone uses its own
@@ -37,12 +39,12 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.cairn
 // mirroring metadata — would be uploaded to the new container. Wipe or reinstall
 // the app, or leave sync off, before running normally on those devices. The
 // schema initializer is safe anywhere, because it builds its own throwaway store.
-ICLOUD_CONTAINER_ID = iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)
+ICLOUD_CONTAINER_ID = iCloud.$(CAIRN_HOST_BUNDLE_IDENTIFIER)
 
 // Shared system-surface snapshots contain aggregate status only. The App Group
 // must be registered for the team before using a device build; an empty value
 // safely disables widget data sharing in an unconfigured clone.
-CAIRN_APP_GROUP_ID = group.$(PRODUCT_BUNDLE_IDENTIFIER)
+CAIRN_APP_GROUP_ID = group.$(CAIRN_HOST_BUNDLE_IDENTIFIER)
 
 // Empty by default so a fresh clone builds for the simulator without a team.
 DEVELOPMENT_TEAM =

@@ -62,7 +62,7 @@ public extension SyncEngine {
         let allSettings = try modelContext.fetch(FetchDescriptor<CategoryBudget>())
         let matching = allSettings.filter {
             $0.categoryUUID == categoryUUID
-                && $0.currencyCode == currency.code
+                && $0.currency == currency
                 && $0.monthKey == monthKey
                 && $0.isMonthOverride == isMonthOverride
         }
@@ -93,7 +93,7 @@ public extension SyncEngine {
         setting.modifiedAt = now
         if !isMonthOverride {
             for override in allSettings where override.categoryUUID == categoryUUID
-                && override.currencyCode == currency.code
+                && override.currency == currency
                 && override.monthKey == monthKey
                 && override.isMonthOverride {
                 modelContext.delete(override)
@@ -160,7 +160,7 @@ public extension SyncEngine {
             guard let amount = amounts[category.uuid] else { continue }
             let setting: CategoryBudget
             if let existingRule = existing.filter({
-                $0.categoryUUID == category.uuid && $0.currencyCode == currency.code
+                $0.categoryUUID == category.uuid && $0.currency == currency
                     && $0.monthKey == monthKey && !$0.isMonthOverride
             }).sorted(by: { $0.modifiedAt > $1.modifiedAt }).first {
                 setting = existingRule
@@ -178,7 +178,7 @@ public extension SyncEngine {
             setting.timeZoneIdentifier = timeZoneIdentifier
             setting.modifiedAt = now
             for override in existing where override.categoryUUID == category.uuid
-                && override.currencyCode == currency.code
+                && override.currency == currency
                 && override.monthKey == monthKey
                 && override.isMonthOverride {
                 modelContext.delete(override)

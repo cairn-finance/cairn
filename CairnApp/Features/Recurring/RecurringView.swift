@@ -9,18 +9,25 @@ struct RecurringView: View {
     @Query(filter: #Predicate<Account> { $0.isHidden == false })
     private var accounts: [Account]
     @Query private var settings: [AppSettings]
+    @Query(sort: \ConfirmedCommitment.nextDueDate)
+    private var commitments: [ConfirmedCommitment]
+    @State private var editingCommitment: ConfirmedCommitment?
 
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
 
     private var primaryCurrency: Currency {
-        if accounts.contains(where: { $0.currency.code == homeCurrency.code }) {
-            return homeCurrency
-        }
-        return accounts.first?.currency ?? homeCurrency
+        accounts.first(where: { $0.currency == homeCurrency })?.currency
+            ?? accounts.first(where: { $0.currency.code == homeCurrency.code })?.currency
+            ?? accounts.first?.currency
+            ?? homeCurrency
     }
 
     private var series: [RecurringSeries] {
-        model.recurringSeries.filter { $0.currency.code == primaryCurrency.code }
+        model.recurringSeries.filter { $0.currency == primaryCurrency }
+    }
+
+    private var visibleCommitments: [ConfirmedCommitment] {
+        commitments.filter { $0.currency == primaryCurrency }
     }
 
     private var outgoing: [RecurringSeries] {
@@ -49,7 +56,7 @@ struct RecurringView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
-                if series.isEmpty {
+                if series.isEmpty && visibleCommitments.isEmpty {
                     EmptyStateView(
                         systemImage: "repeat",
                         title: "No recurring payments yet",
@@ -59,12 +66,17 @@ struct RecurringView: View {
                         Task { await model.syncAll(force: true) }
                     }
                 } else {
-                    hero.cairnAppear()
+                    if !series.isEmpty {
+                        hero.cairnAppear()
+                    }
+                    if !visibleCommitments.isEmpty {
+                        confirmedSection.cairnAppear(delay: series.isEmpty ? 0 : 0.05)
+                    }
                     if !outgoing.isEmpty {
-                        section("Subscriptions & bills", series: outgoing).cairnAppear(delay: 0.05)
+                        section("Subscriptions & bills", series: outgoing).cairnAppear(delay: visibleCommitments.isEmpty ? 0.05 : 0.1)
                     }
                     if !incoming.isEmpty {
-                        section("Recurring income", series: incoming).cairnAppear(delay: 0.1)
+                        section("Recurring income", series: incoming).cairnAppear(delay: visibleCommitments.isEmpty ? 0.1 : 0.15)
                     }
                     FootnoteText(
                         "Based on your synced and imported history. Cairn never sends merchant names off this device."
@@ -76,7 +88,29 @@ struct RecurringView: View {
         }
         .cairnCanvas()
         .navigationTitle("Recurring")
+        .sheet(item: $editingCommitment) { commitment in
+            CommitmentEditSheet(commitment: commitment)
+                .cairnLockCover()
+        }
         .task { await model.refreshRecurring() }
+    }
+
+    private var confirmedSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title: "Confirmed plans")
+            RowGroup {
+                ForEach(visibleCommitments) { commitment in
+                    Button { editingCommitment = commitment } label: {
+                        ConfirmedCommitmentRow(commitment: commitment)
+                    }
+                    .buttonStyle(.plain)
+                    if commitment.persistentModelID != visibleCommitments.last?.persistentModelID {
+                        RowDivider()
+                    }
+                }
+            }
+            FootnoteText("Confirmed plans stay available even when their detected transaction history changes.")
+        }
     }
 
     // MARK: - Hero
@@ -221,6 +255,41 @@ struct RecurringRow: View {
             return ("Due in ^[\(days) day](inflect: true)", false)
         }
         return ("Next \(series.nextExpectedDate.formatted(.dateTime.month(.abbreviated).day()))", false)
+    }
+}
+
+private struct ConfirmedCommitmentRow: View {
+    let commitment: ConfirmedCommitment
+
+    var body: some View {
+        HStack(spacing: CairnTheme.Spacing.m) {
+            SettingsIcon(
+                systemImage: commitment.state == .active ? "checkmark.circle.fill" : "pause.circle",
+                tint: commitment.state == .active ? CairnTheme.positive : .secondary
+            )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(commitment.name.isEmpty ? "Confirmed commitment" : commitment.name)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text("\(commitment.cadence.displayName) · \(commitment.nextDueDate.formatted(.dateTime.month(.abbreviated).day())) · \(commitment.state.rawValue.capitalized)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            AmountText(
+                money: Money(minorUnits: MinorUnits.absClamped(commitment.amountMinorUnits), currency: commitment.currency),
+                showSign: commitment.amountMinorUnits > 0,
+                font: .body.weight(.semibold),
+                colorOverride: commitment.amountMinorUnits > 0 ? CairnTheme.positive : nil
+            )
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Double tap to edit this confirmed plan")
     }
 }
 
@@ -452,20 +521,25 @@ private struct CommitmentEditSheet: View {
     @State private var dueDate: Date
     @State private var state: CommitmentState
     @State private var scope: String
+    @State private var errorMessage: String?
 
     init(commitment: ConfirmedCommitment) {
         self.commitment = commitment
         _name = State(initialValue: commitment.name)
-        _amount = State(initialValue: String(Double(abs(commitment.amountMinorUnits)) / pow(10, Double(commitment.currency.exponent))))
+        _amount = State(initialValue: MinorUnits.string(abs(commitment.amountMinorUnits), exponent: commitment.currency.exponent))
         _cadence = State(initialValue: commitment.cadence)
         _dueDate = State(initialValue: commitment.nextDueDate)
         _state = State(initialValue: commitment.state)
         _scope = State(initialValue: commitment.accountScope)
+        _errorMessage = State(initialValue: nil)
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                if let errorMessage {
+                    Section { Text(errorMessage).foregroundStyle(.red) }
+                }
                 TextField("Name", text: $name)
                 TextField("Expected amount", text: $amount)
                     #if os(iOS)
@@ -491,11 +565,19 @@ private struct CommitmentEditSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let parsed = MinorUnits.parse(amount, exponent: commitment.currency.exponent) ?? abs(commitment.amountMinorUnits)
+                        guard let parsed = MinorUnits.parse(amount, exponent: commitment.currency.exponent), parsed > 0 else {
+                            errorMessage = String(localized: "Enter a positive amount.")
+                            return
+                        }
                         commitment.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? commitment.name : name
                         commitment.amountMinorUnits = commitment.amountMinorUnits < 0 ? -abs(parsed) : abs(parsed)
                         commitment.cadenceRaw = cadence.rawValue; commitment.nextDueDate = dueDate; commitment.stateRaw = state.rawValue; commitment.accountScope = scope; commitment.modifiedAt = .now
-                        try? modelContext.save(); dismiss()
+                        do {
+                            try modelContext.save()
+                            dismiss()
+                        } catch {
+                            errorMessage = String(localized: "Couldn’t save this commitment. Try again.")
+                        }
                     }
                 }
             }

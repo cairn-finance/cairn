@@ -16,6 +16,7 @@ enum SystemSurfaceCoordinator {
     static let snapshotKey = "cairn.system-surface.snapshot"
     static let appGroupInfoKey = "CairnAppGroupIdentifier"
     static let notificationSignatureKey = "cairn.notifications.signature"
+    static let appLockEnabledKey = "cairn.appLockEnabled"
 
     static var sharedDefaults: UserDefaults? {
         guard let identifier = Bundle.main.object(forInfoDictionaryKey: appGroupInfoKey) as? String,
@@ -25,6 +26,10 @@ enum SystemSurfaceCoordinator {
     }
 
     static func refresh(for model: AppModel) async {
+        guard !UserDefaults.standard.bool(forKey: appLockEnabledKey) else {
+            await clear()
+            return
+        }
         let forecasts = await model.forecast(days: 30)
         let institutions = (try? model.container.mainContext.fetch(FetchDescriptor<Institution>())) ?? []
         let lastSync = institutions.compactMap(\.lastSuccessfulFetch).max()
@@ -44,6 +49,30 @@ enum SystemSurfaceCoordinator {
             lastSuccessfulSync: lastSync,
             commitments: (try? await model.engine.systemSurfaceCommitments()) ?? []
         )
+    }
+
+    /// Removes all Cairn-owned system-surface state without touching unrelated
+    /// app-group data or notifications scheduled by another feature.
+    static func clear() async {
+        sharedDefaults?.removeObject(forKey: snapshotKey)
+        UserDefaults.standard.removeObject(forKey: notificationSignatureKey)
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadTimelines(ofKind: "CairnStatusWidget")
+        #endif
+        #if canImport(UserNotifications)
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests()
+        let delivered = await center.deliveredNotifications()
+        let identifiers = Set(pending
+            .map(\.identifier)
+            .filter(isOwnedNotificationIdentifier))
+            .union(delivered.map(\.request.identifier).filter(isOwnedNotificationIdentifier))
+        if !identifiers.isEmpty {
+            let values = Array(identifiers)
+            center.removePendingNotificationRequests(withIdentifiers: values)
+            center.removeDeliveredNotifications(withIdentifiers: values)
+        }
+        #endif
     }
 
     #if canImport(UserNotifications)
@@ -73,12 +102,31 @@ enum SystemSurfaceCoordinator {
             commitments: values,
             now: now
         )
-        let signature = plan.map { "\($0.identifier):\($0.kind.rawValue)" }.joined(separator: "|")
-        guard signature != UserDefaults.standard.string(forKey: notificationSignatureKey) else { return }
-        UserDefaults.standard.set(signature, forKey: notificationSignatureKey)
-
         let center = UNUserNotificationCenter.current()
-        center.removeAllPendingNotificationRequests()
+        let pending = await center.pendingNotificationRequests()
+        let delivered = await center.deliveredNotifications()
+        let ownedPendingIDs = Set(
+            pending.map(\.identifier).filter(isOwnedNotificationIdentifier)
+        )
+        let ownedDeliveredIDs = Set(
+            delivered.map(\.request.identifier).filter(isOwnedNotificationIdentifier)
+        )
+        let signature = plan.map {
+            "\($0.identifier):\($0.kind.rawValue):\($0.date?.timeIntervalSince1970 ?? -1)"
+        }.joined(separator: "|")
+        let desiredIDs = Set(plan.map(\.identifier))
+        if signature == UserDefaults.standard.string(forKey: notificationSignatureKey),
+           ownedPendingIDs == desiredIDs {
+            return
+        }
+
+        if !ownedPendingIDs.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: Array(ownedPendingIDs))
+        }
+        let staleDeliveredIDs = ownedDeliveredIDs.subtracting(desiredIDs)
+        if !staleDeliveredIDs.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: Array(staleDeliveredIDs))
+        }
         for item in plan {
             let content = UNMutableNotificationContent()
             content.title = item.title
@@ -94,8 +142,22 @@ enum SystemSurfaceCoordinator {
                 trigger = UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false)
             }
             let request = UNNotificationRequest(identifier: item.identifier, content: content, trigger: trigger)
-            try? await center.add(request)
+            do {
+                try await center.add(request)
+            } catch {
+                // Do not record a successful signature when any request failed;
+                // the next refresh must retry the complete desired schedule.
+                UserDefaults.standard.removeObject(forKey: notificationSignatureKey)
+                return
+            }
         }
+        UserDefaults.standard.set(signature, forKey: notificationSignatureKey)
+    }
+
+    private static func isOwnedNotificationIdentifier(_ identifier: String) -> Bool {
+        identifier == "cairn.stale-connection"
+            || identifier == "cairn.forecast-risk"
+            || identifier.hasPrefix("cairn.commitment.")
     }
     #endif
 }

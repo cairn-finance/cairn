@@ -14,6 +14,7 @@ public extension SyncEngine {
     }
 
     func confirm(_ series: RecurringSeries, name: String? = nil, now: Date = .now) throws {
+        try reconcileCommitments(with: [series], now: now)
         if try confirmedCommitments().contains(where: { $0.detectorID == series.id }) { return }
         let commitment = ConfirmedCommitment(detectorID: series.id, name: name ?? series.displayName, amountMinorUnits: series.averageAmountMinorUnits, currency: series.currency, cadence: series.cadence, nextDueDate: series.nextExpectedDate, accountScope: series.accountID)
         commitment.lastObservedDate = series.lastDate
@@ -21,6 +22,57 @@ public extension SyncEngine {
         commitment.modifiedAt = now
         modelContext.insert(commitment)
         try modelContext.save()
+    }
+
+    /// Reconciles observation-only fields with the latest detected evidence and
+    /// collapses duplicate confirmations that can arrive from two synced devices.
+    /// User-owned name, amount, cadence, state, and scope remain authoritative;
+    /// an observed payment advances a due date only after that date has passed.
+    func reconcileCommitments(with series: [RecurringSeries], now: Date = .now) throws {
+        let commitments = try confirmedCommitments()
+        var changed = false
+
+        for group in Dictionary(grouping: commitments.filter { !$0.detectorID.isEmpty }, by: \.detectorID).values {
+            guard let target = group.max(by: {
+                if $0.modifiedAt != $1.modifiedAt { return $0.modifiedAt < $1.modifiedAt }
+                return $0.uuid.uuidString < $1.uuid.uuidString
+            }) else { continue }
+
+            for duplicate in group where duplicate.persistentModelID != target.persistentModelID {
+                if target.name.isEmpty { target.name = duplicate.name }
+                if target.accountScope.isEmpty { target.accountScope = duplicate.accountScope }
+                if let observed = duplicate.lastObservedDate,
+                   observed > (target.lastObservedDate ?? .distantPast) {
+                    target.lastObservedDate = observed
+                    target.lastObservedAmountMinorUnits = duplicate.lastObservedAmountMinorUnits
+                }
+                if duplicate.createdAt < target.createdAt { target.createdAt = duplicate.createdAt }
+                modelContext.delete(duplicate)
+                changed = true
+            }
+
+            guard let evidence = series.first(where: { $0.id == target.detectorID }) else { continue }
+            if target.lastObservedDate != evidence.lastDate {
+                target.lastObservedDate = evidence.lastDate
+                target.lastObservedAmountMinorUnits = evidence.latestAmountMinorUnits
+                target.modifiedAt = now
+                changed = true
+            } else if target.lastObservedAmountMinorUnits != evidence.latestAmountMinorUnits {
+                target.lastObservedAmountMinorUnits = evidence.latestAmountMinorUnits
+                target.modifiedAt = now
+                changed = true
+            }
+
+            if target.state == .active,
+               target.nextDueDate <= evidence.lastDate,
+               evidence.nextExpectedDate > target.nextDueDate {
+                target.nextDueDate = evidence.nextExpectedDate
+                target.modifiedAt = now
+                changed = true
+            }
+        }
+
+        if changed { try modelContext.save() }
     }
 
     func updateCommitment(_ commitment: ConfirmedCommitment, name: String, amountMinorUnits: Int64, cadence: RecurringCadence, nextDueDate: Date, state: CommitmentState, accountScope: String, now: Date = .now) throws {
@@ -36,15 +88,15 @@ public extension SyncEngine {
     }
 
     func systemSurfaceCommitments(now: Date = .now) throws -> [SystemSurfaceCommitment] {
-        try confirmedCommitments().map {
+        try confirmedCommitments().filter { $0.state == .active }.map {
             SystemSurfaceCommitment(
-                id: $0.detectorID,
+                id: $0.detectorID.isEmpty ? $0.uuid.uuidString : $0.detectorID,
                 status: CommitmentStatusEvaluator.status(
                     nextDueDate: $0.nextDueDate,
                     now: now,
                     lastObservedDate: $0.lastObservedDate,
                     expectedAmount: $0.amountMinorUnits,
-                    observedAmount: $0.lastObservedAmountMinorUnits,
+                    observedAmount: $0.lastObservedDate == nil ? nil : $0.lastObservedAmountMinorUnits,
                     uncertain: $0.state == .active && $0.lastObservedDate == nil
                 ),
                 dueDate: $0.nextDueDate

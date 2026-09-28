@@ -476,6 +476,7 @@ struct TransactionDetailView: View {
     @State private var showingRuleEditor = false
     @State private var ruleToEdit: CategorizationRule?
     @State private var showingSettlementLink = false
+    @State private var showingUnlinkConfirmation = false
 
     private let columns = [GridItem(.adaptive(minimum: 148), spacing: 8)]
 
@@ -521,6 +522,16 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $showingSettlementLink) {
             SettlementLinkSheet(expense: transaction)
                 .cairnLockCover()
+        }
+        .confirmationDialog(
+            "Unlink this shared expense?",
+            isPresented: $showingUnlinkConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Unlink settlement", role: .destructive) { unlinkSettlement() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Both original bank transactions will remain unchanged.")
         }
         .sensoryFeedback(.selection, trigger: transaction.effectiveCategory?.uuid)
     }
@@ -717,13 +728,13 @@ struct TransactionDetailView: View {
 
     @ViewBuilder
     private var settlementCard: some View {
-        if transaction.amountMinorUnits < 0 {
+        if transaction.amountMinorUnits < 0 || transaction.isSettlementLinked {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
                     CardHeader(
-                        "Shared expense",
+                        transaction.settlementRole == .reimbursement ? "Shared expense reimbursement" : "Shared expense",
                         subtitle: transaction.isSettlementLinked
-                            ? "The reimbursement remains visible as its own bank transaction."
+                            ? "Both original bank transactions remain visible."
                             : "Link one incoming reimbursement without changing either bank row."
                     )
                     if transaction.isSettlementLinked {
@@ -733,9 +744,12 @@ struct TransactionDetailView: View {
                         detailRow("Reimbursement received", settlementSummary.map { formatted($0.reimbursementReceivedMinorUnits) } ?? "—")
                         detailRow("Net personal cost", settlementSummary.map { formatted($0.netPersonalCostMinorUnits) } ?? "—")
                         detailRow("Outstanding", settlementSummary.map { formatted($0.outstandingMinorUnits) } ?? "—")
-                        Text("Cash flow: both original bank rows stay visible; Insights nets the incoming row against its category rather than treating it as a transfer.")
+                        Text("Insights and budgets net the incoming row against the linked expense category rather than treating it as a transfer.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Button(role: .destructive) { showingUnlinkConfirmation = true } label: {
+                            Label("Unlink settlement", systemImage: "link.badge.plus")
+                        }
                     } else {
                         Button("Link reimbursement…", systemImage: "link") {
                             showingSettlementLink = true
@@ -749,19 +763,30 @@ struct TransactionDetailView: View {
 
     private var settlementSummary: SettlementSummary? {
         guard let id = transaction.settlementID else { return nil }
-        let reimbursement = allTransactions.first {
+        let linkedRows = allTransactions.filter {
             $0.settlementID == id && $0.settlementRole == .reimbursement
         }
+        let expense = allTransactions.first { $0.settlementID == id && $0.settlementRole == .expense }
+        let reimbursement = linkedRows.first
+        guard let expense else { return nil }
         return SettlementCalculator.summary(
-            expenseAmountMinorUnits: transaction.settlementRole == .expense
-                ? transaction.amountMinorUnits
-                : (reimbursement?.amountMinorUnits ?? transaction.amountMinorUnits),
-            reimbursementAmountMinorUnits: transaction.settlementRole == .reimbursement
-                ? transaction.amountMinorUnits
-                : (reimbursement?.amountMinorUnits ?? 0),
-            expectedAmountMinorUnits: transaction.settlementExpectedAmountMinorUnits,
-            status: transaction.settlementStatus
+            expenseAmountMinorUnits: expense.amountMinorUnits,
+            reimbursementAmountMinorUnits: reimbursement?.amountMinorUnits ?? 0,
+            expectedAmountMinorUnits: expense.settlementExpectedAmountMinorUnits,
+            status: expense.settlementStatus
         )
+    }
+
+    private func unlinkSettlement() {
+        guard let id = transaction.settlementID else { return }
+        let rows = allTransactions.filter { $0.settlementID == id }
+        LedgerTransaction.unlinkSettlement(rows)
+        do {
+            try modelContext.save()
+        } catch {
+            // The next SwiftData refresh will leave the link intact if saving
+            // failed; the detail screen remains safe to revisit.
+        }
     }
 
     private func formatted(_ minorUnits: Int64) -> String {
@@ -997,7 +1022,7 @@ private struct SettlementLinkSheet: View {
     private var transactions: [LedgerTransaction]
 
     let expense: LedgerTransaction
-    @State private var selectedBankTransactionID: String?
+    @State private var selectedReimbursementID: PersistentIdentifier?
     @State private var counterparty = ""
     @State private var expectedAmount = ""
     @State private var status: SettlementStatus = .expected
@@ -1034,7 +1059,7 @@ private struct SettlementLinkSheet: View {
                     } else {
                         ForEach(candidates) { candidate in
                             Button {
-                                selectedBankTransactionID = candidate.bankTransactionID
+                                selectedReimbursementID = candidate.persistentModelID
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading) {
@@ -1045,12 +1070,18 @@ private struct SettlementLinkSheet: View {
                                     }
                                     Spacer()
                                     AmountText(money: candidate.amount)
-                                    if selectedBankTransactionID == candidate.bankTransactionID {
-                                        Image(systemName: "checkmark.circle.fill")
-                                    }
+                                     if selectedReimbursementID == candidate.persistentModelID {
+                                         Image(systemName: "checkmark.circle.fill")
+                                     }
                                 }
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(
+                                selectedReimbursementID == candidate.persistentModelID ? .isSelected : []
+                            )
+                            .accessibilityValue(
+                                selectedReimbursementID == candidate.persistentModelID ? "Selected" : "Not selected"
+                            )
                         }
                     }
                 }
@@ -1068,15 +1099,15 @@ private struct SettlementLinkSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Link") { link() }
-                        .disabled(selectedBankTransactionID == nil)
+                        .disabled(selectedReimbursementID == nil)
                 }
             }
         }
     }
 
     private func link() {
-        guard let id = selectedBankTransactionID,
-              let reimbursement = candidates.first(where: { $0.bankTransactionID == id }) else { return }
+        guard let id = selectedReimbursementID,
+              let reimbursement = candidates.first(where: { $0.persistentModelID == id }) else { return }
         let parsedExpected = expectedAmount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil
             : MinorUnits.parse(expectedAmount, exponent: expense.amount.currency.exponent)

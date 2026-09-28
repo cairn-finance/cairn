@@ -1128,6 +1128,20 @@ public actor SyncEngine {
                let current = existing.userCategory?.uuid, incoming != current {
                 return false
             }
+            if let incoming = transaction.settlementID,
+               let current = existing.settlementID,
+               incoming != current {
+                return false
+            }
+            if transaction.isSettlementLinked,
+               existing.isSettlementLinked,
+               (transaction.settlementRole != existing.settlementRole
+                || transaction.settlementStatus != existing.settlementStatus
+                || transaction.settlementCounterparty != existing.settlementCounterparty
+                || transaction.settlementExpectedAmountMinorUnits != existing.settlementExpectedAmountMinorUnits
+                || transaction.settlementLinkedAmountMinorUnits != existing.settlementLinkedAmountMinorUnits) {
+                return false
+            }
         }
         return true
     }
@@ -1218,6 +1232,41 @@ public actor SyncEngine {
         }
         if target.autoCategorizeAttemptedAt == nil {
             target.autoCategorizeAttemptedAt = source.autoCategorizeAttemptedAt
+        }
+        mergeSettlementFields(from: source, into: target)
+    }
+
+    /// Preserves a settlement link while duplicate bank rows are collapsed. A
+    /// conflicting link is rejected by `canMerge`; matching links can safely
+    /// fill missing metadata or take the newer user revision.
+    private func mergeSettlementFields(from source: LedgerTransaction, into target: LedgerTransaction) {
+        guard source.settlementID != nil || source.isSettlementLinked else { return }
+
+        if target.settlementID == nil {
+            target.settlementID = source.settlementID
+            target.settlementRoleRaw = source.settlementRoleRaw
+            target.settlementStatusRaw = source.settlementStatusRaw
+            target.settlementCounterparty = source.settlementCounterparty
+            target.settlementExpectedAmountMinorUnits = source.settlementExpectedAmountMinorUnits
+            target.settlementLinkedAmountMinorUnits = source.settlementLinkedAmountMinorUnits
+            return
+        }
+
+        guard target.settlementID == source.settlementID else { return }
+        if source.modifiedAt > target.modifiedAt {
+            target.settlementRoleRaw = source.settlementRoleRaw
+            target.settlementStatusRaw = source.settlementStatusRaw
+            target.settlementCounterparty = source.settlementCounterparty
+            target.settlementExpectedAmountMinorUnits = source.settlementExpectedAmountMinorUnits
+            target.settlementLinkedAmountMinorUnits = source.settlementLinkedAmountMinorUnits
+        } else {
+            if target.settlementCounterparty == nil { target.settlementCounterparty = source.settlementCounterparty }
+            if target.settlementExpectedAmountMinorUnits == nil {
+                target.settlementExpectedAmountMinorUnits = source.settlementExpectedAmountMinorUnits
+            }
+            if target.settlementLinkedAmountMinorUnits == nil {
+                target.settlementLinkedAmountMinorUnits = source.settlementLinkedAmountMinorUnits
+            }
         }
     }
 

@@ -120,9 +120,15 @@ struct TransactionsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Review Inbox")
                         .font(.headline)
-                    Text(count == 0 ? "You're all caught up" : "\(count) transaction\(count == 1 ? "" : "s") need attention")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    if count == 0 {
+                        Text("You're all caught up")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("^[\(count) transaction](inflect: true) need attention")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")

@@ -72,6 +72,8 @@ targets:
     supportedDestinations: [iOS]
     sources:
       - path: CairnWidgets
+    resources:
+      - path: CairnWidgets/Resources
     dependencies:
       - package: CairnCore
         product: CairnCore
@@ -81,7 +83,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: CairnWidgets
-        PRODUCT_BUNDLE_IDENTIFIER: $(PRODUCT_BUNDLE_IDENTIFIER).widgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(CAIRN_HOST_BUNDLE_IDENTIFIER).widgets
         MARKETING_VERSION: "1.1.0"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_ENTITLEMENTS: Config/CairnWidgets.entitlements

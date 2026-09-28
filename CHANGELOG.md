@@ -8,6 +8,27 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Forecasts, budgets, net worth, insights, and recurring views now keep full
+  currency descriptors separate instead of grouping by currency code alone.
+
+- Confirmed commitments reconcile observed payments without overwriting user
+  edits, and duplicate synced plans preserve the newest user-owned revision.
+
+- Shared-expense links now survive safe duplicate-account repair, can be
+  unlinked, and offset the linked expense in Insights and budgets without
+  turning the reimbursement into income or a transfer.
+
+- Widgets and local alerts now expire stale snapshots, remove Cairn-owned
+  notifications when data is locked or deleted, and report due-today and
+  changed commitments without exposing financial detail.
+
+- Shortcuts now report unavailable stores, locked data, missing connections,
+  and sync failures instead of returning an empty or successful result.
+
+- Budget and commitment editing validates amounts, review actions explain why
+  uncategorized rows remain, and new system-surface, settlement, currency,
+  localization, and accessibility strings are covered.
+
 - Existing stores now migrate from schema V3 to schema V4 before using
   settlement metadata and confirmed commitments, preserving data from earlier
   installs.

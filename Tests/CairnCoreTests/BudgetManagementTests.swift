@@ -41,6 +41,34 @@ struct BudgetManagementTests {
         #expect(result.remainingMinorUnits == 10_000)
     }
 
+    @Test("A reimbursement cannot create negative budget usage")
+    func reimbursementDoesNotGoBelowZero() throws {
+        let groceries = budgetCategory("Groceries")
+        let start = try #require(BudgetCalculator.startOfMonth("2026-09", timeZone: timeZone))
+        let result = BudgetCalculator.snapshot(
+            transactions: [
+                BudgetTransaction(
+                    date: start, amountMinorUnits: -1_000,
+                    categoryUUID: groceries.uuid, categoryName: groceries.name,
+                    isTransfer: false, isIgnored: false, isPending: false
+                ),
+                BudgetTransaction(
+                    date: start, amountMinorUnits: 2_000,
+                    categoryUUID: groceries.uuid, categoryName: groceries.name,
+                    isTransfer: false, isIgnored: false, isPending: false
+                ),
+            ],
+            categories: [groceries],
+            settings: [],
+            monthKey: "2026-09",
+            currency: .usd,
+            timeZone: timeZone
+        )
+
+        #expect(result.spentMinorUnits == 0)
+        #expect(result.lines.first?.spentMinorUnits == 0)
+    }
+
     @Test("An override controls one month and preserves the recurring limit")
     func monthOverrideResolution() {
         let categoryID = UUID()

@@ -126,6 +126,52 @@ struct InsightsCalculatorTests {
         #expect(snapshot.categories.first?.amountMinorUnits == 100_000)
     }
 
+    @Test("Linked reimbursements reduce spending instead of income")
+    func linkedReimbursementTotals() {
+        let snapshot = InsightsCalculator.snapshot(
+            transactions: [
+                InsightTransaction(
+                    date: date(2026, 2, 3), amountMinorUnits: -200_000,
+                    categoryName: "Housing", merchant: "Landlord"
+                ),
+                InsightTransaction(
+                    date: date(2026, 2, 5), amountMinorUnits: 100_000,
+                    categoryName: "Housing", merchant: "Roommate",
+                    isSettlementReimbursement: true
+                ),
+            ],
+            month: date(2026, 2, 1),
+            calendar: Self.calendar
+        )
+
+        #expect(snapshot.current.incomeMinorUnits == 0)
+        #expect(snapshot.current.spendingMinorUnits == 100_000)
+        #expect(snapshot.current.netMinorUnits == -100_000)
+    }
+
+    @Test("Cumulative pace subtracts a reimbursement when it arrives")
+    func cumulativeReimbursement() {
+        let points = InsightsCalculator.cumulativeSpending(
+            transactions: [
+                InsightTransaction(
+                    date: date(2026, 2, 3), amountMinorUnits: -200_000,
+                    categoryName: "Housing"
+                ),
+                InsightTransaction(
+                    date: date(2026, 2, 5), amountMinorUnits: 100_000,
+                    categoryName: "Housing",
+                    isSettlementReimbursement: true
+                ),
+            ],
+            month: date(2026, 2, 1),
+            now: date(2026, 3, 15),
+            calendar: Self.calendar
+        )
+
+        #expect(points[2].amountMinorUnits == 200_000)
+        #expect(points[4].amountMinorUnits == 100_000)
+    }
+
     @Test("Does not show a category whose reimbursement exceeds its charges")
     func categoryReimbursementExceedsSpending() {
         let snapshot = InsightsCalculator.snapshot(
