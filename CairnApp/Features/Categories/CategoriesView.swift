@@ -29,19 +29,19 @@ struct CategoriesView: View {
     @Environment(AppModel.self) private var model
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV3.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV3.Category.createdAt),
+            SortDescriptor(\CairnSchemaV4.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV4.Category.createdAt),
         ]
     )
-    private var categories: [CairnSchemaV3.Category]
+    private var categories: [CairnSchemaV4.Category]
     @Query private var categoryBudgets: [CategoryBudget]
 
     @State private var editorTarget: EditorTarget?
-    @State private var pendingDeletion: CairnSchemaV3.Category?
+    @State private var pendingDeletion: CairnSchemaV4.Category?
 
     private enum EditorTarget: Identifiable {
         case create
-        case edit(CairnSchemaV3.Category)
+        case edit(CairnSchemaV4.Category)
 
         var id: String {
             switch self {
@@ -51,8 +51,8 @@ struct CategoriesView: View {
         }
     }
 
-    private var active: [CairnSchemaV3.Category] { categories.filter { !$0.isArchived } }
-    private var archived: [CairnSchemaV3.Category] { categories.filter(\.isArchived) }
+    private var active: [CairnSchemaV4.Category] { categories.filter { !$0.isArchived } }
+    private var archived: [CairnSchemaV4.Category] { categories.filter(\.isArchived) }
 
     var body: some View {
         List {
@@ -135,7 +135,7 @@ struct CategoriesView: View {
 
     // MARK: - Rows
 
-    private func row(_ category: CairnSchemaV3.Category, reorderable: Bool) -> some View {
+    private func row(_ category: CairnSchemaV4.Category, reorderable: Bool) -> some View {
         HStack(spacing: 12) {
             Button {
                 editorTarget = .edit(category)
@@ -178,7 +178,7 @@ struct CategoriesView: View {
         }
     }
 
-    private func archivedRow(_ category: CairnSchemaV3.Category) -> some View {
+    private func archivedRow(_ category: CairnSchemaV4.Category) -> some View {
         HStack(spacing: 12) {
             CategoryBadge(symbolName: category.symbolName, hex: category.colorHex, size: 36)
                 .opacity(0.55)
@@ -207,7 +207,7 @@ struct CategoriesView: View {
         }
     }
 
-    private func reorderControls(_ category: CairnSchemaV3.Category) -> some View {
+    private func reorderControls(_ category: CairnSchemaV4.Category) -> some View {
         HStack(spacing: 2) {
             Button {
                 Task { await model.moveCategory(id: category.uuid, direction: .up) }
@@ -231,7 +231,7 @@ struct CategoriesView: View {
 
     // MARK: - Deletion
 
-    private func deletionDecision(for category: CairnSchemaV3.Category) -> CategoryDeletionDecision {
+    private func deletionDecision(for category: CairnSchemaV4.Category) -> CategoryDeletionDecision {
         let transactionCount = (category.userTransactions?.count ?? 0)
             + (category.autoTransactions?.count ?? 0)
         let budgetEntryCount = categoryBudgets.filter { $0.categoryUUID == category.uuid }.count
@@ -243,7 +243,7 @@ struct CategoriesView: View {
         )
     }
 
-    private func deletionMessage(for category: CairnSchemaV3.Category) -> String {
+    private func deletionMessage(for category: CairnSchemaV4.Category) -> String {
         switch deletionDecision(for: category) {
         case .delete:
             return "This category isn’t used by any transaction, rule, or budget, so it can be deleted for good."
@@ -261,7 +261,7 @@ struct CategoriesView: View {
         }
     }
 
-    private func referenceSummary(_ category: CairnSchemaV3.Category) -> String {
+    private func referenceSummary(_ category: CairnSchemaV4.Category) -> String {
         let transactionCount = (category.userTransactions?.count ?? 0)
             + (category.autoTransactions?.count ?? 0)
         let ruleCount = category.rules?.count ?? 0
@@ -286,7 +286,7 @@ struct CategoryEditorView: View {
     @Environment(AppModel.self) private var model
 
     /// When set, the editor edits this category instead of creating one.
-    var category: CairnSchemaV3.Category?
+    var category: CairnSchemaV4.Category?
 
     @State private var didLoad = false
     @State private var name = ""

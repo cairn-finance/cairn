@@ -18,8 +18,8 @@ struct CategoryManagementTests {
         sortOrder: Int,
         isSystem: Bool = false,
         archived: Bool = false
-    ) -> CairnSchemaV3.Category {
-        let category = CairnSchemaV3.Category(
+    ) -> CairnSchemaV4.Category {
+        let category = CairnSchemaV4.Category(
             name: name,
             symbolName: "tag.fill",
             colorHex: "#8E8E93",
@@ -32,13 +32,13 @@ struct CategoryManagementTests {
     }
 
     /// Reads back through a fresh context, since the engine writes on its own.
-    private func refetch(_ id: UUID, in container: ModelContainer) throws -> CairnSchemaV3.Category {
-        let stored = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV3.Category>())
+    private func refetch(_ id: UUID, in container: ModelContainer) throws -> CairnSchemaV4.Category {
+        let stored = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV4.Category>())
         return try #require(stored.first { $0.uuid == id })
     }
 
-    private func ordered(_ container: ModelContainer) throws -> [CairnSchemaV3.Category] {
-        try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV3.Category>())
+    private func ordered(_ container: ModelContainer) throws -> [CairnSchemaV4.Category] {
+        try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV4.Category>())
             .sorted(by: SyncEngine.categoryOrder)
     }
 
@@ -102,7 +102,7 @@ struct CategoryManagementTests {
         let (container, engine) = try makeEngine()
         try await engine.seedDefaultCategoriesIfNeeded()
 
-        let all = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV3.Category>())
+        let all = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV4.Category>())
         for name in CategoryManagement.systemCategoryNames {
             let category = try #require(all.first { $0.name == name })
             #expect(category.isSystem)
@@ -119,7 +119,7 @@ struct CategoryManagementTests {
 
         _ = try await engine.deduplicateCategories()
 
-        let all = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV3.Category>())
+        let all = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV4.Category>())
         #expect(all.first { $0.name == "Fees" }?.isSystem == true)
         #expect(all.first { $0.name == "Income" }?.isSystem == true)
     }
@@ -291,7 +291,7 @@ struct CategoryManagementTests {
 
         try await engine.deleteCategory(id: category.uuid)
 
-        #expect(try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV3.Category>()).isEmpty)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV4.Category>()).isEmpty)
     }
 
     @Test("A referenced category is refused rather than orphaned")
@@ -313,7 +313,7 @@ struct CategoryManagementTests {
         await #expect(throws: CategoryManagementError.referenced(transactionCount: 1, ruleCount: 0)) {
             try await engine.deleteCategory(id: category.uuid)
         }
-        let stored = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV3.Category>())
+        let stored = try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV4.Category>())
         #expect(stored.count == 1)
         #expect(transaction.userCategory?.uuid == category.uuid)
     }
@@ -328,6 +328,6 @@ struct CategoryManagementTests {
         await #expect(throws: CategoryManagementError.systemCategory) {
             try await engine.deleteCategory(id: category.uuid)
         }
-        #expect(try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV3.Category>()).count == 1)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<CairnSchemaV4.Category>()).count == 1)
     }
 }

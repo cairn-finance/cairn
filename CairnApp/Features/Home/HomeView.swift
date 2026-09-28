@@ -14,8 +14,9 @@ struct HomeView: View {
     )
     private var accounts: [Account]
     @Query private var settings: [AppSettings]
-    @Query private var categories: [CairnSchemaV3.Category]
+    @Query private var categories: [CairnSchemaV4.Category]
     @Query private var budgetSettings: [CategoryBudget]
+    @Query private var commitments: [ConfirmedCommitment]
 
     @State private var showingConnect = false
     @State private var showingManualAccount = false
@@ -94,7 +95,7 @@ struct HomeView: View {
                 NavigationLink {
                     BudgetView(
                         initialMonthKey: budgetMonthKey,
-                        initialCurrencyCode: budgetCurrency.code
+                        initialCurrency: budgetCurrency
                     )
                 } label: {
                     budgetSummaryCard
@@ -105,7 +106,13 @@ struct HomeView: View {
                     NavigationLink {
                         RecurringView()
                     } label: {
-                        RecurringSummaryCard(series: homeRecurring, currency: homeCurrency)
+                        RecurringSummaryCard(
+                            series: homeRecurring,
+                            currency: homeCurrency,
+                            confirmedCount: commitments
+                                .filter { $0.state == .active && $0.currency == homeCurrency }
+                                .count
+                        )
                     }
                     .buttonStyle(.pressableCard)
                 }
@@ -114,7 +121,8 @@ struct HomeView: View {
     }
 
     private var budgetCurrency: Currency {
-        accounts.first(where: { $0.currency.code == homeCurrency.code })?.currency
+        accounts.first(where: { $0.currency == homeCurrency })?.currency
+            ?? accounts.first(where: { $0.currency.code == homeCurrency.code })?.currency
             ?? accounts.first?.currency
             ?? homeCurrency
     }
@@ -125,7 +133,7 @@ struct HomeView: View {
 
     private var budgetTimeZone: TimeZone {
         budgetSettings
-            .filter { $0.currencyCode == budgetCurrency.code }
+            .filter { $0.currency == budgetCurrency }
             .sorted {
                 if $0.monthKey != $1.monthKey { return $0.monthKey < $1.monthKey }
                 return $0.uuid.uuidString < $1.uuid.uuidString
@@ -136,11 +144,18 @@ struct HomeView: View {
 
     private var budgetReloadKey: String {
         let editStamp = budgetSettings.map(\.modifiedAt).max()?.timeIntervalSince1970 ?? 0
-        let accountStamp = accounts.filter { $0.currency.code == budgetCurrency.code }
+        let accountStamp = accounts.filter { $0.currency == budgetCurrency }
             .map(\.bankAccountID).sorted().joined(separator: ",")
         let categoryStamp = categories.map { "\($0.uuid.uuidString):\($0.name):\($0.isArchived)" }
             .joined(separator: ",")
-        return "\(budgetReloadToken)-\(budgetMonthKey)-\(budgetCurrency.code)-\(editStamp)-\(accountStamp)-\(categoryStamp)"
+        return [
+            String(budgetReloadToken),
+            budgetMonthKey,
+            budgetCurrency.stableIdentifier,
+            String(editStamp),
+            accountStamp,
+            categoryStamp
+        ].joined(separator: "-")
     }
 
     private var budgetSnapshot: BudgetSnapshot? {
@@ -211,7 +226,7 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Monthly budget")
                     .font(.subheadline.weight(.semibold))
-                if Set(accounts.map(\.currency.code)).count > 1 {
+                if Set(accounts.map(\.currency)).count > 1 {
                     Text(budgetCurrency.code)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -343,7 +358,7 @@ struct HomeView: View {
     private func loadBudgetSummary() async {
         didLoadBudgetSummary = false
         budgetLoadFailed = false
-        let visible = accounts.filter { $0.currency.code == budgetCurrency.code }
+        let visible = accounts.filter { $0.currency == budgetCurrency }
         guard !visible.isEmpty,
               let start = BudgetCalculator.startOfMonth(budgetMonthKey, timeZone: budgetTimeZone) else {
             budgetTransactions = []
@@ -427,7 +442,7 @@ struct HomeView: View {
     }
 
     private var homeRecurring: [RecurringSeries] {
-        model.recurringSeries.filter { $0.currency.code == homeCurrency.code }
+        model.recurringSeries.filter { $0.currency == homeCurrency }
     }
 
     private var institutionsSection: some View {
@@ -593,7 +608,7 @@ struct NetWorthHero: View {
         NetWorthMath.primaryCurrency(totals: totals, home: NetWorthMath.homeCurrency(settings: settings))
     }
     private var total: Int64 {
-        totals.first { $0.currency.code == currency.code }?.totalMinorUnits ?? 0
+        totals.first { $0.currency == currency }?.totalMinorUnits ?? 0
     }
     private var series: [(date: Date, balanceMinorUnits: Int64)] {
         NetWorthMath.series(accounts: accounts, currency: currency, days: 30)

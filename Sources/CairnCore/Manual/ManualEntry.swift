@@ -118,6 +118,11 @@ extension SyncEngine {
         }
         try requireManual(account)
 
+        if let settlementID = transaction.settlementID {
+            let linkedRows = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
+                .filter { $0.settlementID == settlementID && $0.persistentModelID != transaction.persistentModelID }
+            LedgerTransaction.unlinkSettlement(linkedRows, now: now)
+        }
         modelContext.delete(transaction)
         try recomputeManualBalance(account, now: now)
         try modelContext.save()

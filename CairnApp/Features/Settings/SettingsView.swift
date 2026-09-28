@@ -2,6 +2,9 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import CairnCore
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
@@ -11,8 +14,8 @@ struct SettingsView: View {
     private var walletAccounts: [Account]
     @Query(sort: \CategorizationRule.createdAt) private var rules: [CategorizationRule]
     @Query(sort: \Tag.name) private var tags: [Tag]
-    @Query(sort: [SortDescriptor(\CairnSchemaV3.Category.sortOrder)])
-    private var categories: [CairnSchemaV3.Category]
+    @Query(sort: [SortDescriptor(\CairnSchemaV4.Category.sortOrder)])
+    private var categories: [CairnSchemaV4.Category]
 
     @State private var storageMode: StoreMode = .local
     @State private var exportDocument: ExportFile?
@@ -50,6 +53,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             syncSection
+            alertsSection
             institutionsSection
             categorizationSection
             organizationSection
@@ -141,6 +145,31 @@ struct SettingsView: View {
 
     // MARK: - Sync
 
+    private var alertsSection: some View {
+        Section {
+            Button {
+                Task {
+                    let granted = await SystemSurfaceCoordinator.requestAuthorizationAndSchedule(for: model)
+                    model.banner = granted
+                        ? "Alerts enabled for connection and forecast changes."
+                        : "Alerts were not enabled. You can change this in System Settings."
+                }
+            } label: {
+                IconRow("Enable Cairn Alerts", systemImage: "bell.badge", tint: CairnTheme.accent) {
+                    if UserDefaults.standard.bool(forKey: "cairn.notifications.enabled") {
+                        Text("Enabled").foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Alerts")
+        } footer: {
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
+            Text("Cairn schedules only actionable connection, forecast, and confirmed-commitment changes. It never claims live bank freshness or moves money.")
+        }
+    }
+
     private var syncSection: some View {
         Section {
             IconRow(
@@ -178,6 +207,11 @@ struct SettingsView: View {
                 }
             }
             .disabled(model.syncState == .syncing || institutions.isEmpty)
+            NavigationLink {
+                ConnectionHealthView()
+            } label: {
+                IconRow("Connection Health", systemImage: "heart.text.square", tint: CairnTheme.positive)
+            }
             NavigationLink {
                 SyncDiagnosticsView()
             } label: {
@@ -466,6 +500,8 @@ struct SettingsView: View {
             : String(localized: "Nothing leaves this device. No iCloud. No credential sync.")
         let deleteDataNote = model.storeMode == .cloud
             ? String(localized: "Delete All Data removes everything here and asks iCloud to remove it from your other devices.")
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
             : String(localized: "This device isn’t using iCloud, so Delete All Data removes everything here; nothing was uploaded to delete.")
         return [
             summary,
@@ -524,6 +560,9 @@ struct SettingsView: View {
             Button { exportBudgets() } label: {
                 IconRow("Export budgets as CSV", systemImage: "chart.pie", tint: CairnTheme.accent)
             }
+            Button { exportCommitments() } label: {
+                IconRow("Export commitments as CSV", systemImage: "calendar.badge.clock", tint: .orange)
+            }
             Button(role: .destructive) {
                 showingDeleteConfirm = true
             } label: {
@@ -533,7 +572,9 @@ struct SettingsView: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Exports include transactions, categories, notes, and budget limits. You choose where they save.")
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
+            Text("Exports include transactions, categories, notes, budget limits, and confirmed commitments. You choose where they save.")
         }
     }
 
@@ -620,6 +661,16 @@ struct SettingsView: View {
             exportDocument = ExportFile(data: data)
             exportType = .commaSeparatedText
             exportFileName = "cairn-budgets"
+            showingExporter = true
+        }
+    }
+
+    private func exportCommitments() {
+        Task {
+            guard let data = await model.exportCommitmentsCSV() else { return }
+            exportDocument = ExportFile(data: data)
+            exportType = .commaSeparatedText
+            exportFileName = "cairn-commitments"
             showingExporter = true
         }
     }

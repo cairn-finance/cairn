@@ -24,7 +24,7 @@ struct InvestmentsView: View {
     }
 
     private var totalMinorUnits: Int64 {
-        totals.first { $0.currency.code == currency.code }?.totalMinorUnits ?? 0
+        totals.first { $0.currency == currency }?.totalMinorUnits ?? 0
     }
 
     private var series: [(date: Date, balanceMinorUnits: Int64)] {

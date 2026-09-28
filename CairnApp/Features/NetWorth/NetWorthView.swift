@@ -70,7 +70,7 @@ struct NetWorthView: View {
     }
 
     private var currentTotal: Int64 {
-        totals.first { $0.currency.code == currency.code }?.totalMinorUnits ?? 0
+        totals.first { $0.currency == currency }?.totalMinorUnits ?? 0
     }
 
     private var series: [(date: Date, balanceMinorUnits: Int64)] {
@@ -291,7 +291,7 @@ struct NetWorthView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 CardHeader("Other currencies", subtitle: "Totals are kept per currency. Exchange rates are not used.")
-                ForEach(totals.filter { $0.currency.code != currency.code }) { total in
+                ForEach(totals.filter { $0.currency != currency }) { total in
                     HStack {
                         Text(total.currency.displayLabel)
                             .font(.callout)
@@ -307,7 +307,7 @@ struct NetWorthView: View {
     }
 
     private var accountsCard: some View {
-        let included = NetWorthMath.included(accounts).filter { $0.currency.code == currency.code }
+        let included = NetWorthMath.included(accounts).filter { $0.currency == currency }
         return VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: "Included accounts", trailing: "\(included.count)")
             RowGroup {

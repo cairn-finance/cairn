@@ -14,6 +14,10 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(CAIRN_APP_GROUP_ID)</string>
+	</array>
 	<!--
 	  Lets the sandboxed Mac app open the file a person picks for CSV import and
 	  write the one they choose for export. iOS ignores it.

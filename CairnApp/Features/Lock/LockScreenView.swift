@@ -55,6 +55,13 @@ struct LockGate<Content: View>: View {
             }
         }
         .onChange(of: model.lock.isLocked) { _, locked in
+            Task {
+                if locked {
+                    await SystemSurfaceCoordinator.clear()
+                } else if scenePhase == .active, model.storeFailure == nil {
+                    await model.refreshSystemSurfaces()
+                }
+            }
             // Enabling the lock while the app is already open should prompt at
             // once rather than waiting for the next foreground.
             guard locked, scenePhase == .active else { return }

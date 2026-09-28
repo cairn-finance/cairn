@@ -901,7 +901,7 @@ public actor SyncEngine {
         let retiring = Set(retirementTargets.keys)
         if !retiring.isEmpty {
             let current = try modelContext.fetch(FetchDescriptor<Institution>())
-            for institution in current where institution.isCredentialHolder
+            for institution in current where institution.bankConnectionID.isEmpty
                 && retiring.contains(institution.credentialID) {
                 let hasConnectionSibling = current.contains {
                     $0.credentialID == institution.credentialID
@@ -1128,6 +1128,19 @@ public actor SyncEngine {
                let current = existing.userCategory?.uuid, incoming != current {
                 return false
             }
+            if let incoming = transaction.settlementID,
+               let current = existing.settlementID,
+               incoming != current {
+                return false
+            }
+            let settlementChanged = transaction.settlementRole != existing.settlementRole
+                || transaction.settlementStatus != existing.settlementStatus
+                || transaction.settlementCounterparty != existing.settlementCounterparty
+                || transaction.settlementExpectedAmountMinorUnits != existing.settlementExpectedAmountMinorUnits
+                || transaction.settlementLinkedAmountMinorUnits != existing.settlementLinkedAmountMinorUnits
+            if transaction.isSettlementLinked, existing.isSettlementLinked, settlementChanged {
+                return false
+            }
         }
         return true
     }
@@ -1218,6 +1231,41 @@ public actor SyncEngine {
         }
         if target.autoCategorizeAttemptedAt == nil {
             target.autoCategorizeAttemptedAt = source.autoCategorizeAttemptedAt
+        }
+        mergeSettlementFields(from: source, into: target)
+    }
+
+    /// Preserves a settlement link while duplicate bank rows are collapsed. A
+    /// conflicting link is rejected by `canMerge`; matching links can safely
+    /// fill missing metadata or take the newer user revision.
+    private func mergeSettlementFields(from source: LedgerTransaction, into target: LedgerTransaction) {
+        guard source.settlementID != nil || source.isSettlementLinked else { return }
+
+        if target.settlementID == nil {
+            target.settlementID = source.settlementID
+            target.settlementRoleRaw = source.settlementRoleRaw
+            target.settlementStatusRaw = source.settlementStatusRaw
+            target.settlementCounterparty = source.settlementCounterparty
+            target.settlementExpectedAmountMinorUnits = source.settlementExpectedAmountMinorUnits
+            target.settlementLinkedAmountMinorUnits = source.settlementLinkedAmountMinorUnits
+            return
+        }
+
+        guard target.settlementID == source.settlementID else { return }
+        if source.modifiedAt > target.modifiedAt {
+            target.settlementRoleRaw = source.settlementRoleRaw
+            target.settlementStatusRaw = source.settlementStatusRaw
+            target.settlementCounterparty = source.settlementCounterparty
+            target.settlementExpectedAmountMinorUnits = source.settlementExpectedAmountMinorUnits
+            target.settlementLinkedAmountMinorUnits = source.settlementLinkedAmountMinorUnits
+        } else {
+            if target.settlementCounterparty == nil { target.settlementCounterparty = source.settlementCounterparty }
+            if target.settlementExpectedAmountMinorUnits == nil {
+                target.settlementExpectedAmountMinorUnits = source.settlementExpectedAmountMinorUnits
+            }
+            if target.settlementLinkedAmountMinorUnits == nil {
+                target.settlementLinkedAmountMinorUnits = source.settlementLinkedAmountMinorUnits
+            }
         }
     }
 
@@ -1608,6 +1656,14 @@ public actor SyncEngine {
         posted.isTransfer = pending.isTransfer
         posted.isIgnored = pending.isIgnored
         posted.reviewedAt = pending.reviewedAt ?? posted.reviewedAt
+        posted.settlementID = pending.settlementID ?? posted.settlementID
+        if pending.settlementRole != .none {
+            posted.settlementRoleRaw = pending.settlementRoleRaw
+            posted.settlementStatusRaw = pending.settlementStatusRaw
+            posted.settlementCounterparty = pending.settlementCounterparty
+            posted.settlementExpectedAmountMinorUnits = pending.settlementExpectedAmountMinorUnits
+            posted.settlementLinkedAmountMinorUnits = pending.settlementLinkedAmountMinorUnits
+        }
 
         if let pendingTags = pending.tags, !pendingTags.isEmpty {
             var merged = posted.tags ?? []
@@ -2932,7 +2988,17 @@ public actor SyncEngine {
                 isIgnored: txn.isIgnored,
                 note: txn.note,
                 tags: txn.effectiveTags.map(\.name).sorted(),
-                transactionID: txn.bankTransactionID
+                transactionID: txn.bankTransactionID,
+                settlementID: txn.settlementID?.uuidString,
+                settlementRole: txn.isSettlementLinked ? txn.settlementRole.rawValue : nil,
+                settlementStatus: txn.isSettlementLinked ? txn.settlementStatus.rawValue : nil,
+                settlementCounterparty: txn.settlementCounterparty,
+                settlementExpectedAmount: txn.settlementExpectedAmountMinorUnits.map {
+                    MinorUnits.string($0, exponent: currency.exponent)
+                },
+                settlementLinkedAmount: txn.settlementLinkedAmountMinorUnits.map {
+                    MinorUnits.string($0, exponent: currency.exponent)
+                }
             )
         }
     }
@@ -2975,6 +3041,7 @@ public actor SyncEngine {
     public func deleteAllData() throws {
         try modelContext.delete(model: LedgerTransaction.self)
         try modelContext.delete(model: CategoryBudget.self)
+        try modelContext.delete(model: ConfirmedCommitment.self)
         try modelContext.delete(model: BalanceSnapshot.self)
         try modelContext.delete(model: Holding.self)
         try modelContext.delete(model: CategorizationRule.self)

@@ -35,6 +35,12 @@ targets:
     dependencies:
       - package: CairnCore
         product: CairnCore
+      - target: CairnWidgets
+        embed: true
+        # The widget is iOS-only. Keep the app's macOS target independent of
+        # the extension so Xcode does not build or embed an iOS extension in a
+        # macOS application.
+        destinationFilters: [iOS]
     configFiles:
       # Signing settings live in xcconfig so team and bundle id stay out of git.
       Debug: Config/Signing.xcconfig
@@ -60,6 +66,30 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         DEVELOPMENT_ASSET_PATHS: ""
+
+  CairnWidgets:
+    type: app-extension
+    supportedDestinations: [iOS]
+    sources:
+      - path: CairnWidgets
+    resources:
+      - path: CairnWidgets/Resources
+    dependencies:
+      - package: CairnCore
+        product: CairnCore
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: CairnWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(CAIRN_HOST_BUNDLE_IDENTIFIER).widgets
+        MARKETING_VERSION: "1.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_ENTITLEMENTS: Config/CairnWidgets.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: CairnWidgets/Info.plist
+        SWIFT_VERSION: "6.0"
 
 schemes:
   Cairn:

@@ -5,18 +5,18 @@ import CairnCore
 /// Monthly category limits and actual spending for one account currency.
 struct BudgetView: View {
     private let initialMonthKey: String?
-    private let initialCurrencyCode: String?
+    private let initialCurrency: Currency?
 
     @Environment(AppModel.self) private var model
     @Query(filter: #Predicate<Account> { $0.isHidden == false }, sort: \Account.displayOrder)
     private var accounts: [Account]
-    @Query(sort: [SortDescriptor(\CairnSchemaV3.Category.sortOrder), SortDescriptor(\CairnSchemaV3.Category.createdAt)])
-    private var categories: [CairnSchemaV3.Category]
+    @Query(sort: [SortDescriptor(\CairnSchemaV4.Category.sortOrder), SortDescriptor(\CairnSchemaV4.Category.createdAt)])
+    private var categories: [CairnSchemaV4.Category]
     @Query private var appSettings: [AppSettings]
     @Query private var savedSettings: [CategoryBudget]
 
     @State private var monthKey: String
-    @State private var selectedCurrencyCode: String
+    @State private var selectedCurrencyID: String
     @State private var transactions: [BudgetTransaction] = []
     @State private var reloadToken = 0
     @State private var isLoading = false
@@ -27,19 +27,22 @@ struct BudgetView: View {
     @State private var showingResetConfirmation = false
     @State private var isResetting = false
 
-    init(initialMonthKey: String? = nil, initialCurrencyCode: String? = nil) {
+    init(initialMonthKey: String? = nil, initialCurrency: Currency? = nil) {
         self.initialMonthKey = initialMonthKey
-        self.initialCurrencyCode = initialCurrencyCode
+        self.initialCurrency = initialCurrency
         _monthKey = State(initialValue: initialMonthKey ?? BudgetCalculator.monthKey(for: .now))
-        _selectedCurrencyCode = State(initialValue: initialCurrencyCode ?? "")
+        _selectedCurrencyID = State(initialValue: "")
     }
 
     private var currencies: [Currency] {
-        var seen = Set<String>()
+        var seen = Set<Currency>()
         return accounts.compactMap { account in
-            guard seen.insert(account.currency.code).inserted else { return nil }
+            guard seen.insert(account.currency).inserted else { return nil }
             return account.currency
-        }.sorted { $0.code.localizedStandardCompare($1.code) == .orderedAscending }
+        }.sorted {
+            if $0.code != $1.code { return $0.code.localizedStandardCompare($1.code) == .orderedAscending }
+            return $0.stableIdentifier < $1.stableIdentifier
+        }
     }
 
     private var defaultCurrency: Currency {
@@ -48,16 +51,16 @@ struct BudgetView: View {
     }
 
     private var currency: Currency {
-        currencies.first(where: { $0.code == selectedCurrencyCode }) ?? defaultCurrency
+        currencies.first(where: { $0.stableIdentifier == selectedCurrencyID }) ?? defaultCurrency
     }
 
     private var budgetTimeZone: TimeZone {
-        budgetTimeZone(forCurrencyCode: currency.code)
+        budgetTimeZone(forCurrency: currency)
     }
 
-    private func budgetTimeZone(forCurrencyCode code: String) -> TimeZone {
+    private func budgetTimeZone(forCurrency currency: Currency) -> TimeZone {
         savedSettings
-            .filter { $0.currencyCode == code }
+            .filter { $0.currency == currency }
             .sorted {
                 if $0.monthKey != $1.monthKey { return $0.monthKey < $1.monthKey }
                 return $0.uuid.uuidString < $1.uuid.uuidString
@@ -68,12 +71,13 @@ struct BudgetView: View {
 
     private var currencySelection: Binding<String> {
         Binding(
-            get: { selectedCurrencyCode },
-            set: { code in
-                selectedCurrencyCode = code
+            get: { selectedCurrencyID },
+            set: { identifier in
+                selectedCurrencyID = identifier
+                let selected = currencies.first(where: { $0.stableIdentifier == identifier }) ?? defaultCurrency
                 monthKey = BudgetCalculator.monthKey(
                     for: .now,
-                    timeZone: budgetTimeZone(forCurrencyCode: code)
+                    timeZone: budgetTimeZone(forCurrency: selected)
                 )
             }
         )
@@ -96,7 +100,7 @@ struct BudgetView: View {
     }
 
     private var currencyAccounts: [Account] {
-        accounts.filter { $0.currency.code == currency.code }
+        accounts.filter { $0.currency == currency }
     }
 
     private var settingsValues: [BudgetSetting] {
@@ -140,7 +144,7 @@ struct BudgetView: View {
     }
 
     private var reloadKey: String {
-        "\(reloadToken)-\(monthKey)-\(currency.code)-\(budgetTimeZone.identifier)"
+        "\(reloadToken)-\(monthKey)-\(currency.stableIdentifier)-\(budgetTimeZone.identifier)"
     }
 
     var body: some View {
@@ -228,9 +232,10 @@ struct BudgetView: View {
         }
         .task {
             if !didInitializeSelection {
-                selectedCurrencyCode = currencies.first(where: { $0.code == initialCurrencyCode })?.code
-                    ?? defaultCurrency.code
-                let timeZone = budgetTimeZone(forCurrencyCode: selectedCurrencyCode)
+                let initialCurrency = currencies.first(where: { $0 == self.initialCurrency })
+                    ?? defaultCurrency
+                selectedCurrencyID = initialCurrency.stableIdentifier
+                let timeZone = budgetTimeZone(forCurrency: initialCurrency)
                 if let initialMonthKey,
                    BudgetCalculator.startOfMonth(initialMonthKey, timeZone: timeZone) != nil {
                     monthKey = initialMonthKey
@@ -292,9 +297,9 @@ struct BudgetView: View {
 
     private var currencyPicker: some View {
         Picker("Currency", selection: currencySelection) {
-            ForEach(currencies, id: \.code) { option in
+            ForEach(currencies, id: \.stableIdentifier) { option in
                 Text(option.isCustom ? (option.customName ?? option.customAbbreviation ?? "Custom") : option.code)
-                    .tag(option.code)
+                    .tag(option.stableIdentifier)
             }
         }
         .pickerStyle(.menu)
@@ -394,7 +399,7 @@ struct BudgetView: View {
                             scope: .budgetCategory(
                                 name: line.category.name,
                                 month: month,
-                                currencyCode: currency.code,
+                                currency: currency,
                                 timeZoneIdentifier: budgetTimeZone.identifier
                             )
                         )

@@ -3,7 +3,7 @@ import SwiftData
 import CairnCore
 
 struct CurrencyTotal: Identifiable, Hashable {
-    var id: String { currency.code }
+    var id: Currency { currency }
     let currency: Currency
     let totalMinorUnits: Int64
 }
@@ -22,20 +22,25 @@ enum NetWorthMath {
     }
 
     static func totals(accounts: [Account]) -> [CurrencyTotal] {
-        let grouped = Dictionary(grouping: included(accounts)) { $0.currency.code }
-        return grouped.compactMap { _, group in
-            guard let currency = group.first?.currency else { return nil }
+        let grouped = Dictionary(grouping: included(accounts), by: \.currency)
+        return grouped.compactMap { currency, group in
             return CurrencyTotal(
                 currency: currency,
                 totalMinorUnits: group.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.balanceMinorUnits) }
             )
         }
-        .sorted { $0.currency.code < $1.currency.code }
+        .sorted {
+            if $0.currency.code != $1.currency.code { return $0.currency.code < $1.currency.code }
+            return $0.currency.stableIdentifier < $1.currency.stableIdentifier
+        }
     }
 
     /// The home currency when it has accounts, otherwise the first currency.
     static func primaryCurrency(totals: [CurrencyTotal], home: Currency) -> Currency {
-        if totals.contains(where: { $0.currency.code == home.code }) { return home }
+        if totals.contains(where: { $0.currency == home }) { return home }
+        if let matchingCode = totals.first(where: { $0.currency.code == home.code })?.currency {
+            return matchingCode
+        }
         return totals.first?.currency ?? home
     }
 
@@ -44,7 +49,7 @@ enum NetWorthMath {
     static func assetsAndLiabilities(accounts: [Account], currency: Currency) -> (assets: Int64, liabilities: Int64) {
         var assets: Int64 = 0
         var liabilities: Int64 = 0
-        for account in included(accounts) where account.currency.code == currency.code {
+        for account in included(accounts) where account.currency == currency {
             if account.accountType.isLiability || account.balanceMinorUnits < 0 {
                 liabilities = MinorUnits.addClamped(liabilities, MinorUnits.absClamped(account.balanceMinorUnits))
             } else {
@@ -61,7 +66,7 @@ enum NetWorthMath {
         days: Int,
         calendar: Calendar = .current
     ) -> [(date: Date, balanceMinorUnits: Int64)] {
-        let relevant = included(accounts).filter { $0.currency.code == currency.code }
+        let relevant = included(accounts).filter { $0.currency == currency }
         let entries = relevant.flatMap { account in
             (account.transactions ?? [])
                 .filter { !$0.isPending }

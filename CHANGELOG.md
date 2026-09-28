@@ -8,6 +8,55 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Forecasts, budgets, net worth, insights, and recurring views now keep full
+  currency descriptors separate instead of grouping by currency code alone.
+
+- Confirmed commitments reconcile observed payments without overwriting user
+  edits, and duplicate synced plans preserve the newest user-owned revision.
+
+- Shared-expense links now survive safe duplicate-account repair, can be
+  unlinked, and offset the linked expense in Insights and budgets without
+  turning the reimbursement into income or a transfer.
+
+- Widgets and local alerts now expire stale snapshots, remove Cairn-owned
+  notifications when data is locked or deleted, and report due-today and
+  changed commitments without exposing financial detail.
+
+- Shortcuts now report unavailable stores, locked data, missing connections,
+  and sync failures instead of returning an empty or successful result.
+
+- Budget and commitment editing validates amounts, review actions explain why
+  uncategorized rows remain, and new system-surface, settlement, currency,
+  localization, and accessibility strings are covered.
+
+- Existing stores now migrate from schema V3 to schema V4 before using
+  settlement metadata and confirmed commitments, preserving data from earlier
+  installs.
+
+- Fixed physical-device installation for the widget extension by declaring its
+  executable in the extension bundle metadata.
+
+- Confirmed commitments can now be exported as CSV alongside transactions and
+  budgets, and the generated macOS app no longer builds or embeds the iOS-only
+  widget extension.
+
+- Added a redacted forecast-status widget, intentional local alerts for stale or
+  actionable financial states, and read-only Shortcuts actions for review and
+  forecast status. System surfaces show aggregate status and freshness only;
+  they do not expose merchant detail, credentials, or live bank data.
+
+- Recurring detections can become user-owned bill or income commitments, with a
+  per-currency cash-flow forecast that labels stale sources and uncertainty.
+  Forecasts are estimates, not real-time bank balances or guarantees.
+
+- Shared expenses can link one outgoing bank row to one incoming reimbursement
+  while preserving both original rows and showing gross, received, net, and
+  outstanding amounts.
+- Added a Review Inbox in Activity for uncategorized, unreviewed, and changed
+  transactions, with explanations, category editing, review actions, and undo.
+- Settings now includes a Connection Health center showing each source's last
+  successful sync, transaction coverage, request-limit state, and stale or failed
+  status with retry, reconnect, and manual-account guidance.
 - Insights now subtracts categorized reimbursements, such as roommate rent
   payments, from the expense category they belong to.
 - Home and Insights use adaptive dashboard layouts on iPad and Mac, navigation

@@ -149,7 +149,7 @@ struct InsightsView: View {
         NavigationLink {
             BudgetView(
                 initialMonthKey: BudgetCalculator.monthKey(for: month),
-                initialCurrencyCode: primaryCurrency.code
+                initialCurrency: primaryCurrency
             )
         } label: {
             HStack(spacing: 8) {
@@ -163,7 +163,7 @@ struct InsightsView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
 
-                if Set(accounts.map(\.currency.code)).count > 1 {
+                if Set(accounts.map(\.currency)).count > 1 {
                     Text(primaryCurrency.code)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -184,14 +184,14 @@ struct InsightsView: View {
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
 
     private var primaryCurrency: Currency {
-        if accounts.contains(where: { $0.currency.code == homeCurrency.code }) {
-            return homeCurrency
-        }
-        return accounts.first?.currency ?? homeCurrency
+        accounts.first(where: { $0.currency == homeCurrency })?.currency
+            ?? accounts.first(where: { $0.currency.code == homeCurrency.code })?.currency
+            ?? accounts.first?.currency
+            ?? homeCurrency
     }
 
     private var currencyAccounts: [Account] {
-        accounts.filter { $0.currency.code == primaryCurrency.code }
+        accounts.filter { $0.currency == primaryCurrency }
     }
 
     private var snapshot: InsightsSnapshot {
@@ -936,7 +936,7 @@ struct InsightsView: View {
     // MARK: - Recurring
 
     private var recurringCard: some View {
-        let currencySeries = model.recurringSeries.filter { $0.currency.code == primaryCurrency.code }
+        let currencySeries = model.recurringSeries.filter { $0.currency == primaryCurrency }
         return NavigationLink {
             RecurringView()
         } label: {

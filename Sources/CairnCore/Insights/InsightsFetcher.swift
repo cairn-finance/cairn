@@ -13,6 +13,12 @@ public struct InsightAccountScope: Sendable, Hashable {
     }
 }
 
+private struct SettlementCategorySnapshot {
+    let name: String?
+    let colorHex: String?
+    let symbolName: String?
+}
+
 /// Builds ``InsightTransaction`` snapshots off the main actor.
 ///
 /// Insights used to assemble its input by walking every account's `transactions`
@@ -31,32 +37,59 @@ public actor InsightsFetcher {
         scopes: [InsightAccountScope],
         earliest: Date
     ) -> [InsightTransaction] {
-        var result: [InsightTransaction] = []
+        var fetchedRows: [(scope: InsightAccountScope, transaction: LedgerTransaction)] = []
         for scope in scopes {
             let bankAccountID = scope.bankAccountID
             let descriptor = FetchDescriptor<LedgerTransaction>(
                 predicate: #Predicate { $0.accountIDIndex == bankAccountID }
             )
-            guard let rows = try? modelContext.fetch(descriptor) else { continue }
-            for transaction in rows where transaction.effectiveDate >= earliest {
-                let category = transaction.effectiveCategory
-                result.append(
-                    InsightTransaction(
-                        date: transaction.effectiveDate,
-                        amountMinorUnits: transaction.amountMinorUnits,
-                        categoryName: category?.name,
-                        categoryColorHex: category?.colorHex,
-                        categorySymbolName: category?.symbolName,
-                        merchant: transaction.normalizedMerchant.isEmpty
-                            ? transaction.payeeDescription
-                            : transaction.normalizedMerchant,
-                        accountName: scope.displayName,
-                        isTransfer: transaction.countsAsTransfer,
-                        isIgnored: transaction.isIgnored,
-                        isPending: transaction.isPending
-                    )
-                )
+            guard let transactions = try? modelContext.fetch(descriptor) else { continue }
+            for transaction in transactions {
+                fetchedRows.append((scope: scope, transaction: transaction))
             }
+        }
+
+        var expenseCategories: [UUID: SettlementCategorySnapshot] = [:]
+        for row in fetchedRows {
+            guard row.transaction.settlementRole == .expense,
+                  let settlementID = row.transaction.settlementID else { continue }
+            let category = row.transaction.effectiveCategory
+            expenseCategories[settlementID] = SettlementCategorySnapshot(
+                name: category?.name,
+                colorHex: category?.colorHex,
+                symbolName: category?.symbolName
+            )
+        }
+
+        var result: [InsightTransaction] = []
+        for row in fetchedRows where row.transaction.effectiveDate >= earliest {
+            let transaction = row.transaction
+            let linkedCategory = transaction.settlementID.flatMap { expenseCategories[$0] }
+            let category = linkedCategory ?? {
+                let effective = transaction.effectiveCategory
+                return SettlementCategorySnapshot(
+                    name: effective?.name,
+                    colorHex: effective?.colorHex,
+                    symbolName: effective?.symbolName
+                )
+            }()
+            result.append(
+                InsightTransaction(
+                    date: transaction.effectiveDate,
+                    amountMinorUnits: transaction.amountMinorUnits,
+                    categoryName: category.name,
+                    categoryColorHex: category.colorHex,
+                    categorySymbolName: category.symbolName,
+                    merchant: transaction.normalizedMerchant.isEmpty
+                        ? transaction.payeeDescription
+                        : transaction.normalizedMerchant,
+                    accountName: row.scope.displayName,
+                    isTransfer: transaction.countsAsTransfer,
+                    isIgnored: transaction.isIgnored,
+                    isPending: transaction.isPending,
+                    isSettlementReimbursement: transaction.settlementRole == .reimbursement
+                )
+            )
         }
         return result
     }

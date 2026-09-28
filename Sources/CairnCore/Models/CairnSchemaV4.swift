@@ -1,0 +1,709 @@
+import Foundation
+import SwiftData
+
+/// Schema version 4. Settlement metadata and confirmed commitments are
+/// additive to the version 3 model.
+///
+/// CloudKit compatibility rules obeyed here:
+/// - No `@Attribute(.unique)` / `#Unique`.
+/// - Every scalar has a default value; relationships are optional.
+/// - Every relationship has an inverse, declared on one side.
+/// - Financial content is marked `@Attribute(.allowsCloudEncryption)`.
+///
+/// **Anything that reveals financial detail must be encrypted in the same change
+/// that introduces it.** CloudKit fixes a field's encryption setting when the
+/// schema is deployed to Production: it can never be flipped afterwards, in
+/// either direction. Adding a plaintext field and encrypting it "later" is
+/// therefore impossible without a parallel `…Encrypted` field and a data
+/// migration, so treat the encryption attribute as part of the field's type.
+/// `docs/releasing.md` covers the deployment step, and `ci.yml` fails when this
+/// file changes without a recorded promotion.
+public enum CairnSchemaV4: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
+
+    public static var models: [any PersistentModel.Type] {
+        [
+            Institution.self,
+            Account.self,
+            Holding.self,
+            LedgerTransaction.self,
+            Category.self,
+            Tag.self,
+            CategorizationRule.self,
+            BalanceSnapshot.self,
+            AppSettings.self,
+            CategoryBudget.self,
+            ConfirmedCommitment.self,
+        ]
+    }
+
+    /// A single SimpleFIN connection (one set of login credentials at one
+    /// financial institution). Institutions can live at different SimpleFIN
+    /// servers, so each stores its own credential identifier.
+    @Model
+    public final class Institution {
+        public var bankConnectionID: String = ""
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        /// SimpleFIN's own org identifier and the institution's website. Not
+        /// credentials, but they name the bank.
+        @Attribute(.allowsCloudEncryption) public var orgID: String = ""
+        @Attribute(.allowsCloudEncryption) public var orgURL: String?
+        @Attribute(.allowsCloudEncryption) public var sfinURL: String = ""
+        public var credentialID: UUID = UUID()
+        public var isActive: Bool = true
+        public var lastSyncDate: Date?
+        /// Server-reported failures can name accounts, so this is treated as
+        /// content rather than diagnostics.
+        @Attribute(.allowsCloudEncryption) public var lastSyncError: String?
+        public var createdAt: Date = Date.now
+
+        // Per-institution SimpleFIN request budget. Each institution has its own
+        // Access URL (its own SimpleFIN account and daily limit), so the budget
+        // must not be shared between banks.
+        public var lastSuccessfulFetch: Date?
+        public var dailyRequestCount: Int = 0
+        public var dailyRequestDate: Date?
+
+        @Relationship(deleteRule: .cascade, inverse: \Account.institution)
+        public var accounts: [Account]?
+
+        public init(
+            bankConnectionID: String = "",
+            name: String = "",
+            orgID: String = "",
+            orgURL: String? = nil,
+            sfinURL: String = "",
+            credentialID: UUID = UUID()
+        ) {
+            self.bankConnectionID = bankConnectionID
+            self.name = name
+            self.orgID = orgID
+            self.orgURL = orgURL
+            self.sfinURL = sfinURL
+            self.credentialID = credentialID
+        }
+    }
+
+    /// A bank account. Balance is held as integer minor units in the account's
+    /// currency; it is never summed across currencies.
+    @Model
+    public final class Account {
+        public var bankAccountID: String = ""
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        @Attribute(.allowsCloudEncryption) public var customDisplayName: String?
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
+        public var currencyExponent: Int = 2
+        public var isCustomCurrency: Bool = false
+        /// Loyalty programmes and points balances name what the person collects.
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
+
+        @Attribute(.allowsCloudEncryption) public var balanceMinorUnits: Int64 = 0
+        @Attribute(.allowsCloudEncryption) public var availableBalanceMinorUnits: Int64 = 0
+        public var hasAvailableBalance: Bool = false
+        public var balanceDate: Date?
+
+        public var isHidden: Bool = false
+        public var includeInNetWorth: Bool = true
+        public var displayOrder: Int = 0
+        public var lastSyncedAt: Date?
+
+        /// Where the account's data comes from. Manual accounts are for
+        /// institutions SimpleFIN can't reach (Apple Card, Apple Savings, cash,
+        /// property, loans) and receive imported transactions.
+        public var sourceRaw: String = AccountSource.simpleFIN.rawValue
+        /// Which kind of account it is (checking, credit card, …). Metadata on
+        /// its own, but it narrows down what the rest of the record describes, so
+        /// it travels encrypted like the content.
+        @Attribute(.allowsCloudEncryption) public var accountTypeRaw: String = AccountType.other.rawValue
+        @Attribute(.allowsCloudEncryption) public var startingBalanceMinorUnits: Int64 = 0
+
+        public var institution: Institution?
+
+        @Relationship(deleteRule: .cascade, inverse: \LedgerTransaction.account)
+        public var transactions: [LedgerTransaction]?
+
+        @Relationship(deleteRule: .cascade, inverse: \BalanceSnapshot.account)
+        public var snapshots: [BalanceSnapshot]?
+
+        /// Investment positions reported by the bank, when it provides them.
+        @Relationship(deleteRule: .cascade, inverse: \Holding.account)
+        public var holdings: [Holding]?
+
+        public init(
+            bankAccountID: String = "",
+            name: String = "",
+            currency: Currency = .usd
+        ) {
+            self.bankAccountID = bankAccountID
+            self.name = name
+            apply(currency: currency)
+        }
+
+        public var currency: Currency {
+            Currency(
+                code: currencyCode,
+                exponent: currencyExponent,
+                isCustom: isCustomCurrency,
+                customName: customCurrencyName,
+                customAbbreviation: customCurrencyAbbreviation
+            )
+        }
+
+        public func apply(currency: Currency) {
+            currencyCode = currency.code
+            currencyExponent = currency.exponent
+            isCustomCurrency = currency.isCustom
+            customCurrencyName = currency.customName
+            customCurrencyAbbreviation = currency.customAbbreviation
+        }
+
+        /// The name a person should see: their override when present.
+        public var displayName: String {
+            if let customDisplayName, !customDisplayName.isEmpty { return customDisplayName }
+            return name
+        }
+
+        public var source: AccountSource { AccountSource(rawValue: sourceRaw) ?? .simpleFIN }
+        public var accountType: AccountType { AccountType(rawValue: accountTypeRaw) ?? .other }
+        public var isManual: Bool { source == .manual }
+        /// True for accounts read from Apple Wallet through FinanceKit. They are
+        /// refreshed in place and never take a manual CSV import.
+        public var isWallet: Bool { source == .financeKit }
+
+        public var balance: Money {
+            Money(minorUnits: balanceMinorUnits, currency: currency)
+        }
+
+        public var availableBalance: Money {
+            Money(minorUnits: availableBalanceMinorUnits, currency: currency)
+        }
+    }
+
+    /// One investment position inside an account, as reported by the bank at the
+    /// last sync. Shares and values are stored exactly as received; no live
+    /// market price is ever fetched. Values are never summed across currencies.
+    @Model
+    public final class Holding {
+        public var holdingID: String = ""
+        @Attribute(.allowsCloudEncryption) public var symbol: String?
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        /// Exact decimal string from the bank, kept verbatim so fractional
+        /// share counts never lose precision.
+        @Attribute(.allowsCloudEncryption) public var sharesRaw: String?
+
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
+        public var currencyExponent: Int = 2
+        public var isCustomCurrency: Bool = false
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
+
+        @Attribute(.allowsCloudEncryption) public var marketValueMinorUnits: Int64 = 0
+        @Attribute(.allowsCloudEncryption) public var costBasisMinorUnits: Int64 = 0
+        public var hasCostBasis: Bool = false
+        @Attribute(.allowsCloudEncryption) public var purchasePriceMinorUnits: Int64 = 0
+        public var hasPurchasePrice: Bool = false
+        public var displayOrder: Int = 0
+
+        public var account: Account?
+
+        public init(holdingID: String = "", name: String = "", currency: Currency = .usd) {
+            self.holdingID = holdingID
+            self.name = name
+            apply(currency: currency)
+        }
+
+        public var currency: Currency {
+            Currency(
+                code: currencyCode,
+                exponent: currencyExponent,
+                isCustom: isCustomCurrency,
+                customName: customCurrencyName,
+                customAbbreviation: customCurrencyAbbreviation
+            )
+        }
+
+        public func apply(currency: Currency) {
+            currencyCode = currency.code
+            currencyExponent = currency.exponent
+            isCustomCurrency = currency.isCustom
+            customCurrencyName = currency.customName
+            customCurrencyAbbreviation = currency.customAbbreviation
+        }
+
+        public var shares: Decimal? {
+            guard let sharesRaw, !sharesRaw.isEmpty else { return nil }
+            return Decimal(string: sharesRaw)
+        }
+
+        public var marketValue: Money {
+            Money(minorUnits: marketValueMinorUnits, currency: currency)
+        }
+
+        public var costBasis: Money? {
+            hasCostBasis ? Money(minorUnits: costBasisMinorUnits, currency: currency) : nil
+        }
+
+        /// Market value minus cost basis, from last-sync figures only. `nil` when
+        /// the bank reported no cost basis.
+        public var gain: Money? {
+            guard hasCostBasis else { return nil }
+            return Money(
+                minorUnits: MinorUnits.subtractClamped(marketValueMinorUnits, costBasisMinorUnits),
+                currency: currency
+            )
+        }
+
+        /// The leading label: the ticker when we have one, otherwise the name.
+        public var displayLabel: String {
+            if let symbol, !symbol.isEmpty { return symbol }
+            return name.isEmpty ? "Holding" : name
+        }
+    }
+
+    /// A bank transaction, split into bank-owned, automation-owned, and
+    /// user-owned fields so sync and categorization can never clobber a manual
+    /// choice. Effective category is `userCategory ?? autoCategory`.
+    @Model
+    public final class LedgerTransaction {
+        public var bankTransactionID: String = ""
+
+        // Bank-owned: overwritten on every sync.
+        @Attribute(.allowsCloudEncryption) public var payeeDescription: String = ""
+        @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
+        /// Dates are encrypted like the rest of the content: CloudKit supports
+        /// `NSDate` in its encrypted payload. `postedDate` is deliberately absent
+        /// from `#Index` — Core Data refuses a model where an encrypted attribute
+        /// is indexed, since CloudKit cannot query an encrypted field. The one
+        /// query that orders by date sorts in SQLite instead.
+        @Attribute(.allowsCloudEncryption) public var postedDate: Date?
+        @Attribute(.allowsCloudEncryption) public var transactedAt: Date?
+        public var isPending: Bool = false
+        public var currencyExponent: Int = 2
+
+        /// Number of consecutive syncs where a pending charge disappeared
+        /// without a matching posted transaction.
+        public var pendingMismatchCount: Int = 0
+
+        // Automation-owned: only the rules engine / on-device model writes these.
+        // Inverses are declared on `Category`.
+        public var autoCategory: Category?
+        public var autoCategorySource: String?
+        public var autoConfidence: Double = 0
+        @Attribute(.allowsCloudEncryption) public var autoDisplayName: String?
+        public var autoCompact: Bool = false
+        public var autoTags: [Tag]?
+
+        // User-owned: no automation ever writes these.
+        @Attribute(.allowsCloudEncryption) public var note: String?
+        public var userCategory: Category?
+        public var isTransfer: Bool = false
+        /// True once the person has toggled Transfer themselves, so automatic
+        /// detection never flips their choice back.
+        public var isTransferUserSet: Bool = false
+        public var isIgnored: Bool = false
+        public var reviewedAt: Date?
+
+        // User-owned settlement metadata. Bank-owned fields above remain
+        // unchanged when a reimbursement is linked.
+        @Attribute(.allowsCloudEncryption) public var settlementID: UUID?
+        @Attribute(.allowsCloudEncryption) public var settlementRoleRaw: String = SettlementRole.none.rawValue
+        @Attribute(.allowsCloudEncryption) public var settlementStatusRaw: String = SettlementStatus.expected.rawValue
+        @Attribute(.allowsCloudEncryption) public var settlementCounterparty: String?
+        @Attribute(.allowsCloudEncryption) public var settlementExpectedAmountMinorUnits: Int64?
+        @Attribute(.allowsCloudEncryption) public var settlementLinkedAmountMinorUnits: Int64?
+
+        public var modifiedAt: Date = Date.now
+        public var modifiedByDeviceID: String = ""
+        public var createdAt: Date = Date.now
+
+        /// Lowercased merchant name used for grouping, recurring detection, and
+        /// import de-duplication. Derived from `payeeDescription`, which is
+        /// encrypted, so it has to be encrypted too — otherwise the plaintext
+        /// copy would give away what the description's encryption protects.
+        @Attribute(.allowsCloudEncryption) public var normalizedMerchant: String = ""
+        /// True when the transaction was added by a CSV import rather than a sync.
+        public var isImported: Bool = false
+        /// When the on-device model last tried and failed to categorize this
+        /// transaction, so automatic categorization doesn't retry it forever.
+        public var autoCategorizeAttemptedAt: Date?
+
+        public var account: Account?
+
+        /// Inverse declared on `Tag.transactions`.
+        public var tags: [Tag]?
+
+        // `postedDate` is deliberately missing here: an encrypted attribute
+        // cannot be indexed. See the note on the field.
+        #Index<LedgerTransaction>(
+            [\.accountIDIndex],
+            [\.bankTransactionID]
+        )
+
+        /// A stored, non-encrypted mirror of the owning account's bank id, used
+        /// for indexing and predicates (encrypted fields cannot be indexed).
+        public var accountIDIndex: String = ""
+
+        public init(
+            bankTransactionID: String = "",
+            payeeDescription: String = "",
+            amountMinorUnits: Int64 = 0
+        ) {
+            self.bankTransactionID = bankTransactionID
+            self.payeeDescription = payeeDescription
+            self.amountMinorUnits = amountMinorUnits
+        }
+
+        public var effectiveCategory: Category? {
+            userCategory ?? autoCategory
+        }
+
+        public var displayDescription: String {
+            guard let autoDisplayName, !autoDisplayName.isEmpty else { return payeeDescription }
+            return autoDisplayName
+        }
+
+        public var effectiveTags: [Tag] {
+            var seen: Set<PersistentIdentifier> = []
+            return ((tags ?? []) + (autoTags ?? [])).filter { seen.insert($0.persistentModelID).inserted }
+        }
+
+        /// True when this row should be treated as money movement for reporting:
+        /// either the Transfer flag is set, or the effective category is one of
+        /// the built-in money-movement categories.
+        public static let moneyMovementCategoryNames: Set<String> = [
+            "Transfers", "Credit Card Payments", "Loan Payments",
+        ]
+
+        public var countsAsTransfer: Bool {
+            if isTransfer { return true }
+            if let name = userCategory?.name, Self.moneyMovementCategoryNames.contains(name) { return true }
+            if let name = autoCategory?.name, Self.moneyMovementCategoryNames.contains(name) { return true }
+            return false
+        }
+
+        public var isCategorizedByUser: Bool {
+            userCategory != nil
+        }
+
+        public var amount: Money {
+            if let account {
+                // Use the account's full currency so custom (non-ISO) currencies
+                // keep their name and abbreviation instead of showing the URL.
+                return Money(minorUnits: amountMinorUnits, currency: account.currency)
+            }
+            return Money(
+                minorUnits: amountMinorUnits,
+                currency: Currency(code: "USD", exponent: currencyExponent)
+            )
+        }
+
+        /// The date used for ordering and history math.
+        public var effectiveDate: Date {
+            postedDate ?? transactedAt ?? createdAt
+        }
+    }
+
+    /// A user-defined spending category. Flat for now; `parent`/`children` are
+    /// reserved for nested categories.
+    @Model
+    public final class Category {
+        /// Stable, sync-safe identity used by the rules engine and exporters,
+        /// which operate on value snapshots rather than model objects.
+        public var uuid: UUID = UUID()
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        public var symbolName: String = "tag"
+        public var colorHex: String = "#8E8E93"
+        public var sortOrder: Int = 0
+        public var isArchived: Bool = false
+        public var isSystem: Bool = false
+        public var createdAt: Date = Date.now
+
+        @Relationship(inverse: \Category.parent)
+        public var children: [Category]?
+
+        public var parent: Category?
+
+        @Relationship(inverse: \LedgerTransaction.userCategory)
+        public var userTransactions: [LedgerTransaction]?
+
+        @Relationship(inverse: \LedgerTransaction.autoCategory)
+        public var autoTransactions: [LedgerTransaction]?
+
+        @Relationship(inverse: \CategorizationRule.assignedCategory)
+        public var rules: [CategorizationRule]?
+
+        #Index<Category>([\.sortOrder])
+
+        public init(
+            name: String = "",
+            symbolName: String = "tag",
+            colorHex: String = "#8E8E93",
+            sortOrder: Int = 0,
+            isSystem: Bool = false,
+            uuid: UUID = UUID()
+        ) {
+            self.name = name
+            self.symbolName = symbolName
+            self.colorHex = colorHex
+            self.sortOrder = sortOrder
+            self.isSystem = isSystem
+            self.uuid = uuid
+        }
+    }
+
+    @Model
+    public final class Tag {
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        public var colorHex: String = "#8E8E93"
+        public var createdAt: Date = Date.now
+
+        @Relationship(inverse: \LedgerTransaction.tags)
+        public var transactions: [LedgerTransaction]?
+        @Relationship(inverse: \LedgerTransaction.autoTags)
+        public var automaticTransactions: [LedgerTransaction]?
+        @Relationship(inverse: \CategorizationRule.appliedTags)
+        public var applyingRules: [CategorizationRule]?
+
+        public init(name: String = "", colorHex: String = "#8E8E93") {
+            self.name = name
+            self.colorHex = colorHex
+        }
+    }
+
+    /// A local, on-device categorization rule. Value-type snapshots are fed to
+    /// the pure rules engine.
+    @Model
+    public final class CategorizationRule {
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        public var uuid: UUID = UUID()
+        public var fieldRaw: String = RuleField.payee.rawValue
+        public var matchKindRaw: String = RuleMatchKind.contains.rawValue
+        @Attribute(.allowsCloudEncryption) public var pattern: String = ""
+        /// Amount bounds say what the person considers worth a rule, so they are
+        /// content rather than configuration.
+        @Attribute(.allowsCloudEncryption) public var minAmountMinorUnits: Int64?
+        @Attribute(.allowsCloudEncryption) public var maxAmountMinorUnits: Int64?
+        public var priority: Int = 0
+        public var isEnabled: Bool = true
+        public var createdAt: Date = Date.now
+
+        /// Inverse declared on `Category.rules`.
+        public var assignedCategory: Category?
+        @Attribute(.allowsCloudEncryption) public var displayNameTemplate: String?
+        public var makesCompact: Bool = false
+        public var appliedTags: [Tag]?
+
+        public init(
+            name: String = "",
+            field: RuleField = .payee,
+            matchKind: RuleMatchKind = .contains,
+            pattern: String = "",
+            assignedCategory: Category? = nil,
+            priority: Int = 0,
+            uuid: UUID = UUID()
+        ) {
+            self.name = name
+            self.fieldRaw = field.rawValue
+            self.matchKindRaw = matchKind.rawValue
+            self.pattern = pattern
+            self.assignedCategory = assignedCategory
+            self.priority = priority
+            self.uuid = uuid
+        }
+    }
+
+    /// A cached net-worth data point. History can also be reconstructed from
+    /// transactions; snapshots act as anchors and speed up charts.
+    @Model
+    public final class BalanceSnapshot {
+        @Attribute(.allowsCloudEncryption) public var day: Date = Date.now
+        @Attribute(.allowsCloudEncryption) public var balanceMinorUnits: Int64 = 0
+        public var account: Account?
+
+        public init(day: Date = Date.now, balanceMinorUnits: Int64 = 0) {
+            self.day = day
+            self.balanceMinorUnits = balanceMinorUnits
+        }
+    }
+
+    /// A singleton settings row that also syncs, so every device shares the
+    /// SimpleFIN rate budget and refresh bookkeeping.
+    @Model
+    public final class AppSettings {
+        public var key: String = "default"
+        public var useCloudKit: Bool = false
+        public var onboardingComplete: Bool = false
+        public var appLockEnabled: Bool = false
+        public var homeCurrencyCode: String = "USD"
+        // Superseded by the per-institution counters on `Institution`; retained
+        // so the schema does not need a destructive change.
+        public var lastSuccessfulFetch: Date?
+        public var dailyRequestCount: Int = 0
+        public var dailyRequestDate: Date?
+        public var minimumRefreshIntervalHours: Int = 6
+        public var hasSeededDefaultCategories: Bool = false
+        /// Which generation of the default category set has been seeded. Bumping
+        /// this adds new built-in categories to existing installs exactly once,
+        /// without resurrecting categories the person deleted.
+        public var categorySeedVersion: Int = 0
+        /// Which generation of the categorization logic has run. Bumping this
+        /// re-evaluates model guesses that predate a prompt or rule change,
+        /// exactly once.
+        public var categorizationVersion: Int = 0
+        public var createdByDeviceID: String = ""
+        public var modifiedAt: Date = Date.now
+
+        public init() {}
+    }
+
+    /// A recurring monthly category limit or a one-month override. Budget values
+    /// and month keys are encrypted because together they reveal planned spending.
+    @Model
+    public final class CategoryBudget {
+        public var uuid: UUID = UUID()
+        public var categoryUUID: UUID = UUID()
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
+        @Attribute(.allowsCloudEncryption) public var currencyExponent: Int = 2
+        @Attribute(.allowsCloudEncryption) public var isCustomCurrency: Bool = false
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
+        @Attribute(.allowsCloudEncryption) public var monthKey: String = "1970-01"
+        @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
+        /// False makes this a recurring rule effective from monthKey onward;
+        /// true makes it an override for monthKey only.
+        public var isMonthOverride: Bool = false
+        /// An override can remove a recurring limit for just its month.
+        public var isEnabled: Bool = true
+        @Attribute(.allowsCloudEncryption) public var timeZoneIdentifier: String = "UTC"
+        public var modifiedAt: Date = Date.now
+
+        public init(
+            categoryUUID: UUID = UUID(),
+            currency: Currency = .usd,
+            monthKey: String = "1970-01",
+            amountMinorUnits: Int64 = 0,
+            isMonthOverride: Bool = false,
+            isEnabled: Bool = true,
+            timeZoneIdentifier: String = "UTC"
+        ) {
+            self.categoryUUID = categoryUUID
+            self.currencyCode = currency.code
+            self.currencyExponent = currency.exponent
+            self.isCustomCurrency = currency.isCustom
+            self.customCurrencyName = currency.customName
+            self.customCurrencyAbbreviation = currency.customAbbreviation
+            self.monthKey = monthKey
+            self.amountMinorUnits = amountMinorUnits
+            self.isMonthOverride = isMonthOverride
+            self.isEnabled = isEnabled
+            self.timeZoneIdentifier = timeZoneIdentifier
+        }
+
+        public var currency: Currency {
+            Currency(
+                code: currencyCode,
+                exponent: currencyExponent,
+                isCustom: isCustomCurrency,
+                customName: customCurrencyName,
+                customAbbreviation: customCurrencyAbbreviation
+            )
+        }
+    }
+
+    /// A user-owned recurring bill or income plan. Detector output is deliberately
+    /// copied into this record at confirmation time: later syncs may change or
+    /// remove evidence without erasing a person's plan.
+    @Model
+    public final class ConfirmedCommitment {
+        public var uuid: UUID = UUID()
+        @Attribute(.allowsCloudEncryption) public var detectorID: String = ""
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
+        @Attribute(.allowsCloudEncryption) public var currencyExponent: Int = 2
+        @Attribute(.allowsCloudEncryption) public var isCustomCurrency: Bool = false
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
+        @Attribute(.allowsCloudEncryption) public var cadenceRaw: String = RecurringCadence.monthly.rawValue
+        @Attribute(.allowsCloudEncryption) public var nextDueDate: Date = Date.now
+        @Attribute(.allowsCloudEncryption) public var accountScope: String = ""
+        @Attribute(.allowsCloudEncryption) public var stateRaw: String = CommitmentState.active.rawValue
+        @Attribute(.allowsCloudEncryption) public var lastObservedDate: Date?
+        @Attribute(.allowsCloudEncryption) public var lastObservedAmountMinorUnits: Int64 = 0
+        public var modifiedAt: Date = Date.now
+        public var createdAt: Date = Date.now
+
+        public init(
+            detectorID: String = "", name: String = "", amountMinorUnits: Int64 = 0,
+            currency: Currency = .usd, cadence: RecurringCadence = .monthly,
+            nextDueDate: Date = .now, accountScope: String = "",
+            state: CommitmentState = .active
+        ) {
+            self.detectorID = detectorID
+            self.name = name
+            self.amountMinorUnits = amountMinorUnits
+            self.currencyCode = currency.code
+            self.currencyExponent = currency.exponent
+            self.isCustomCurrency = currency.isCustom
+            self.customCurrencyName = currency.customName
+            self.customCurrencyAbbreviation = currency.customAbbreviation
+            self.cadenceRaw = cadence.rawValue
+            self.nextDueDate = nextDueDate
+            self.accountScope = accountScope
+            self.stateRaw = state.rawValue
+        }
+
+        public var currency: Currency {
+            Currency(
+                code: currencyCode,
+                exponent: currencyExponent,
+                isCustom: isCustomCurrency,
+                customName: customCurrencyName,
+                customAbbreviation: customCurrencyAbbreviation
+            )
+        }
+        public var cadence: RecurringCadence { RecurringCadence(rawValue: cadenceRaw) ?? .monthly }
+        public var state: CommitmentState { CommitmentState(rawValue: stateRaw) ?? .active }
+    }
+
+}
+
+// MARK: - Short names
+
+public typealias Institution = CairnSchemaV4.Institution
+public typealias Account = CairnSchemaV4.Account
+public typealias Holding = CairnSchemaV4.Holding
+public typealias LedgerTransaction = CairnSchemaV4.LedgerTransaction
+public typealias Category = CairnSchemaV4.Category
+public typealias Tag = CairnSchemaV4.Tag
+public typealias CategorizationRule = CairnSchemaV4.CategorizationRule
+public typealias BalanceSnapshot = CairnSchemaV4.BalanceSnapshot
+public typealias AppSettings = CairnSchemaV4.AppSettings
+public typealias CategoryBudget = CairnSchemaV4.CategoryBudget
+public typealias ConfirmedCommitment = CairnSchemaV4.ConfirmedCommitment
+
+// MARK: - How connections are listed
+
+extension CairnSchemaV4.Institution {
+    /// A connection-less record that owns one SimpleFIN Access URL. It holds the
+    /// credential; the per-connection institutions carry the accounts.
+    public var isCredentialHolder: Bool { bankConnectionID.isEmpty }
+
+    /// The institutions worth listing as banks. A credential holder is an
+    /// implementation detail: hide it once its per-connection institutions
+    /// exist, and show it only when it failed, so a broken connection can still
+    /// be disconnected. Without this, a holder that never produced children — an
+    /// interrupted connect, or a device that never received its credential —
+    /// shows up as a phantom bank named after the SimpleFIN host.
+    public static func listedAsBanks(_ all: [Institution]) -> [Institution] {
+        all.filter { institution in
+            guard institution.isCredentialHolder else { return true }
+            let hasPerConnection = all.contains {
+                $0.credentialID == institution.credentialID
+                    && $0.persistentModelID != institution.persistentModelID
+            }
+            return !hasPerConnection && institution.lastSyncError != nil
+        }
+    }
+}

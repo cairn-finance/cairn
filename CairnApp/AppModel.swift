@@ -210,6 +210,7 @@ final class AppModel {
             storeMode = placeholder.mode
             cloudFallbackReason = nil
             storeFailure = message
+            Task { await SystemSurfaceCoordinator.clear() }
         }
 
         engine = SyncEngine(modelContainer: container)
@@ -260,6 +261,7 @@ final class AppModel {
             Task { await bootstrap() }
         case let .failed(message):
             storeFailure = message
+            Task { await SystemSurfaceCoordinator.clear() }
         }
     }
 
@@ -278,6 +280,7 @@ final class AppModel {
             // the synthetic ledger as a healthy, recently synced account.
             await refreshRecurring()
             syncState = .success
+            await refreshSystemSurfaces()
             // Still run the deterministic pass so repeat merchants in the
             // synthetic ledger are categorized, as they would be in a real run.
             Task { await autoCategorize() }
@@ -515,6 +518,12 @@ final class AppModel {
         let host: String
     }
 
+    /// Whether this device can currently sync an institution. The credential
+    /// itself is never returned to the UI.
+    func hasCredential(for institution: Institution) -> Bool {
+        (try? credentials.secret(for: institution.credentialID)) != nil
+    }
+
     /// Reconnects an orphaned credential from its stored Access URL, reusing the
     /// same institution path as a fresh connect and keeping the existing
     /// credential id, so no second copy is stored.
@@ -718,7 +727,8 @@ final class AppModel {
 
     // MARK: - Sync
 
-    func syncAll(force: Bool) async {
+    @discardableResult
+    func syncAll(force: Bool) async -> SyncState {
         let context = container.mainContext
         let institutions = (try? context.fetch(FetchDescriptor<Institution>())) ?? []
         // Apple Wallet is refreshed through FinanceKit, so a device with only
@@ -727,7 +737,7 @@ final class AppModel {
 
         guard walletReady || !institutions.isEmpty else {
             syncState = .idle
-            return
+            return syncState
         }
 
         syncState = .syncing
@@ -853,8 +863,11 @@ final class AppModel {
             syncState = .success
         }
 
+        await refreshSystemSurfaces()
+
         // Categorize in the background so the sync UI finishes immediately.
         Task { await autoCategorize() }
+        return syncState
     }
 
     /// Fetches older transactions for a credential until the institution's
@@ -1144,11 +1157,23 @@ final class AppModel {
     /// background can delete a duplicate row mid-pass. Mapping a stale
     /// main-context copy would trap in SwiftData.
     func refreshRecurring() async {
-        recurringSeries = (try? await engine.recurringSeries()) ?? []
+        let detected = (try? await engine.recurringSeries()) ?? []
+        recurringSeries = detected
+        try? await engine.reconcileCommitments(with: detected)
     }
 
     func recurringChargeRows(for series: RecurringSeries) async throws -> [TransactionRowValue] {
         try await engine.recurringChargeRows(for: series)
+    }
+
+    @discardableResult
+    func confirmRecurring(_ series: RecurringSeries) async -> Bool {
+        do { try await engine.confirm(series); return true }
+        catch { banner = error.localizedDescription; return false }
+    }
+
+    func forecast(days: Int = 30) async -> [ForecastBalance] {
+        (try? await engine.forecast(days: days)) ?? []
     }
 
     /// Called right after the person changes a transaction's category, so the
@@ -1186,6 +1211,13 @@ final class AppModel {
         }
         UserDefaults.standard.set(lock.isEnabled, forKey: Self.Keys.appLockEnabled)
         Task { try? await engine.setAppLock(enabled: lock.isEnabled) }
+        Task {
+            if lock.isEnabled {
+                await SystemSurfaceCoordinator.clear()
+            } else {
+                await refreshSystemSurfaces()
+            }
+        }
     }
 
     // MARK: - Export & deletion
@@ -1208,6 +1240,15 @@ final class AppModel {
         }
     }
 
+    func exportCommitmentsCSV() async -> Data? {
+        do {
+            return Data(try await engine.exportCommitmentsCSV().utf8)
+        } catch {
+            banner = String(localized: "Commitment export failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     func deleteAllData() async {
         do {
             try await engine.deleteAllData()
@@ -1218,6 +1259,8 @@ final class AppModel {
             banner = String(localized: "Cairn couldn’t delete everything: \(error.localizedDescription)")
             return
         }
+
+        await SystemSurfaceCoordinator.clear()
 
         do {
             try credentials.deleteAll()
@@ -1231,6 +1274,7 @@ final class AppModel {
         // who deletes their data must not be silently switched to iCloud. The
         // app lock is part of "everything", so it is turned off and forgotten.
         UserDefaults.standard.removeObject(forKey: Self.Keys.appLockEnabled)
+        UserDefaults.standard.removeObject(forKey: "cairn.notifications.enabled")
         lock.setEnabled(false)
         // Wallet access is granted to the system rather than to us, so it can't
         // be revoked here. Leaving the flag on would quietly re-import Apple Card

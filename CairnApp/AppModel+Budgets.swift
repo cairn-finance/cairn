@@ -35,6 +35,8 @@ extension AppModel {
     }
 
     @discardableResult
+    // Each parameter maps directly to the budget operation passed to the engine.
+    // swiftlint:disable:next function_parameter_count
     func setBudgetLimit(
         categoryUUID: UUID,
         currency: Currency,

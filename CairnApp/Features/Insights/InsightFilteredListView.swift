@@ -7,7 +7,7 @@ import CairnCore
 struct InsightFilteredListView: View {
     enum Scope: Hashable {
         case category(name: String, month: Date)
-        case budgetCategory(name: String, month: Date, currencyCode: String, timeZoneIdentifier: String)
+        case budgetCategory(name: String, month: Date, currency: Currency, timeZoneIdentifier: String)
         case tag(PersistentIdentifier)
         case rule(UUID)
         case needingCategory
@@ -86,19 +86,18 @@ struct InsightFilteredListView: View {
         case let .category(name, month):
             let interval = Calendar.current.dateInterval(of: .month, for: month)
             return allTransactions.filter { transaction in
-                let categoryName = transaction.effectiveCategory?.name
-                    ?? InsightsCalculator.uncategorizedName
+                let categoryName = categoryName(for: transaction)
                 guard categoryName == name else { return false }
                 guard let interval else { return true }
                 return interval.contains(transaction.effectiveDate)
             }
-        case let .budgetCategory(name, month, currencyCode, timeZoneIdentifier):
+        case let .budgetCategory(name, month, selectedCurrency, timeZoneIdentifier):
             var calendar = Calendar.current
             if let timeZone = TimeZone(identifier: timeZoneIdentifier) { calendar.timeZone = timeZone }
             let interval = calendar.dateInterval(of: .month, for: month)
             return allTransactions.filter { transaction in
-                guard transaction.effectiveCategory?.name == name,
-                      transaction.account?.currency.code == currencyCode,
+                guard categoryName(for: transaction) == name,
+                      transaction.account?.currency == selectedCurrency,
                       !transaction.countsAsTransfer,
                       !transaction.isIgnored,
                       !transaction.isPending,
@@ -134,6 +133,17 @@ struct InsightFilteredListView: View {
                     && !transaction.isPending
             }
         }
+    }
+
+    private func categoryName(for transaction: LedgerTransaction) -> String {
+        if transaction.settlementRole == .reimbursement,
+           let settlementID = transaction.settlementID,
+           let expense = allTransactions.first(where: {
+               $0.settlementID == settlementID && $0.settlementRole == .expense
+           }) {
+            return expense.effectiveCategory?.name ?? InsightsCalculator.uncategorizedName
+        }
+        return transaction.effectiveCategory?.name ?? InsightsCalculator.uncategorizedName
     }
 
     private var totalSpent: Int64 {

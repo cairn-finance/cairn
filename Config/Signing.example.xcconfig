@@ -11,7 +11,8 @@ DEVELOPMENT_TEAM = ABCDE12345
 
 // A bundle identifier unique to your team. Use reverse-DNS for a domain you
 // control. Apple registers this as your App ID.
-PRODUCT_BUNDLE_IDENTIFIER = com.yourname.cairn
+CAIRN_HOST_BUNDLE_IDENTIFIER = com.yourname.cairn
+PRODUCT_BUNDLE_IDENTIFIER = $(CAIRN_HOST_BUNDLE_IDENTIFIER)
 
 // The CloudKit container the app syncs through, and the same value its
 // entitlement requests. It defaults to the bundle-id convention, so most people
@@ -20,6 +21,10 @@ PRODUCT_BUNDLE_IDENTIFIER = com.yourname.cairn
 // shared by more than one app.
 //
 //     ICLOUD_CONTAINER_ID = iCloud.com.yourname.cairn.sync
+
+// App Group used only for the redacted widget snapshot (never the SwiftData
+// store or Keychain). Register it for your team before installing on a device.
+//     CAIRN_APP_GROUP_ID = group.com.yourname.cairn
 //
 // It must exist under your team (and be enabled for the App ID) before Release
 // builds sync through iCloud. See docs/architecture.md.
