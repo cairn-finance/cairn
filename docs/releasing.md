@@ -251,10 +251,17 @@ hand.
 
 ## Re-running a release
 
-If an upload fails transiently, re-run the failed job from the Actions tab. The
-build number is derived from the commit, so the re-run reuses the same number:
-App Store Connect only rejects it if the first attempt actually succeeded. If it
-did succeed and you truly need a new build, make a new commit and tag a patch.
+If an upload fails, re-run the existing tag with the current release workflow:
+
+```sh
+gh workflow run release.yml --ref main -f tag=v1.2.0
+```
+
+The workflow checks that the tag is already contained in `main`, then archives
+the source at that tag. The build number is derived from the tagged commit, so
+the retry reuses it. App Store Connect only rejects it if the first upload
+actually succeeded; if it did and a new build is needed, make a new commit and
+tag a patch release.
 
 To pull a broken GitHub Release, delete it and re-run the workflow:
 
@@ -280,4 +287,3 @@ gh release delete v0.1.1 --yes
   `Scripts/schema-hash.sh --record`, and commit.
 - **Duplicate build number** — re-running a tag that already uploaded will be
   rejected by App Store Connect. Make a new commit and tag a patch version.
-
