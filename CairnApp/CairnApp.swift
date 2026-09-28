@@ -39,7 +39,10 @@ struct CairnApp: App {
                 }
             }
             .environment(model)
-            .task { IntentBridge.shared.register(model) }
+            .task {
+                IntentBridge.shared.register(model)
+                await model.refreshSystemSurfaces()
+            }
             .onChange(of: scenePhase) { _, phase in
                 #if os(iOS)
                 // Never schedule a background pass against a store that failed
@@ -48,6 +51,9 @@ struct CairnApp: App {
                     BackgroundCategorization.schedule(requiresPower: model.categorizeOnlyWhileCharging)
                 }
                 #endif
+                if phase == .active, model.storeFailure == nil {
+                    Task { await model.refreshSystemSurfaces() }
+                }
             }
         }
         #if os(macOS)

@@ -34,4 +34,21 @@ public extension SyncEngine {
         let values = try confirmedCommitments().map { ConfirmedCommitmentValue(amountMinorUnits: $0.amountMinorUnits, currency: $0.currency, cadence: $0.cadence, nextDueDate: $0.nextDueDate, state: $0.state, uncertain: $0.state == .active && $0.lastObservedDate == nil) }
         return CashFlowForecast.balances(accounts: accounts, commitments: values, through: days, now: now)
     }
+
+    func systemSurfaceCommitments(now: Date = .now) throws -> [SystemSurfaceCommitment] {
+        try confirmedCommitments().map {
+            SystemSurfaceCommitment(
+                id: $0.detectorID,
+                status: CommitmentStatusEvaluator.status(
+                    nextDueDate: $0.nextDueDate,
+                    now: now,
+                    lastObservedDate: $0.lastObservedDate,
+                    expectedAmount: $0.amountMinorUnits,
+                    observedAmount: $0.lastObservedAmountMinorUnits,
+                    uncertain: $0.state == .active && $0.lastObservedDate == nil
+                ),
+                dueDate: $0.nextDueDate
+            )
+        }
+    }
 }

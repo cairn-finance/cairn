@@ -8,6 +8,11 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Added a redacted forecast-status widget, intentional local alerts for stale or
+  actionable financial states, and read-only Shortcuts actions for review and
+  forecast status. System surfaces show aggregate status and freshness only;
+  they do not expose merchant detail, credentials, or live bank data.
+
 - Recurring detections can become user-owned bill or income commitments, with a
   per-currency cash-flow forecast that labels stale sources and uncertainty.
   Forecasts are estimates, not real-time bank balances or guarantees.

@@ -20,6 +20,10 @@ PRODUCT_BUNDLE_IDENTIFIER = com.yourname.cairn
 // shared by more than one app.
 //
 //     ICLOUD_CONTAINER_ID = iCloud.com.yourname.cairn.sync
+
+// App Group used only for the redacted widget snapshot (never the SwiftData
+// store or Keychain). Register it for your team before installing on a device.
+//     CAIRN_APP_GROUP_ID = group.com.yourname.cairn
 //
 // It must exist under your team (and be enabled for the App ID) before Release
 // builds sync through iCloud. See docs/architecture.md.

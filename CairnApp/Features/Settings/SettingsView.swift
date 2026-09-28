@@ -2,6 +2,9 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import CairnCore
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
@@ -50,6 +53,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             syncSection
+            alertsSection
             institutionsSection
             categorizationSection
             organizationSection
@@ -140,6 +144,29 @@ struct SettingsView: View {
     }
 
     // MARK: - Sync
+
+    private var alertsSection: some View {
+        Section {
+            Button {
+                Task {
+                    let granted = await SystemSurfaceCoordinator.requestAuthorizationAndSchedule(for: model)
+                    model.banner = granted
+                        ? "Alerts enabled for connection and forecast changes."
+                        : "Alerts were not enabled. You can change this in System Settings."
+                }
+            } label: {
+                IconRow("Enable Cairn Alerts", systemImage: "bell.badge", tint: CairnTheme.accent) {
+                    if UserDefaults.standard.bool(forKey: "cairn.notifications.enabled") {
+                        Text("Enabled").foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Alerts")
+        } footer: {
+            Text("Cairn schedules only actionable connection, forecast, and confirmed-commitment changes. It never claims live bank freshness or moves money.")
+        }
+    }
 
     private var syncSection: some View {
         Section {

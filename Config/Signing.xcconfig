@@ -39,6 +39,11 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.cairn
 // schema initializer is safe anywhere, because it builds its own throwaway store.
 ICLOUD_CONTAINER_ID = iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)
 
+// Shared system-surface snapshots contain aggregate status only. The App Group
+// must be registered for the team before using a device build; an empty value
+// safely disables widget data sharing in an unconfigured clone.
+CAIRN_APP_GROUP_ID = group.$(PRODUCT_BUNDLE_IDENTIFIER)
+
 // Empty by default so a fresh clone builds for the simulator without a team.
 DEVELOPMENT_TEAM =
 

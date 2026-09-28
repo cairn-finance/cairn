@@ -21,6 +21,33 @@ struct SyncCairnIntent: AppIntent {
     }
 }
 
+/// Reports the review queue without exposing transaction or merchant detail.
+struct ReviewPendingItemsIntent: AppIntent {
+    static let title: LocalizedStringResource = "Review Pending Items"
+    static let description = IntentDescription("Tell me how many items need review in Cairn.")
+    static var supportedModes: IntentModes { .foreground(.immediate) }
+    static var openAppWhenRun: Bool { true }
+
+    func perform() async throws -> some IntentResult {
+        let count = await MainActor.run { IntentBridge.shared.pendingReviewCount() }
+        return .result(dialog: count == 0 ? "Your Cairn review inbox is clear." : "Cairn has \(count) items to review.")
+    }
+}
+
+/// Reports aggregate forecast status. This is foreground-only because the
+/// forecast is derived from the app's local SwiftData store.
+struct CheckForecastStatusIntent: AppIntent {
+    static let title: LocalizedStringResource = "Check Forecast Status"
+    static let description = IntentDescription("Check Cairn's aggregate forecast status without showing exact amounts.")
+    static var supportedModes: IntentModes { .foreground(.immediate) }
+    static var openAppWhenRun: Bool { true }
+
+    func perform() async throws -> some IntentResult {
+        let summary = await IntentBridge.shared.forecastSummary()
+        return .result(dialog: IntentDialog(stringLiteral: summary))
+    }
+}
+
 /// The phrase Siri and Shortcuts offer for Cairn.
 struct CairnShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -29,6 +56,18 @@ struct CairnShortcuts: AppShortcutsProvider {
             phrases: ["Sync \(.applicationName)"],
             shortTitle: "Sync Cairn",
             systemImageName: "arrow.clockwise"
+        )
+        AppShortcut(
+            intent: ReviewPendingItemsIntent(),
+            phrases: ["Review pending items in \(.applicationName)"],
+            shortTitle: "Review pending items",
+            systemImageName: "tray.full"
+        )
+        AppShortcut(
+            intent: CheckForecastStatusIntent(),
+            phrases: ["Check forecast in \(.applicationName)"],
+            shortTitle: "Check forecast",
+            systemImageName: "gauge.with.dots.needle.67percent"
         )
     }
 }

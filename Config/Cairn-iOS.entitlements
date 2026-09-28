@@ -14,6 +14,10 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(CAIRN_APP_GROUP_ID)</string>
+	</array>
 	<!--
 	  FinanceKit is iPhone/iPad only, so this entitlement lives in the iOS-only
 	  entitlements file. It lets Cairn read eligible Apple Wallet accounts

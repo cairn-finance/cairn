@@ -19,6 +19,8 @@
 	-->
 	<key>CairnCloudKitContainerID</key>
 	<string>$(ICLOUD_CONTAINER_ID)</string>
+	<key>CairnAppGroupIdentifier</key>
+	<string>$(CAIRN_APP_GROUP_ID)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

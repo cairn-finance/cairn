@@ -1,4 +1,6 @@
 import Foundation
+import SwiftData
+import CairnCore
 
 /// Connects App Intents to the running `AppModel` without turning the model
 /// into a global. The app registers its model when its window appears; an
@@ -27,5 +29,17 @@ final class IntentBridge {
         } else {
             pendingSync = true
         }
+    }
+
+    func pendingReviewCount() -> Int {
+        guard let model else { return 0 }
+        let transactions = (try? model.container.mainContext.fetch(FetchDescriptor<LedgerTransaction>())) ?? []
+        return ReviewInboxItem.items(from: transactions.map { $0.rowValue() }).count
+    }
+
+    func forecastSummary() async -> String {
+        guard let model else { return "Open Cairn to check the forecast." }
+        let snapshot = SystemSurfaceSnapshotBuilder.make(forecast: await model.forecast(), lastSuccessfulSync: nil)
+        return "Forecast status: \(snapshot.statusLabel). Exact amounts stay in Cairn."
     }
 }
