@@ -8,6 +8,9 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Insights category progress bars now use the same total-spending percentage as
+  the category chart.
+
 - Budget category drill-downs now use the same bounded, read-only transaction
   feed as Activity instead of materializing the full ledger on navigation.
 

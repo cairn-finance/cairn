@@ -833,10 +833,8 @@ struct InsightsView: View {
     }
 
     private func categoryRow(_ slice: CategoryBreakdown, in data: InsightsSnapshot) -> some View {
-        let total = data.categories.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.amountMinorUnits) }
-        let share = total > 0 ? Double(slice.amountMinorUnits) / Double(total) : 0
+        let share = InsightsCalculator.categoryShare(slice, in: data.categories)
         let tint = CairnTheme.color(hex: slice.colorHex)
-        let fraction = fraction(slice, in: data)
 
         return HStack(spacing: 12) {
             CategoryBadge(symbolName: symbol(for: slice.name), hex: slice.colorHex, size: 34)
@@ -860,7 +858,7 @@ struct InsightsView: View {
                             Capsule().fill(tint.opacity(0.12))
                             Capsule()
                                 .fill(tint)
-                                .frame(width: max(4, proxy.size.width * fraction))
+                                .frame(width: max(4, proxy.size.width * share))
                         }
                     }
                     .frame(height: 5)
@@ -883,12 +881,6 @@ struct InsightsView: View {
             return match.categorySymbolName
         }
         return categoryName == InsightsCalculator.uncategorizedName ? "questionmark.circle" : nil
-    }
-
-    private func fraction(_ slice: CategoryBreakdown, in data: InsightsSnapshot) -> Double {
-        let largest = data.categories.map(\.amountMinorUnits).max() ?? 1
-        guard largest > 0 else { return 0 }
-        return Double(slice.amountMinorUnits) / Double(largest)
     }
 
     // MARK: - Merchants
