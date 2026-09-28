@@ -8,6 +8,13 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Changed
 
+- Existing stores now migrate from schema V3 to schema V4 before using
+  settlement metadata and confirmed commitments, preserving data from earlier
+  installs.
+
+- Fixed physical-device installation for the widget extension by declaring its
+  executable in the extension bundle metadata.
+
 - Confirmed commitments can now be exported as CSV alongside transactions and
   budgets, and the generated macOS app no longer builds or embeds the iOS-only
   widget extension.

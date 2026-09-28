@@ -14,8 +14,8 @@ struct SettingsView: View {
     private var walletAccounts: [Account]
     @Query(sort: \CategorizationRule.createdAt) private var rules: [CategorizationRule]
     @Query(sort: \Tag.name) private var tags: [Tag]
-    @Query(sort: [SortDescriptor(\CairnSchemaV3.Category.sortOrder)])
-    private var categories: [CairnSchemaV3.Category]
+    @Query(sort: [SortDescriptor(\CairnSchemaV4.Category.sortOrder)])
+    private var categories: [CairnSchemaV4.Category]
 
     @State private var storageMode: StoreMode = .local
     @State private var exportDocument: ExportFile?

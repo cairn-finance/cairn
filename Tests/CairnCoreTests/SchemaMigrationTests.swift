@@ -19,7 +19,7 @@ struct SchemaMigrationTests {
         // Close the V1 container before opening the same SQLite file as V2.
         try createV1Store(at: storeURL, categoryID: categoryID, postedDate: postedDate)
 
-        let schema = Schema(versionedSchema: CairnSchemaV3.self)
+        let schema = Schema(versionedSchema: CairnSchemaV4.self)
         let configuration = ModelConfiguration(
             "Cairn", schema: schema, url: storeURL, cloudKitDatabase: .none
         )
@@ -78,7 +78,7 @@ struct SchemaMigrationTests {
         let categoryID = UUID()
         try createV2Store(at: storeURL, categoryID: categoryID)
 
-        let schema = Schema(versionedSchema: CairnSchemaV3.self)
+        let schema = Schema(versionedSchema: CairnSchemaV4.self)
         let configuration = ModelConfiguration("Cairn", schema: schema, url: storeURL, cloudKitDatabase: .none)
         let container = try ModelContainer(
             for: schema, migrationPlan: CairnMigrationPlan.self, configurations: configuration
@@ -94,6 +94,47 @@ struct SchemaMigrationTests {
         #expect(rules.first?.assignedCategory?.uuid == categoryID)
         #expect((rules.first?.appliedTags ?? []).isEmpty)
         #expect(budgets.first?.amountMinorUnits == 50_000)
+    }
+
+    @Test("A V3 store migrates to V4 with settlement defaults")
+    func v3StoreMigratesToV4() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cairn-v3-migration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("Cairn.store")
+        try createV3Store(at: storeURL)
+
+        let schema = Schema(versionedSchema: CairnSchemaV4.self)
+        let configuration = ModelConfiguration("Cairn", schema: schema, url: storeURL, cloudKitDatabase: .none)
+        let container = try ModelContainer(
+            for: schema, migrationPlan: CairnMigrationPlan.self, configurations: configuration
+        )
+        let context = container.mainContext
+        let transactions = try context.fetch(FetchDescriptor<CairnSchemaV4.LedgerTransaction>())
+        let commitments = try context.fetch(FetchDescriptor<CairnSchemaV4.ConfirmedCommitment>())
+
+        #expect(transactions.count == 1)
+        #expect(transactions.first?.bankTransactionID == "v3-transaction")
+        #expect(transactions.first?.settlementID == nil)
+        #expect(transactions.first?.settlementRoleRaw == SettlementRole.none.rawValue)
+        #expect(transactions.first?.settlementStatusRaw == SettlementStatus.expected.rawValue)
+        #expect(commitments.isEmpty)
+    }
+
+    private func createV3Store(at url: URL) throws {
+        let schema = Schema(versionedSchema: CairnSchemaV3.self)
+        let configuration = ModelConfiguration("Cairn", schema: schema, url: url, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let context = container.mainContext
+        let account = CairnSchemaV3.Account(bankAccountID: "v3-account", name: "Checking")
+        let transaction = CairnSchemaV3.LedgerTransaction(
+            bankTransactionID: "v3-transaction", payeeDescription: "Cafe", amountMinorUnits: -5_000
+        )
+        transaction.account = account
+        context.insert(account)
+        context.insert(transaction)
+        try context.save()
     }
 
     private func createV2Store(at url: URL, categoryID: UUID) throws {

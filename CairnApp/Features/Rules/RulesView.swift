@@ -207,10 +207,10 @@ struct RuleEditorView: View {
     @Environment(AppModel.self) private var model
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV3.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV3.Category.createdAt),
+            SortDescriptor(\CairnSchemaV4.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV4.Category.createdAt),
         ]
-    ) private var categories: [CairnSchemaV3.Category]
+    ) private var categories: [CairnSchemaV4.Category]
     @Query private var allTransactions: [LedgerTransaction]
     @Query private var settings: [AppSettings]
     @Query(sort: \Tag.name) private var allTags: [Tag]
@@ -219,7 +219,7 @@ struct RuleEditorView: View {
     var rule: CategorizationRule?
     /// Prefills for a rule created from a transaction.
     var prefillPattern: String?
-    var prefillCategory: CairnSchemaV3.Category?
+    var prefillCategory: CairnSchemaV4.Category?
 
     @State private var didLoad = false
     @State private var name = ""
@@ -228,7 +228,7 @@ struct RuleEditorView: View {
     @State private var useAmountRange = false
     @State private var minAmountText = ""
     @State private var maxAmountText = ""
-    @State private var category: CairnSchemaV3.Category?
+    @State private var category: CairnSchemaV4.Category?
     @State private var displayNameTemplate = ""
     @State private var selectedTagIDs: Set<PersistentIdentifier> = []
     @State private var makesCompact = false
@@ -242,7 +242,7 @@ struct RuleEditorView: View {
         return "-0\(separator)00"
     }
 
-    private var activeCategories: [CairnSchemaV3.Category] {
+    private var activeCategories: [CairnSchemaV4.Category] {
         categories.filter { !$0.isArchived }
     }
 
@@ -284,9 +284,9 @@ struct RuleEditorView: View {
 
                 Section {
                     Picker("Category", selection: $category) {
-                        Text("No category change").tag(CairnSchemaV3.Category?.none)
+                        Text("No category change").tag(CairnSchemaV4.Category?.none)
                         ForEach(activeCategories) { item in
-                            Label(item.name, systemImage: item.symbolName).tag(CairnSchemaV3.Category?.some(item))
+                            Label(item.name, systemImage: item.symbolName).tag(CairnSchemaV4.Category?.some(item))
                         }
                     }
                     TextField("Display name (optional)", text: $displayNameTemplate)

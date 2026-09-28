@@ -461,10 +461,10 @@ struct TransactionDetailView: View {
     @Environment(AppModel.self) private var model
     @Query(
         sort: [
-            SortDescriptor(\CairnSchemaV3.Category.sortOrder),
-            SortDescriptor(\CairnSchemaV3.Category.createdAt),
+            SortDescriptor(\CairnSchemaV4.Category.sortOrder),
+            SortDescriptor(\CairnSchemaV4.Category.createdAt),
         ]
-    ) private var categories: [CairnSchemaV3.Category]
+    ) private var categories: [CairnSchemaV4.Category]
     @Query(sort: \Tag.name) private var allTags: [Tag]
     @Query(sort: \CategorizationRule.priority, order: .reverse)
     private var allRules: [CategorizationRule]
@@ -619,7 +619,7 @@ struct TransactionDetailView: View {
         }
     }
 
-    private func categoryChip(_ category: CairnSchemaV3.Category, selected: Bool) -> some View {
+    private func categoryChip(_ category: CairnSchemaV4.Category, selected: Bool) -> some View {
         let tint = CairnTheme.color(hex: category.colorHex)
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         return HStack(spacing: 9) {
@@ -663,7 +663,7 @@ struct TransactionDetailView: View {
         return "Choose a category. Cairn remembers it for this merchant."
     }
 
-    private func select(_ category: CairnSchemaV3.Category) {
+    private func select(_ category: CairnSchemaV4.Category) {
         withAnimation(CairnTheme.Motion.quick) {
             if transaction.userCategory?.uuid == category.uuid {
                 transaction.userCategory = nil

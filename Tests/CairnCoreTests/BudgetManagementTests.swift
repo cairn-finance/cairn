@@ -148,7 +148,7 @@ struct BudgetManagementTests {
 
         let verificationContext = ModelContext(result.container)
         #expect(try verificationContext.fetch(FetchDescriptor<CategoryBudget>()).isEmpty)
-        #expect(try verificationContext.fetch(FetchDescriptor<CairnSchemaV3.Category>()).count == 1)
+        #expect(try verificationContext.fetch(FetchDescriptor<CairnSchemaV4.Category>()).count == 1)
         #expect(try verificationContext.fetch(FetchDescriptor<Account>()).count == 1)
         #expect(try verificationContext.fetch(FetchDescriptor<LedgerTransaction>()).count == 1)
     }

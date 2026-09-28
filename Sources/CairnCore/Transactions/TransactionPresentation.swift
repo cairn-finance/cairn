@@ -126,7 +126,7 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
     }
 }
 
-extension CairnSchemaV3.LedgerTransaction {
+extension CairnSchemaV4.LedgerTransaction {
     /// Snapshots this transaction into a `Sendable` value. Reads every model
     /// property and relationship the UI needs exactly once.
     public func rowValue() -> TransactionRowValue {

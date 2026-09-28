@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-/// Schema version 3. Rule actions and their derived transaction values are
-/// additive to the version 2 model.
+/// Schema version 4. Settlement metadata and confirmed commitments are
+/// additive to the version 3 model.
 ///
 /// CloudKit compatibility rules obeyed here:
 /// - No `@Attribute(.unique)` / `#Unique`.
@@ -18,8 +18,8 @@ import SwiftData
 /// migration, so treat the encryption attribute as part of the field's type.
 /// `docs/releasing.md` covers the deployment step, and `ci.yml` fails when this
 /// file changes without a recorded promotion.
-public enum CairnSchemaV3: VersionedSchema {
-    public static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+public enum CairnSchemaV4: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
 
     public static var models: [any PersistentModel.Type] {
         [
@@ -33,6 +33,7 @@ public enum CairnSchemaV3: VersionedSchema {
             BalanceSnapshot.self,
             AppSettings.self,
             CategoryBudget.self,
+            ConfirmedCommitment.self,
         ]
     }
 
@@ -302,6 +303,15 @@ public enum CairnSchemaV3: VersionedSchema {
         public var isTransferUserSet: Bool = false
         public var isIgnored: Bool = false
         public var reviewedAt: Date?
+
+        // User-owned settlement metadata. Bank-owned fields above remain
+        // unchanged when a reimbursement is linked.
+        @Attribute(.allowsCloudEncryption) public var settlementID: UUID?
+        @Attribute(.allowsCloudEncryption) public var settlementRoleRaw: String = SettlementRole.none.rawValue
+        @Attribute(.allowsCloudEncryption) public var settlementStatusRaw: String = SettlementStatus.expected.rawValue
+        @Attribute(.allowsCloudEncryption) public var settlementCounterparty: String?
+        @Attribute(.allowsCloudEncryption) public var settlementExpectedAmountMinorUnits: Int64?
+        @Attribute(.allowsCloudEncryption) public var settlementLinkedAmountMinorUnits: Int64?
 
         public var modifiedAt: Date = Date.now
         public var modifiedByDeviceID: String = ""
@@ -601,4 +611,91 @@ public enum CairnSchemaV3: VersionedSchema {
         }
     }
 
+    /// A user-owned recurring bill or income plan. Detector output is deliberately
+    /// copied into this record at confirmation time: later syncs may change or
+    /// remove evidence without erasing a person's plan.
+    @Model
+    public final class ConfirmedCommitment {
+        public var uuid: UUID = UUID()
+        @Attribute(.allowsCloudEncryption) public var detectorID: String = ""
+        @Attribute(.allowsCloudEncryption) public var name: String = ""
+        @Attribute(.allowsCloudEncryption) public var amountMinorUnits: Int64 = 0
+        @Attribute(.allowsCloudEncryption) public var currencyCode: String = "USD"
+        @Attribute(.allowsCloudEncryption) public var currencyExponent: Int = 2
+        @Attribute(.allowsCloudEncryption) public var isCustomCurrency: Bool = false
+        @Attribute(.allowsCloudEncryption) public var customCurrencyName: String?
+        @Attribute(.allowsCloudEncryption) public var customCurrencyAbbreviation: String?
+        @Attribute(.allowsCloudEncryption) public var cadenceRaw: String = RecurringCadence.monthly.rawValue
+        @Attribute(.allowsCloudEncryption) public var nextDueDate: Date = Date.now
+        @Attribute(.allowsCloudEncryption) public var accountScope: String = ""
+        @Attribute(.allowsCloudEncryption) public var stateRaw: String = CommitmentState.active.rawValue
+        @Attribute(.allowsCloudEncryption) public var lastObservedDate: Date?
+        @Attribute(.allowsCloudEncryption) public var lastObservedAmountMinorUnits: Int64 = 0
+        public var modifiedAt: Date = Date.now
+        public var createdAt: Date = Date.now
+
+        public init(
+            detectorID: String = "", name: String = "", amountMinorUnits: Int64 = 0,
+            currency: Currency = .usd, cadence: RecurringCadence = .monthly,
+            nextDueDate: Date = .now, accountScope: String = "",
+            state: CommitmentState = .active
+        ) {
+            self.detectorID = detectorID
+            self.name = name
+            self.amountMinorUnits = amountMinorUnits
+            self.currencyCode = currency.code
+            self.currencyExponent = currency.exponent
+            self.isCustomCurrency = currency.isCustom
+            self.customCurrencyName = currency.customName
+            self.customCurrencyAbbreviation = currency.customAbbreviation
+            self.cadenceRaw = cadence.rawValue
+            self.nextDueDate = nextDueDate
+            self.accountScope = accountScope
+            self.stateRaw = state.rawValue
+        }
+
+        public var currency: Currency { Currency(code: currencyCode, exponent: currencyExponent, isCustom: isCustomCurrency, customName: customCurrencyName, customAbbreviation: customCurrencyAbbreviation) }
+        public var cadence: RecurringCadence { RecurringCadence(rawValue: cadenceRaw) ?? .monthly }
+        public var state: CommitmentState { CommitmentState(rawValue: stateRaw) ?? .active }
+    }
+
+}
+
+// MARK: - Short names
+
+public typealias Institution = CairnSchemaV4.Institution
+public typealias Account = CairnSchemaV4.Account
+public typealias Holding = CairnSchemaV4.Holding
+public typealias LedgerTransaction = CairnSchemaV4.LedgerTransaction
+public typealias Category = CairnSchemaV4.Category
+public typealias Tag = CairnSchemaV4.Tag
+public typealias CategorizationRule = CairnSchemaV4.CategorizationRule
+public typealias BalanceSnapshot = CairnSchemaV4.BalanceSnapshot
+public typealias AppSettings = CairnSchemaV4.AppSettings
+public typealias CategoryBudget = CairnSchemaV4.CategoryBudget
+public typealias ConfirmedCommitment = CairnSchemaV4.ConfirmedCommitment
+
+// MARK: - How connections are listed
+
+extension CairnSchemaV4.Institution {
+    /// A connection-less record that owns one SimpleFIN Access URL. It holds the
+    /// credential; the per-connection institutions carry the accounts.
+    public var isCredentialHolder: Bool { bankConnectionID.isEmpty }
+
+    /// The institutions worth listing as banks. A credential holder is an
+    /// implementation detail: hide it once its per-connection institutions
+    /// exist, and show it only when it failed, so a broken connection can still
+    /// be disconnected. Without this, a holder that never produced children — an
+    /// interrupted connect, or a device that never received its credential —
+    /// shows up as a phantom bank named after the SimpleFIN host.
+    public static func listedAsBanks(_ all: [Institution]) -> [Institution] {
+        all.filter { institution in
+            guard institution.isCredentialHolder else { return true }
+            let hasPerConnection = all.contains {
+                $0.credentialID == institution.credentialID
+                    && $0.persistentModelID != institution.persistentModelID
+            }
+            return !hasPerConnection && institution.lastSyncError != nil
+        }
+    }
 }
