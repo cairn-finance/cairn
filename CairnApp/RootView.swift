@@ -177,6 +177,11 @@ struct MainTabView: View {
                 }
             }
         }
+        // The same destinations become a compact tab bar on iPhone and a
+        // sidebar on iPad, matching the platform instead of stretching phone
+        // navigation across a wide window.
+        .tabViewStyle(.sidebarAdaptable)
+        .tabBarMinimizeBehavior(.onScrollDown)
         .onChange(of: sections) { _, visible in
             if !visible.contains(selection) { selection = visible.first ?? .settings }
         }
