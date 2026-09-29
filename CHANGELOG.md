@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-29
+
 ### Added
 
 - Spread a one-time expense across monthly budgets with a custom name and
