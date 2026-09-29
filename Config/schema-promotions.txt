@@ -28,3 +28,4 @@
 2026-09-27  4abc74fcc23070168e9a065a0b595fc258bc9bbe56fc97eb8648df6535d14a23  3c437a7  monthly category budgets
 2026-09-27  813d915c4b4d8cfa0b73a6f24134fa590ba58dd546f312facc2224b1965b921d  baf4e88  CairnSchemaV3 deployed to CloudKit Production
 2026-09-28  d3f7c6caa7fa8fcaacba3bf63f5b2dcec09f27a391fbe6bd24bae4f9f21ac296  f05320a  CairnSchemaV4 deployed to CloudKit Production
+2026-09-29  abe057f24b6d2428793f3e0e3893394ffd881424d4e0da5ff0f43773ad13bec7  ad39706  CairnSchemaV5 budget expense schedules deployed to CloudKit Production

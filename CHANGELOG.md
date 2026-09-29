@@ -6,6 +6,12 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- Spread a one-time expense across monthly budgets with a custom name and
+  schedule while keeping the original transaction amount in history and
+  account balances.
+
 ## [1.2.1] - 2026-09-29
 
 ### Fixed

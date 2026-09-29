@@ -459,6 +459,7 @@ private struct HoldingEntry: View {
 struct TransactionDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppModel.self) private var model
+    @AppStorage(AppFeature.budgeting.storageKey) private var budgetingEnabled = AppFeature.budgeting.defaultEnabled
     @Query(
         sort: [
             SortDescriptor(\CairnSchemaV4.Category.sortOrder),
@@ -469,6 +470,8 @@ struct TransactionDetailView: View {
     @Query(sort: \CategorizationRule.priority, order: .reverse)
     private var allRules: [CategorizationRule]
     @Query private var allTransactions: [LedgerTransaction]
+    @Query private var budgetSmoothingPlans: [BudgetSmoothingPlan]
+    @Query private var savedBudgetSettings: [CategoryBudget]
 
     let transaction: LedgerTransaction
 
@@ -477,6 +480,7 @@ struct TransactionDetailView: View {
     @State private var ruleToEdit: CategorizationRule?
     @State private var showingSettlementLink = false
     @State private var showingUnlinkConfirmation = false
+    @State private var showingBudgetExpenseSmoothing = false
 
     private let columns = [GridItem(.adaptive(minimum: 148), spacing: 8)]
 
@@ -485,6 +489,7 @@ struct TransactionDetailView: View {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.xl) {
                 header
                 categoryCard
+                budgetSmoothingCard
                 settlementCard
                 optionsCard
                 noteCard
@@ -522,6 +527,14 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $showingSettlementLink) {
             SettlementLinkSheet(expense: transaction)
                 .cairnLockCover()
+        }
+        .sheet(isPresented: $showingBudgetExpenseSmoothing) {
+            BudgetExpenseSmoothingEditor(
+                transaction: transaction,
+                existingPlan: currentBudgetSmoothingPlan,
+                timeZoneIdentifier: budgetSmoothingTimeZone.identifier
+            )
+            .cairnLockCover()
         }
         .confirmationDialog(
             "Unlink this shared expense?",
@@ -628,6 +641,74 @@ struct TransactionDetailView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var budgetSmoothingCard: some View {
+        if budgetingEnabled || currentBudgetSmoothingPlan != nil {
+            if transaction.isEligibleForBudgetExpenseSmoothing || currentBudgetSmoothingPlan != nil {
+                Card {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Spread in budget")
+                            .font(.headline)
+                        Text(
+                            """
+                            Count this purchase across monthly budgets while keeping its posted transaction \
+                            and account balance unchanged.
+                            """
+                        )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        if let plan = currentBudgetSmoothingPlan {
+                            Text(plan.name)
+                                .font(.subheadline.weight(.semibold))
+                            HStack {
+                                Button("Edit schedule") { showingBudgetExpenseSmoothing = true }
+                                    .disabled(!transaction.isEligibleForBudgetExpenseSmoothing)
+                                Spacer()
+                                Button("Remove", role: .destructive) {
+                                    Task {
+                                        _ = await model.removeBudgetExpenseSmoothing(
+                                            accountIDIndex: transaction.accountIDIndex,
+                                            bankTransactionID: transaction.bankTransactionID
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Button("Spread over months", systemImage: "calendar") {
+                                showingBudgetExpenseSmoothing = true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var currentBudgetSmoothingPlan: BudgetSmoothingPlan? {
+        budgetSmoothingPlans
+            .filter {
+                $0.accountIDIndex == transaction.accountIDIndex
+                    && $0.bankTransactionID == transaction.bankTransactionID
+            }
+            .sorted {
+                if $0.modifiedAt != $1.modifiedAt { return $0.modifiedAt > $1.modifiedAt }
+                return $0.uuid.uuidString < $1.uuid.uuidString
+            }
+            .first
+    }
+
+    private var budgetSmoothingTimeZone: TimeZone {
+        guard let currency = transaction.account?.currency else { return .current }
+        return savedBudgetSettings
+            .filter { $0.currency == currency }
+            .sorted {
+                if $0.monthKey != $1.monthKey { return $0.monthKey < $1.monthKey }
+                return $0.uuid.uuidString < $1.uuid.uuidString
+            }
+            .compactMap { TimeZone(identifier: $0.timeZoneIdentifier) }
+            .first ?? .current
     }
 
     private func categoryChip(_ category: CairnSchemaV4.Category, selected: Bool) -> some View {

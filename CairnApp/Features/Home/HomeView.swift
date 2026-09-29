@@ -17,6 +17,7 @@ struct HomeView: View {
     @Query private var settings: [AppSettings]
     @Query private var categories: [CairnSchemaV4.Category]
     @Query private var budgetSettings: [CategoryBudget]
+    @Query private var budgetSmoothingPlans: [BudgetSmoothingPlan]
     @Query private var commitments: [ConfirmedCommitment]
 
     @State private var showingConnect = false
@@ -154,6 +155,10 @@ struct HomeView: View {
     private var budgetReloadKey: String {
         guard budgetingEnabled else { return "budgeting-disabled" }
         let editStamp = budgetSettings.map(\.modifiedAt).max()?.timeIntervalSince1970 ?? 0
+        let smoothingStamp = budgetSmoothingPlans
+            .sorted { $0.uuid.uuidString < $1.uuid.uuidString }
+            .map { "\($0.uuid.uuidString):\($0.modifiedAt.timeIntervalSince1970)" }
+            .joined(separator: ",")
         let accountStamp = accounts.filter { $0.currency == budgetCurrency }
             .map(\.bankAccountID).sorted().joined(separator: ",")
         let categoryStamp = categories.map { "\($0.uuid.uuidString):\($0.name):\($0.isArchived)" }
@@ -163,6 +168,7 @@ struct HomeView: View {
             budgetMonthKey,
             budgetCurrency.stableIdentifier,
             String(editStamp),
+            smoothingStamp,
             accountStamp,
             categoryStamp
         ].joined(separator: "-")
@@ -384,7 +390,12 @@ struct HomeView: View {
             BudgetFetcher(modelContainer: container)
         }.value
         do {
-            let result = try await fetcher.budgetTransactions(scopes: scopes, from: start, to: end)
+            let result = try await fetcher.budgetTransactions(
+                scopes: scopes,
+                from: start,
+                to: end,
+                timeZone: budgetTimeZone
+            )
             guard !Task.isCancelled else { return }
             budgetTransactions = result
         } catch {

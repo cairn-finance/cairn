@@ -103,6 +103,31 @@ public struct CommitmentExportRow: Sendable {
     public var accountScope: String
 }
 
+public struct BudgetExpenseSmoothingExportRow: Sendable {
+    public var name: String
+    public var purchase: String
+    public var currency: String
+    public var amount: String
+    public var startMonth: String
+    public var months: Int
+
+    public init(
+        name: String,
+        purchase: String,
+        currency: String,
+        amount: String,
+        startMonth: String,
+        months: Int
+    ) {
+        self.name = name
+        self.purchase = purchase
+        self.currency = currency
+        self.amount = amount
+        self.startMonth = startMonth
+        self.months = months
+    }
+}
+
 /// CSV and JSON writers. "Your data is yours" is only true if you can get it
 /// out in an open format, so these ship in the first release.
 public enum Exporters {
@@ -165,6 +190,22 @@ public enum Exporters {
                 escapeCSV(row.applies, neutralizeFormula: true),
                 row.enabled ? "true" : "false",
                 escapeCSV(row.timeZone, neutralizeFormula: true),
+            ].joined(separator: ","))
+        }
+        return lines.joined(separator: "\r\n") + "\r\n"
+    }
+
+    public static func budgetExpenseSmoothingCSV(rows: [BudgetExpenseSmoothingExportRow]) -> String {
+        var lines = ["Name,Purchase,Currency,Amount,First Budget Month,Months"]
+        lines.reserveCapacity(rows.count + 1)
+        for row in rows {
+            lines.append([
+                escapeCSV(row.name, neutralizeFormula: true),
+                escapeCSV(row.purchase, neutralizeFormula: true),
+                escapeCSV(row.currency, neutralizeFormula: true),
+                escapeCSV(row.amount),
+                escapeCSV(row.startMonth, neutralizeFormula: true),
+                String(row.months),
             ].joined(separator: ","))
         }
         return lines.joined(separator: "\r\n") + "\r\n"

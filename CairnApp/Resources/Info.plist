@@ -2,25 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).processing</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Cairn</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<!--
-	  The CloudKit container to sync through. It comes from the same
-	  `ICLOUD_CONTAINER_ID` build setting the entitlement uses, so the container
-	  the app requests and the one it is entitled to can never disagree.
-	  ModelContainerFactory reads this key and falls back to the bundle-id
-	  convention when it is absent or empty.
-	-->
-	<key>CairnCloudKitContainerID</key>
-	<string>$(ICLOUD_CONTAINER_ID)</string>
-	<key>CairnAppGroupIdentifier</key>
-	<string>$(CAIRN_APP_GROUP_ID)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -31,32 +26,24 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
+	<key>CairnAppGroupIdentifier</key>
+	<string>$(CAIRN_APP_GROUP_ID)</string>
+	<key>CairnCloudKitContainerID</key>
+	<string>$(ICLOUD_CONTAINER_ID)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.finance</string>
-	<key>NSFinancialDataUsageDescription</key>
-	<string>Cairn reads the Apple Wallet accounts you choose — Apple Card, Apple Cash, and Savings — so it can show their balances and transactions. It is read-only, and it stays on your device unless you turn on iCloud Sync.</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Cairn uses Face ID to unlock the app when you turn on Require unlock to open.</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
-	<!--
-	  CloudKit uses silent pushes to deliver remote changes promptly, which
-	  requires the remote-notification background mode. `processing` powers the
-	  periodic categorization pass. There is no BGAppRefreshTask, so `fetch` is
-	  not declared.
-	-->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Cairn uses Face ID to unlock the app when you turn on Require unlock to open.</string>
+	<key>NSFinancialDataUsageDescription</key>
+	<string>Cairn reads the Apple Wallet accounts you choose — Apple Card, Apple Cash, and Savings — so it can show their balances and transactions. It is read-only, and it stays on your device unless you turn on iCloud Sync.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>
 		<string>remote-notification</string>
-	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER).processing</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

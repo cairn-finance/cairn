@@ -997,6 +997,11 @@ public actor SyncEngine {
             }
 
             if keptAccounts == 0 {
+                for account in institution.accounts ?? []
+                where !account.isDeleted
+                    && account.institution?.persistentModelID == institution.persistentModelID {
+                    try deleteBudgetExpenseSmoothingPlans(accountIDIndex: account.bankAccountID)
+                }
                 modelContext.delete(institution)
                 outcome.removedInstitutions += 1
                 changed = true
@@ -3039,6 +3044,7 @@ public actor SyncEngine {
     /// Children are removed before the models they point at so batch deletes
     /// never trip a relationship constraint.
     public func deleteAllData() throws {
+        try modelContext.delete(model: BudgetSmoothingPlan.self)
         try modelContext.delete(model: LedgerTransaction.self)
         try modelContext.delete(model: CategoryBudget.self)
         try modelContext.delete(model: ConfirmedCommitment.self)

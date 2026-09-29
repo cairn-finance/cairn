@@ -220,8 +220,8 @@ enum SchemaInitializer {
 
     /// A CloudKit-backed container over a disposable store, never the app's.
     private static func makeContainer(containerID: String) -> NSPersistentCloudKitContainer {
-        guard let model = NSManagedObjectModel.makeManagedObjectModel(for: CairnSchemaV4.models) else {
-            report("Could not build a managed object model from CairnSchemaV4.")
+        guard let model = NSManagedObjectModel.makeManagedObjectModel(for: CairnSchemaV5.models) else {
+            report("Could not build a managed object model from CairnSchemaV5.")
             exit(1)
         }
         let container = NSPersistentCloudKitContainer(name: "CairnSchemaInit", managedObjectModel: model)

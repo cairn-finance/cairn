@@ -14,6 +14,7 @@ struct BudgetView: View {
     private var categories: [CairnSchemaV4.Category]
     @Query private var appSettings: [AppSettings]
     @Query private var savedSettings: [CategoryBudget]
+    @Query private var budgetSmoothingPlans: [BudgetSmoothingPlan]
 
     @State private var monthKey: String
     @State private var selectedCurrencyID: String
@@ -144,7 +145,14 @@ struct BudgetView: View {
     }
 
     private var reloadKey: String {
-        "\(reloadToken)-\(monthKey)-\(currency.stableIdentifier)-\(budgetTimeZone.identifier)"
+        "\(reloadToken)-\(monthKey)-\(currency.stableIdentifier)-\(budgetTimeZone.identifier)-\(budgetSmoothingPlanStamp)"
+    }
+
+    private var budgetSmoothingPlanStamp: String {
+        budgetSmoothingPlans
+            .sorted { $0.uuid.uuidString < $1.uuid.uuidString }
+            .map { "\($0.uuid.uuidString):\($0.modifiedAt.timeIntervalSince1970)" }
+            .joined(separator: ",")
     }
 
     var body: some View {
@@ -396,7 +404,11 @@ struct BudgetView: View {
                             categoryName: line.category.name,
                             currency: currency,
                             month: month,
-                            timeZoneIdentifier: budgetTimeZone.identifier
+                            timeZoneIdentifier: budgetTimeZone.identifier,
+                            budgetAllocations: transactions.compactMap { value in
+                                guard value.categoryUUID == line.category.uuid else { return nil }
+                                return value.smoothingAllocation
+                            }
                         )
                     } label: {
                         HStack(spacing: 10) {
@@ -492,7 +504,12 @@ struct BudgetView: View {
             BudgetFetcher(modelContainer: container)
         }.value
         do {
-            let fetched = try await fetcher.budgetTransactions(scopes: scopes, from: start, to: monthEnd)
+            let fetched = try await fetcher.budgetTransactions(
+                scopes: scopes,
+                from: start,
+                to: monthEnd,
+                timeZone: budgetTimeZone
+            )
             guard !Task.isCancelled else { return }
             transactions = fetched
         } catch {
