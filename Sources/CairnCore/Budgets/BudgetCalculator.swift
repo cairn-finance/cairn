@@ -9,6 +9,7 @@ public struct BudgetTransaction: Sendable, Hashable {
     public let isTransfer: Bool
     public let isIgnored: Bool
     public let isPending: Bool
+    public let smoothingAllocation: BudgetSmoothingAllocation?
 
     public init(
         date: Date,
@@ -17,7 +18,8 @@ public struct BudgetTransaction: Sendable, Hashable {
         categoryName: String?,
         isTransfer: Bool,
         isIgnored: Bool,
-        isPending: Bool
+        isPending: Bool,
+        smoothingAllocation: BudgetSmoothingAllocation? = nil
     ) {
         self.date = date
         self.amountMinorUnits = amountMinorUnits
@@ -26,6 +28,7 @@ public struct BudgetTransaction: Sendable, Hashable {
         self.isTransfer = isTransfer
         self.isIgnored = isIgnored
         self.isPending = isPending
+        self.smoothingAllocation = smoothingAllocation
     }
 }
 
@@ -198,7 +201,7 @@ public enum BudgetCalculator {
         "Income", "Transfers", "Credit Card Payments", "Loan Payments", "Uncategorized",
     ]
 
-    private static func isExcludedCategory(_ name: String?) -> Bool {
+    static func isExcludedCategory(_ name: String?) -> Bool {
         guard let name else { return false }
         return excludedCategoryNames.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
     }

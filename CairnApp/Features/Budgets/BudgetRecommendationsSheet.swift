@@ -289,7 +289,12 @@ struct BudgetRecommendationsSheet: View {
         }.value
         let transactions: [BudgetTransaction]
         do {
-            transactions = try await fetcher.budgetTransactions(scopes: accountScopes, from: start, to: end)
+            transactions = try await fetcher.budgetTransactions(
+                scopes: accountScopes,
+                from: start,
+                to: end,
+                timeZone: timeZone
+            )
         } catch {
             guard !Task.isCancelled else { return }
             loadFailed = true

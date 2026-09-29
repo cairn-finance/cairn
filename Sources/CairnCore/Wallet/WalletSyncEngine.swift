@@ -208,6 +208,7 @@ public actor WalletSyncEngine {
             storedKeys: storedKeys
         )
         for account in accounts where gone.contains(account.bankAccountID) {
+            try deleteBudgetSmoothingPlans(accountIDIndex: account.bankAccountID)
             modelContext.delete(account)
             outcome.accountsRemoved += 1
         }
@@ -286,6 +287,10 @@ public actor WalletSyncEngine {
             // forever.
             if txn.status == .rejected {
                 if let model = byID.removeValue(forKey: key) {
+                    try deleteBudgetSmoothingPlans(
+                        accountIDIndex: model.accountIDIndex,
+                        bankTransactionID: model.bankTransactionID
+                    )
                     modelContext.delete(model)
                     outcome.transactionsRemoved += 1
                 }
@@ -352,6 +357,17 @@ public actor WalletSyncEngine {
             let snapshot = BalanceSnapshot(day: day, balanceMinorUnits: account.balanceMinorUnits)
             snapshot.account = account
             modelContext.insert(snapshot)
+        }
+    }
+
+    private func deleteBudgetSmoothingPlans(
+        accountIDIndex: String,
+        bankTransactionID: String? = nil
+    ) throws {
+        for plan in try modelContext.fetch(FetchDescriptor<BudgetSmoothingPlan>())
+        where plan.accountIDIndex == accountIDIndex
+            && (bankTransactionID == nil || plan.bankTransactionID == bankTransactionID) {
+            modelContext.delete(plan)
         }
     }
 

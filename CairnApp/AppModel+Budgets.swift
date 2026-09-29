@@ -3,6 +3,43 @@ import CairnCore
 
 extension AppModel {
     @discardableResult
+    func saveBudgetExpenseSmoothing(_ input: BudgetExpenseSmoothingInput) async -> Bool {
+        do {
+            try await engine.saveBudgetExpenseSmoothing(input)
+            return true
+        } catch {
+            banner = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func removeBudgetExpenseSmoothing(
+        accountIDIndex: String,
+        bankTransactionID: String
+    ) async -> Bool {
+        do {
+            try await engine.removeBudgetExpenseSmoothing(
+                accountIDIndex: accountIDIndex,
+                bankTransactionID: bankTransactionID
+            )
+            return true
+        } catch {
+            banner = (error as? any LocalizedError)?.errorDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
+    func exportBudgetExpenseSmoothingCSV() async -> Data? {
+        do {
+            return Data(try await engine.exportBudgetExpenseSmoothingCSV().utf8)
+        } catch {
+            banner = String(localized: "Budget schedule export failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    @discardableResult
     func resetBudgetSettings() async -> Bool {
         do {
             try await engine.resetBudgetSettings()

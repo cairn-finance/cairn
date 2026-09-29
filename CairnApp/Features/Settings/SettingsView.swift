@@ -584,6 +584,9 @@ struct SettingsView: View {
                 Button { exportBudgets() } label: {
                     IconRow("Export budgets as CSV", systemImage: "chart.pie", tint: CairnTheme.accent)
                 }
+                Button { exportBudgetExpenseSmoothing() } label: {
+                    IconRow("Export expense schedules as CSV", systemImage: "calendar", tint: CairnTheme.accent)
+                }
             }
             Button { exportCommitments() } label: {
                 IconRow("Export commitments as CSV", systemImage: "calendar.badge.clock", tint: .orange)
@@ -601,7 +604,7 @@ struct SettingsView: View {
                 budgetingEnabled
                     // Keep this localized sentence as one catalog key.
                     // swiftlint:disable:next line_length
-                    ? "Exports include transactions, categories, notes, budget limits, and confirmed commitments. You choose where they save."
+                    ? "Exports include transactions, categories, notes, budget limits, expense schedules, and confirmed commitments. You choose where they save."
                     : "Exports include transactions, categories, notes, and confirmed commitments. You choose where they save."
             )
         }
@@ -690,6 +693,16 @@ struct SettingsView: View {
             exportDocument = ExportFile(data: data)
             exportType = .commaSeparatedText
             exportFileName = "cairn-budgets"
+            showingExporter = true
+        }
+    }
+
+    private func exportBudgetExpenseSmoothing() {
+        Task {
+            guard let data = await model.exportBudgetExpenseSmoothingCSV() else { return }
+            exportDocument = ExportFile(data: data)
+            exportType = .commaSeparatedText
+            exportFileName = "cairn-expense-schedules"
             showingExporter = true
         }
     }

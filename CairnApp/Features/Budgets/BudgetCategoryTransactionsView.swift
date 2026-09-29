@@ -12,6 +12,7 @@ struct BudgetCategoryTransactionsView: View {
     let currency: Currency
     let month: Date
     let timeZoneIdentifier: String
+    let budgetAllocations: [BudgetSmoothingAllocation]
 
     @State private var feed: TransactionsFeed?
 
@@ -37,7 +38,8 @@ struct BudgetCategoryTransactionsView: View {
             categoryName: categoryName,
             currencyIdentifier: currency.stableIdentifier,
             startDate: monthInterval?.start,
-            endDate: monthInterval?.end
+            endDate: monthInterval?.end,
+            excludedTransactionIDs: Set(budgetAllocations.map(\.sourceTransactionID))
         )
     }
 
@@ -50,21 +52,55 @@ struct BudgetCategoryTransactionsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.l) {
                 if let feed {
-                    if feed.rows.isEmpty {
+                    if feed.rows.isEmpty && budgetAllocations.isEmpty {
                         EmptyStateView(
                             systemImage: "checkmark.circle",
                             title: "Nothing here",
                             message: "No transactions in this category for this month."
                         )
                     } else {
-                        ScreenSectionHeader(
-                            "Transactions",
-                            subtitle: "Transactions in \(monthLabel)."
-                        )
-                        TransactionDayList(
-                            sections: feed.sections,
-                            onReachEnd: { feed.loadMore() }
-                        )
+                        if !budgetAllocations.isEmpty {
+                            ScreenSectionHeader(
+                                "Budget portions",
+                                subtitle: "Monthly portions of named purchases."
+                            )
+                            VStack(spacing: 8) {
+                                ForEach(budgetAllocations) { allocation in
+                                    Card(padding: 14) {
+                                        HStack(spacing: 12) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(allocation.name)
+                                                    .font(.subheadline.weight(.semibold))
+                                                Text(
+                                                    "\(allocation.payeeDescription) · \(Money(minorUnits: allocation.totalMinorUnits, currency: currency).formatted()) total · \(allocation.installmentNumber) of \(allocation.installmentCount) months"
+                                                )
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(2)
+                                            }
+                                            Spacer(minLength: 8)
+                                            AmountText(
+                                                money: Money(
+                                                    minorUnits: allocation.amountMinorUnits,
+                                                    currency: currency
+                                                ),
+                                                font: .subheadline.weight(.semibold)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if !feed.rows.isEmpty {
+                            ScreenSectionHeader(
+                                "Transactions",
+                                subtitle: "Transactions in \(monthLabel)."
+                            )
+                            TransactionDayList(
+                                sections: TransactionSectionBuilder.months(from: feed.rows),
+                                onReachEnd: { feed.loadMore() }
+                            )
+                        }
                     }
                 } else {
                     ProgressView()
@@ -80,8 +116,11 @@ struct BudgetCategoryTransactionsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task(id: transactionFilter.namespace) {
-            guard feed == nil else { return }
-            feed = TransactionsFeed(container: model.container, filter: transactionFilter)
+            if let feed {
+                feed.filter = transactionFilter
+            } else {
+                feed = TransactionsFeed(container: model.container, filter: transactionFilter)
+            }
         }
     }
 }

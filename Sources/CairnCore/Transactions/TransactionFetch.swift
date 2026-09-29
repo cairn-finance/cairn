@@ -46,6 +46,8 @@ public struct TransactionFilter: Sendable, Equatable {
     public var currencyIdentifier: String?
     public var startDate: Date?
     public var endDate: Date?
+    /// Composite row identities hidden from a specialized drill-down.
+    public var excludedTransactionIDs: Set<String>
 
     public init(
         quick: Quick = .all,
@@ -56,7 +58,8 @@ public struct TransactionFilter: Sendable, Equatable {
         categoryName: String? = nil,
         currencyIdentifier: String? = nil,
         startDate: Date? = nil,
-        endDate: Date? = nil
+        endDate: Date? = nil,
+        excludedTransactionIDs: Set<String> = []
     ) {
         self.quick = quick
         self.categoryID = categoryID
@@ -67,6 +70,7 @@ public struct TransactionFilter: Sendable, Equatable {
         self.currencyIdentifier = currencyIdentifier
         self.startDate = startDate
         self.endDate = endDate
+        self.excludedTransactionIDs = excludedTransactionIDs
     }
 
     /// The search term with surrounding whitespace removed. Spaces-only input
@@ -85,6 +89,7 @@ public struct TransactionFilter: Sendable, Equatable {
             || currencyIdentifier != nil
             || startDate != nil
             || endDate != nil
+            || !excludedTransactionIDs.isEmpty
     }
 
     /// A stable name for the current filter universe. The list uses it to
@@ -100,6 +105,7 @@ public struct TransactionFilter: Sendable, Equatable {
             currencyIdentifier ?? "-",
             startDate.map { String($0.timeIntervalSinceReferenceDate) } ?? "-",
             endDate.map { String($0.timeIntervalSinceReferenceDate) } ?? "-",
+            excludedTransactionIDs.sorted().joined(separator: ","),
         ]
         return parts.joined(separator: "|")
     }
@@ -174,6 +180,7 @@ public enum TransactionRefinement {
     /// applied the sign and relationship parts; this adds the money-movement
     /// exclusion, drill-down bounds, the tag match, and the free-text search.
     public static func matches(_ row: TransactionRowValue, filter: TransactionFilter) -> Bool {
+        if filter.excludedTransactionIDs.contains(row.id) { return false }
         switch filter.quick {
         case .all, .pending:
             break

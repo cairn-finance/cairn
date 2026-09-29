@@ -123,6 +123,10 @@ extension SyncEngine {
                 .filter { $0.settlementID == settlementID && $0.persistentModelID != transaction.persistentModelID }
             LedgerTransaction.unlinkSettlement(linkedRows, now: now)
         }
+        try deleteBudgetExpenseSmoothingPlans(
+            accountIDIndex: transaction.accountIDIndex,
+            bankTransactionID: transaction.bankTransactionID
+        )
         modelContext.delete(transaction)
         try recomputeManualBalance(account, now: now)
         try modelContext.save()
@@ -154,6 +158,12 @@ extension SyncEngine {
         }
         try requireManual(account)
 
+        for transaction in account.transactions ?? [] {
+            try deleteBudgetExpenseSmoothingPlans(
+                accountIDIndex: transaction.accountIDIndex,
+                bankTransactionID: transaction.bankTransactionID
+            )
+        }
         modelContext.delete(account)
         try modelContext.save()
     }
