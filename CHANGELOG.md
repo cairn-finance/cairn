@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-29
+
 ### Fixed
 
 - Recurring payment details use detached commitment snapshots while the store
