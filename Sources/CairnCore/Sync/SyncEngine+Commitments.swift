@@ -6,6 +6,16 @@ public extension SyncEngine {
         try modelContext.fetch(FetchDescriptor<ConfirmedCommitment>(sortBy: [SortDescriptor(\.nextDueDate)]))
     }
 
+    func confirmedCommitmentSnapshot(for detectorID: String) throws -> ConfirmedCommitmentSnapshot? {
+        try confirmedCommitments()
+            .filter { $0.detectorID == detectorID }
+            .max(by: {
+                if $0.modifiedAt != $1.modifiedAt { return $0.modifiedAt < $1.modifiedAt }
+                return $0.uuid.uuidString < $1.uuid.uuidString
+            })
+            .map(ConfirmedCommitmentSnapshot.init)
+    }
+
     func exportCommitmentsCSV() throws -> String {
         let rows = try confirmedCommitments().map {
             CommitmentExportRow(
@@ -111,6 +121,34 @@ public extension SyncEngine {
         commitment.accountScope = accountScope
         commitment.modifiedAt = now
         try modelContext.save()
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    func updateCommitment(
+        id: UUID,
+        name: String,
+        amountMinorUnits: Int64,
+        cadence: RecurringCadence,
+        nextDueDate: Date,
+        state: CommitmentState,
+        accountScope: String,
+        now: Date = .now
+    ) throws -> Bool {
+        let descriptor = FetchDescriptor<ConfirmedCommitment>(
+            predicate: #Predicate { $0.uuid == id }
+        )
+        guard let commitment = try modelContext.fetch(descriptor).first else { return false }
+        try updateCommitment(
+            commitment,
+            name: name,
+            amountMinorUnits: amountMinorUnits,
+            cadence: cadence,
+            nextDueDate: nextDueDate,
+            state: state,
+            accountScope: accountScope,
+            now: now
+        )
+        return true
     }
 
     func forecast(days: Int = 30, now: Date = .now) throws -> [ForecastBalance] {
