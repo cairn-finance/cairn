@@ -69,10 +69,18 @@ struct BudgetCategoryTransactionsView: View {
                                     Card(padding: 14) {
                                         HStack(spacing: 12) {
                                             VStack(alignment: .leading, spacing: 4) {
+                                                let total = Money(
+                                                    minorUnits: allocation.totalMinorUnits,
+                                                    currency: currency
+                                                ).formatted()
                                                 Text(allocation.name)
                                                     .font(.subheadline.weight(.semibold))
                                                 Text(
-                                                    "\(allocation.payeeDescription) · \(Money(minorUnits: allocation.totalMinorUnits, currency: currency).formatted()) total · \(allocation.installmentNumber) of \(allocation.installmentCount) months"
+                                                    """
+                                                    \(allocation.payeeDescription) · \
+                                                    \(total) total · \
+                                                    \(allocation.installmentNumber) of \(allocation.installmentCount) months
+                                                    """
                                                 )
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)

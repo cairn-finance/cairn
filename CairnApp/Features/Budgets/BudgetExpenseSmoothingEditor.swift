@@ -105,7 +105,10 @@ struct BudgetExpenseSmoothingEditor: View {
 
                 Section {
                     Text(
-                        "About \(Money(minorUnits: monthlyEstimate, currency: currency).formatted()) will count in each month. Any rounding remainder goes to the earliest months."
+                        """
+                        About \(Money(minorUnits: monthlyEstimate, currency: currency).formatted()) will count in each month. \
+                        Any rounding remainder goes to the earliest months.
+                        """
                     )
                     Text("This changes budget totals only. The posted transaction and account balance keep the full amount.")
                 }

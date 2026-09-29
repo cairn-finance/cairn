@@ -12,7 +12,10 @@ public enum BudgetExpenseSmoothingError: Error, LocalizedError, Sendable {
         case .transactionNotFound:
             "That transaction is no longer available."
         case .transactionNotEligible:
-            "Only posted expenses that count toward budgets and are not ignored, transfers, or shared expenses can be spread across budget months."
+            """
+            Only posted expenses that count toward budgets and are not ignored, transfers, or shared expenses \
+            can be spread across budget months.
+            """
         case .invalidName:
             "Give this schedule a name of up to 80 characters."
         case .invalidDuration:
@@ -88,11 +91,6 @@ public struct BudgetSmoothingAllocation: Sendable, Hashable, Identifiable {
 struct BudgetSmoothingTransactionKey: Hashable, Sendable {
     let accountIDIndex: String
     let bankTransactionID: String
-
-    init(accountIDIndex: String, bankTransactionID: String) {
-        self.accountIDIndex = accountIDIndex
-        self.bankTransactionID = bankTransactionID
-    }
 }
 
 public enum BudgetExpenseSmoothingCalculator {

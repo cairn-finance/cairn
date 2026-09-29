@@ -651,7 +651,12 @@ struct TransactionDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Spread in budget")
                             .font(.headline)
-                        Text("Count this purchase across monthly budgets while keeping its posted transaction and account balance unchanged.")
+                        Text(
+                            """
+                            Count this purchase across monthly budgets while keeping its posted transaction \
+                            and account balance unchanged.
+                            """
+                        )
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         if let plan = currentBudgetSmoothingPlan {
