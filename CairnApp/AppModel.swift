@@ -1172,6 +1172,31 @@ final class AppModel {
         catch { banner = error.localizedDescription; return false }
     }
 
+    func confirmedCommitmentSnapshot(for detectorID: String) async -> ConfirmedCommitmentSnapshot? {
+        try? await engine.confirmedCommitmentSnapshot(for: detectorID)
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    func updateCommitment(
+        id: UUID,
+        name: String,
+        amountMinorUnits: Int64,
+        cadence: RecurringCadence,
+        nextDueDate: Date,
+        state: CommitmentState,
+        accountScope: String
+    ) async throws -> Bool {
+        try await engine.updateCommitment(
+            id: id,
+            name: name,
+            amountMinorUnits: amountMinorUnits,
+            cadence: cadence,
+            nextDueDate: nextDueDate,
+            state: state,
+            accountScope: accountScope
+        )
+    }
+
     func forecast(days: Int = 30) async -> [ForecastBalance] {
         (try? await engine.forecast(days: days)) ?? []
     }

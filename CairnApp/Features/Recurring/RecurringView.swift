@@ -11,7 +11,7 @@ struct RecurringView: View {
     @Query private var settings: [AppSettings]
     @Query(sort: \ConfirmedCommitment.nextDueDate)
     private var commitments: [ConfirmedCommitment]
-    @State private var editingCommitment: ConfirmedCommitment?
+    @State private var editingCommitment: ConfirmedCommitmentSnapshot?
 
     private var homeCurrency: Currency { NetWorthMath.homeCurrency(settings: settings) }
 
@@ -26,8 +26,10 @@ struct RecurringView: View {
         model.recurringSeries.filter { $0.currency == primaryCurrency }
     }
 
-    private var visibleCommitments: [ConfirmedCommitment] {
-        commitments.filter { $0.currency == primaryCurrency }
+    private var visibleCommitments: [ConfirmedCommitmentSnapshot] {
+        commitments
+            .filter { $0.currency == primaryCurrency }
+            .map(ConfirmedCommitmentSnapshot.init)
     }
 
     private var outgoing: [RecurringSeries] {
@@ -106,7 +108,7 @@ struct RecurringView: View {
                         ConfirmedCommitmentRow(commitment: commitment)
                     }
                     .buttonStyle(.plain)
-                    if commitment.persistentModelID != visibleCommitments.last?.persistentModelID {
+                    if commitment.id != visibleCommitments.last?.id {
                         RowDivider()
                     }
                 }
@@ -261,7 +263,7 @@ struct RecurringRow: View {
 }
 
 private struct ConfirmedCommitmentRow: View {
-    let commitment: ConfirmedCommitment
+    let commitment: ConfirmedCommitmentSnapshot
 
     var body: some View {
         HStack(spacing: CairnTheme.Spacing.m) {
@@ -362,13 +364,12 @@ struct RecurringSummaryCard: View {
 /// The detail behind one detected series: the summary and every charge in it.
 struct RecurringDetailView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.modelContext) private var modelContext
-    @Query private var commitments: [ConfirmedCommitment]
     @State private var charges: [TransactionRowValue] = []
     @State private var isLoadingCharges = true
     @State private var chargeLoadFailed = false
     @State private var isConfirmed = false
-    @State private var showingEdit = false
+    @State private var commitment: ConfirmedCommitmentSnapshot?
+    @State private var editingCommitment: ConfirmedCommitmentSnapshot?
 
     let series: RecurringSeries
 
@@ -378,7 +379,11 @@ struct RecurringDetailView: View {
                 header
                 if !isConfirmed {
                     Button {
-                        Task { isConfirmed = await model.confirmRecurring(series) }
+                        Task {
+                            guard await model.confirmRecurring(series) else { return }
+                            commitment = await model.confirmedCommitmentSnapshot(for: series.id)
+                            isConfirmed = commitment != nil
+                        }
                     } label: {
                         Label(
                             series.direction == .outgoing ? "Confirm as bill" : "Confirm as income",
@@ -397,10 +402,7 @@ struct RecurringDetailView: View {
                         Label("Confirmed commitment", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(CairnTheme.positive)
                         Spacer()
-                        Button("Edit") { showingEdit = true }
-                    }
-                    .sheet(isPresented: $showingEdit) {
-                        CommitmentEditSheet(commitment: commitment)
+                        Button("Edit") { editingCommitment = commitment }
                     }
                 }
                 summary
@@ -421,11 +423,17 @@ struct RecurringDetailView: View {
         }
         .cairnCanvas()
         .navigationTitle(series.displayName)
+        .sheet(item: $editingCommitment) { commitment in
+            CommitmentEditSheet(commitment: commitment)
+                .cairnLockCover()
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task(id: series.id) {
-            isConfirmed = commitments.contains { $0.detectorID == series.id }
+            commitment = await model.confirmedCommitmentSnapshot(for: series.id)
+            guard !Task.isCancelled else { return }
+            isConfirmed = commitment != nil
             isLoadingCharges = true
             do {
                 let rows = try await model.recurringChargeRows(for: series)
@@ -439,10 +447,6 @@ struct RecurringDetailView: View {
             }
             isLoadingCharges = false
         }
-    }
-
-    private var commitment: ConfirmedCommitment? {
-        commitments.first { $0.detectorID == series.id }
     }
 
     private var header: some View {
@@ -528,8 +532,8 @@ struct RecurringDetailView: View {
 
 private struct CommitmentEditSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    let commitment: ConfirmedCommitment
+    @Environment(AppModel.self) private var model
+    let commitment: ConfirmedCommitmentSnapshot
     @State private var name: String
     @State private var amount: String
     @State private var cadence: RecurringCadence
@@ -537,8 +541,9 @@ private struct CommitmentEditSheet: View {
     @State private var state: CommitmentState
     @State private var scope: String
     @State private var errorMessage: String?
+    @State private var isSaving = false
 
-    init(commitment: ConfirmedCommitment) {
+    init(commitment: ConfirmedCommitmentSnapshot) {
         self.commitment = commitment
         _name = State(initialValue: commitment.name)
         _amount = State(initialValue: MinorUnits.string(abs(commitment.amountMinorUnits), exponent: commitment.currency.exponent))
@@ -584,20 +589,31 @@ private struct CommitmentEditSheet: View {
                             errorMessage = String(localized: "Enter a positive amount.")
                             return
                         }
-                        commitment.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? commitment.name : name
-                        commitment.amountMinorUnits = commitment.amountMinorUnits < 0 ? -abs(parsed) : abs(parsed)
-                        commitment.cadenceRaw = cadence.rawValue
-                        commitment.nextDueDate = dueDate
-                        commitment.stateRaw = state.rawValue
-                        commitment.accountScope = scope
-                        commitment.modifiedAt = .now
-                        do {
-                            try modelContext.save()
-                            dismiss()
-                        } catch {
-                            errorMessage = String(localized: "Couldn’t save this commitment. Try again.")
+                        isSaving = true
+                        Task {
+                            do {
+                                let saved = try await model.updateCommitment(
+                                    id: commitment.uuid,
+                                    name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                        ? commitment.name : name,
+                                    amountMinorUnits: commitment.amountMinorUnits < 0 ? -abs(parsed) : abs(parsed),
+                                    cadence: cadence,
+                                    nextDueDate: dueDate,
+                                    state: state,
+                                    accountScope: scope
+                                )
+                                if saved {
+                                    dismiss()
+                                } else {
+                                    errorMessage = String(localized: "Couldn’t save this commitment. Try again.")
+                                }
+                            } catch {
+                                errorMessage = String(localized: "Couldn’t save this commitment. Try again.")
+                            }
+                            isSaving = false
                         }
                     }
+                    .disabled(isSaving)
                 }
             }
         }
