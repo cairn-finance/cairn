@@ -9,7 +9,21 @@ struct MerchantNormalizerTests {
     func processorPrefixes() {
         #expect(MerchantNormalizer.normalize("SQ *BLUE BOTTLE COFFEE 1234") == "BLUE BOTTLE COFFEE")
         #expect(MerchantNormalizer.normalize("PAYPAL *SPOTIFY") == "SPOTIFY")
+        #expect(MerchantNormalizer.normalize("AplPay* Private Payment Serv") == "Private Payment Serv")
         #expect(MerchantNormalizer.normalize("TST* Chipotle") == "Chipotle")
+    }
+
+    @Test("Processor prefixes are removed from display names only when enabled")
+    func processorPrefixDisplayPreference() {
+        #expect(MerchantNormalizer.displayName("PAYPAL*Spotify") == "Spotify")
+        #expect(MerchantNormalizer.displayName("AplPay*Coffee Shop") == "Coffee Shop")
+        #expect(MerchantNormalizer.displayName("ACH: PAYPAL *Spotify") == "Spotify")
+        #expect(
+            MerchantNormalizer.displayName(
+                "PAYPAL*Spotify",
+                removingPaymentProcessorPrefixes: false
+            ) == "PAYPAL*Spotify"
+        )
     }
 
     @Test("Maps the Amazon family to one name")

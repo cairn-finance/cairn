@@ -370,8 +370,11 @@ struct TransactionFetchTests {
                 FetchDescriptor<LedgerTransaction>(predicate: #Predicate { $0.bankTransactionID == "A-4" })
             ).first
         )
+        grocery.normalizedMerchant = "AplPay"
+        grocery.payeeDescription = "AplPay*Coffee Roasters"
         let value = grocery.rowValue()
-        #expect(value.payeeDescription == "Merchant 4")
+        #expect(value.payeeDescription == "AplPay*Coffee Roasters")
+        #expect(value.merchantKey == "coffee roasters")
         #expect(value.categoryName == "Groceries")
         #expect(value.accountName == "Checking")
         #expect(value.isIgnored == false)

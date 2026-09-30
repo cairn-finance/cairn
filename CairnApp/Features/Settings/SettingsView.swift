@@ -9,6 +9,8 @@ import UserNotifications
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("cairn.compactTransactions") private var compactTransactions = false
+    @AppStorage(MerchantNormalizer.removeProcessorPrefixesKey)
+    private var removePaymentProcessorPrefixes = true
     @AppStorage(AppFeature.budgeting.storageKey) private var budgetingEnabled = AppFeature.budgeting.defaultEnabled
     @Query(sort: \Institution.name) private var institutions: [Institution]
     @Query(filter: #Predicate<Account> { $0.sourceRaw == "financekit" })
@@ -446,10 +448,15 @@ struct SettingsView: View {
     private var displaySection: some View {
         Section {
             Toggle("Compact transaction rows", isOn: $compactTransactions)
+            Toggle("Remove payment processor prefixes", isOn: $removePaymentProcessorPrefixes)
         } header: {
             Text("Display")
         } footer: {
-            Text("Compact rows use smaller icons and hide category names. Tags and account names remain visible.")
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Compact rows use smaller icons and hide category names. Tags and account names remain visible.")
+                Text("When enabled, payment prefixes such as PayPal* and AplPay* are hidden from transaction names.")
+                Text("The original bank description stays unchanged.")
+            }
         }
     }
 

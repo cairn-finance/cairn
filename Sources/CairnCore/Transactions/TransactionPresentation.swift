@@ -144,7 +144,7 @@ extension CairnSchemaV4.LedgerTransaction {
             ),
             persistentID: persistentModelID,
             payeeDescription: payeeDescription,
-            merchantKey: MerchantNormalizer.groupingKey(normalizedMerchant.isEmpty ? payeeDescription : normalizedMerchant),
+            merchantKey: MerchantNormalizer.groupingKey(payeeDescription),
             displayName: autoDisplayName,
             isCompact: autoCompact,
             note: note,

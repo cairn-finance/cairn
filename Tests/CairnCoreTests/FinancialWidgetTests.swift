@@ -181,6 +181,21 @@ struct MerchantSpendSummaryTests {
         #expect(summary.yearStart == date(2026, 1, 1))
     }
 
+    @Test("Merchant spend totals include close institution-specific name variants")
+    func fuzzyMerchantSpendTotals() {
+        let summary = MerchantSpendSummaryBuilder.make(
+            merchantKey: "private payment service",
+            transactions: [
+                transaction("private payment serv", amount: -1_000, date: date(2026, 5, 19)),
+                transaction("private payment service", amount: -2_000, date: date(2026, 5, 19)),
+            ],
+            now: date(2026, 5, 20, hour: 12),
+            calendar: calendar()
+        )
+
+        #expect(amount(summary.month, code: "USD") == 3_000)
+    }
+
     @Test("Merchant filter matches the exact normalized identity")
     func merchantFilter() {
         let matching = TransactionRowValue(
@@ -205,6 +220,24 @@ struct MerchantSpendSummaryTests {
         #expect(filter.namespace != TransactionFilter().namespace)
     }
 
+    @Test("Merchant filters include close institution-specific name variants")
+    func fuzzyMerchantFilter() {
+        let row = TransactionRowValue(
+            id: "serv", persistentID: nil, payeeDescription: "Private Payment Serv",
+            merchantKey: "private payment serv", amountMinorUnits: -100, currency: .usd,
+            effectiveDate: .now, isPending: false, isIgnored: false, isTransfer: false,
+            countsAsTransfer: false, categoryName: nil, categorySymbolName: nil,
+            categoryColorHex: nil, accountName: nil, tagNames: []
+        )
+
+        #expect(TransactionRefinement.matches(
+            row,
+            filter: TransactionFilter(merchantKey: "private payment service")
+        ))
+        #expect(!MerchantMatcher.matches("Private Payment Service", "Private Payment Card"))
+        #expect(!MerchantMatcher.matches("Cafe", "Café"))
+    }
+
     @MainActor
     @Test("Merchant fetcher groups saved rows by normalized merchant")
     func fetchesMerchantRows() async throws {
@@ -225,6 +258,16 @@ struct MerchantSpendSummaryTests {
         second.accountIDIndex = account.bankAccountID
         second.postedDate = date(2026, 5, 8)
         context.insert(second)
+        let third = LedgerTransaction(
+            bankTransactionID: "three",
+            payeeDescription: "AplPay*Coffee Roasters",
+            amountMinorUnits: -300
+        )
+        third.normalizedMerchant = "AplPay"
+        third.account = account
+        third.accountIDIndex = account.bankAccountID
+        third.postedDate = date(2026, 5, 19)
+        context.insert(third)
         try context.save()
 
         let fetcher = await Task.detached {
@@ -236,8 +279,8 @@ struct MerchantSpendSummaryTests {
             calendar: calendar()
         )
 
-        #expect(amount(summary.week, code: "USD") == 800)
-        #expect(amount(summary.month, code: "USD") == 1_000)
-        #expect(amount(summary.year, code: "USD") == 1_000)
+        #expect(amount(summary.week, code: "USD") == 1_100)
+        #expect(amount(summary.month, code: "USD") == 1_300)
+        #expect(amount(summary.year, code: "USD") == 1_300)
     }
 }

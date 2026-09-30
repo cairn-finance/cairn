@@ -460,6 +460,8 @@ struct TransactionDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppModel.self) private var model
     @AppStorage(AppFeature.budgeting.storageKey) private var budgetingEnabled = AppFeature.budgeting.defaultEnabled
+    @AppStorage(MerchantNormalizer.removeProcessorPrefixesKey)
+    private var removePaymentProcessorPrefixes = true
     @Query(
         sort: [
             SortDescriptor(\CairnSchemaV4.Category.sortOrder),
@@ -483,6 +485,13 @@ struct TransactionDetailView: View {
     @State private var showingBudgetExpenseSmoothing = false
 
     private let columns = [GridItem(.adaptive(minimum: 148), spacing: 8)]
+
+    private var displayName: String {
+        MerchantNormalizer.displayName(
+            transaction.displayDescription,
+            removingPaymentProcessorPrefixes: removePaymentProcessorPrefixes
+        )
+    }
 
     var body: some View {
         ScrollView {
@@ -560,12 +569,12 @@ struct TransactionDetailView: View {
                         size: 52
                     )
                     VStack(alignment: .leading, spacing: 4) {
-                        if transaction.displayDescription.isEmpty {
+                        if displayName.isEmpty {
                             Text("No description")
                                 .font(.title3.weight(.semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
-                            Text(transaction.displayDescription)
+                            Text(displayName)
                                 .font(.title3.weight(.semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -633,15 +642,11 @@ struct TransactionDetailView: View {
     }
 
     private var merchantName: String {
-        if !transaction.normalizedMerchant.isEmpty { return transaction.normalizedMerchant }
         return MerchantNormalizer.normalize(transaction.payeeDescription)
     }
 
     private var merchantKey: String {
-        let source = transaction.normalizedMerchant.isEmpty
-            ? transaction.payeeDescription
-            : transaction.normalizedMerchant
-        return MerchantNormalizer.groupingKey(source)
+        MerchantNormalizer.groupingKey(transaction.payeeDescription)
     }
 
     private var categoryCard: some View {

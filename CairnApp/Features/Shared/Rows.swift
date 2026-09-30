@@ -59,12 +59,20 @@ struct AccountRow: View {
 /// rainbow.
 struct TransactionRow: View {
     @AppStorage("cairn.compactTransactions") private var compactAll = false
+    @AppStorage(MerchantNormalizer.removeProcessorPrefixesKey)
+    private var removePaymentProcessorPrefixes = true
     let transaction: LedgerTransaction
     /// Show the account name under the merchant (hide inside account detail).
     var showsAccount: Bool = true
     var showsChevron: Bool = false
 
     private var compact: Bool { compactAll || transaction.autoCompact }
+    private var displayName: String {
+        MerchantNormalizer.displayName(
+            transaction.displayDescription,
+            removingPaymentProcessorPrefixes: removePaymentProcessorPrefixes
+        )
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: CairnTheme.Spacing.m) {
@@ -78,14 +86,14 @@ struct TransactionRow: View {
             .opacity(transaction.isIgnored ? 0.5 : 1)
 
             VStack(alignment: .leading, spacing: 3) {
-                if transaction.displayDescription.isEmpty {
+                if displayName.isEmpty {
                     Text("No description")
                         .font(.body.weight(.medium))
                         .lineLimit(2)
                         .strikethrough(transaction.isIgnored, color: .secondary)
                         .foregroundStyle(transaction.isIgnored ? .secondary : .primary)
                 } else {
-                    Text(transaction.displayDescription)
+                    Text(displayName)
                         .font(.body.weight(.medium))
                         .lineLimit(2)
                         .strikethrough(transaction.isIgnored, color: .secondary)
@@ -169,11 +177,19 @@ struct TransactionRow: View {
 /// categorized transaction cannot invalidate unrelated rows.
 struct TransactionValueRow: View {
     @AppStorage("cairn.compactTransactions") private var compactAll = false
+    @AppStorage(MerchantNormalizer.removeProcessorPrefixesKey)
+    private var removePaymentProcessorPrefixes = true
     let row: TransactionRowValue
     var showsAccount: Bool = true
     var showsChevron: Bool = false
 
     private var compact: Bool { compactAll || row.isCompact }
+    private var displayName: String {
+        MerchantNormalizer.displayName(
+            row.displayName ?? row.payeeDescription,
+            removingPaymentProcessorPrefixes: removePaymentProcessorPrefixes
+        )
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: CairnTheme.Spacing.m) {
@@ -187,8 +203,7 @@ struct TransactionValueRow: View {
             .opacity(row.isIgnored ? 0.5 : 1)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text((row.displayName ?? row.payeeDescription).isEmpty
-                    ? "No description" : (row.displayName ?? row.payeeDescription))
+                Text(displayName.isEmpty ? "No description" : displayName)
                     .font(.body.weight(.medium))
                     .lineLimit(1)
                     .strikethrough(row.isIgnored, color: .secondary)

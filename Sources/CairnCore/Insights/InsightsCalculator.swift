@@ -546,19 +546,57 @@ public enum InsightsCalculator {
         calendar: Calendar,
         limit: Int = 8
     ) -> [MerchantTotal] {
-        var totals: [String: Int64] = [:]
+        struct ExactMerchantTotal {
+            var name: String
+            var amountMinorUnits: Int64
+        }
+
+        var totals: [String: ExactMerchantTotal] = [:]
         for transaction in transactions
             where transaction.includedInInsights
             && transaction.amountMinorUnits < 0
             && isInMonth(transaction.date, monthStart: monthStart, calendar: calendar) {
             let name = transaction.merchant.isEmpty ? "Unknown" : transaction.merchant
-            totals[name] = MinorUnits.addClamped(
-                totals[name] ?? 0,
+            let key = MerchantNormalizer.groupingKey(name)
+            var total = totals[key] ?? ExactMerchantTotal(name: name, amountMinorUnits: 0)
+            total.amountMinorUnits = MinorUnits.addClamped(
+                total.amountMinorUnits,
                 MinorUnits.absClamped(transaction.amountMinorUnits)
             )
+            totals[key] = total
         }
-        return totals
-            .map { MerchantTotal(name: $0.key, amountMinorUnits: $0.value) }
+
+        struct SimilarMerchantGroup {
+            var aliases: [String]
+            var name: String
+            var amountMinorUnits: Int64
+        }
+
+        var groups: [SimilarMerchantGroup] = []
+        for (_, total) in totals.sorted(by: { $0.key < $1.key }) {
+            let name = total.name
+            if let index = groups.firstIndex(where: { group in
+                group.aliases.allSatisfy { MerchantMatcher.matches($0, name) }
+            }) {
+                groups[index].aliases.append(name)
+                groups[index].amountMinorUnits = MinorUnits.addClamped(
+                    groups[index].amountMinorUnits,
+                    total.amountMinorUnits
+                )
+                if name.count > groups[index].name.count {
+                    groups[index].name = name
+                }
+            } else {
+                groups.append(SimilarMerchantGroup(
+                    aliases: [name],
+                    name: name,
+                    amountMinorUnits: total.amountMinorUnits
+                ))
+            }
+        }
+
+        return groups
+            .map { MerchantTotal(name: $0.name, amountMinorUnits: $0.amountMinorUnits) }
             .sorted {
                 if $0.amountMinorUnits != $1.amountMinorUnits {
                     return $0.amountMinorUnits > $1.amountMinorUnits

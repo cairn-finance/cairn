@@ -80,9 +80,7 @@ public actor InsightsFetcher {
                     categoryName: category.name,
                     categoryColorHex: category.colorHex,
                     categorySymbolName: category.symbolName,
-                    merchant: transaction.normalizedMerchant.isEmpty
-                        ? transaction.payeeDescription
-                        : transaction.normalizedMerchant,
+                    merchant: MerchantNormalizer.normalize(transaction.payeeDescription),
                     accountName: row.scope.displayName,
                     isTransfer: transaction.countsAsTransfer,
                     isIgnored: transaction.isIgnored,
