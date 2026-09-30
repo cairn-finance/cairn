@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UserNotifications
 #if os(iOS)
 import UIKit
@@ -48,6 +49,13 @@ struct CairnApp: App {
             .task {
                 IntentBridge.shared.register(model)
                 await model.refreshSystemSurfaces()
+            }
+            .task {
+                for await _ in NotificationCenter.default.notifications(named: ModelContext.didSave) {
+                    guard !Task.isCancelled else { return }
+                    guard !model.lock.isLocked, model.storeFailure == nil else { continue }
+                    SystemSurfaceCoordinator.scheduleFinancialWidgetRefresh(for: model)
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 #if os(iOS)

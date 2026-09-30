@@ -233,7 +233,11 @@ struct CairnStatusWidget: Widget {
 
 @main
 struct CairnWidgets: WidgetBundle {
-    var body: some Widget { CairnStatusWidget() }
+    var body: some Widget {
+        CairnStatusWidget()
+        CairnNetWorthWidget()
+        CairnMonthToDateSpendWidget()
+    }
 }
 
 #Preview(as: .systemSmall) { CairnStatusWidget() } timeline: { CairnStatusEntry.preview }

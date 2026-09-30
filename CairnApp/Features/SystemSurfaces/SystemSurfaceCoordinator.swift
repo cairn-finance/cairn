@@ -8,6 +8,7 @@ import UserNotifications
 @MainActor
 enum SystemSurfaceCoordinator {
     static let snapshotKey = "cairn.system-surface.snapshot"
+    static let financialSnapshotKey = FinancialWidgetSnapshot.sharedDefaultsKey
     static let appGroupInfoKey = "CairnAppGroupIdentifier"
     static let enabledKey = "cairn.notifications.enabled"
     static let connectionsKey = "cairn.notifications.connections"
@@ -19,6 +20,10 @@ enum SystemSurfaceCoordinator {
     static let appLockEnabledKey = "cairn.appLockEnabled"
     private static var isRefreshing = false
     private static var refreshAgain = false
+    private static var isRefreshingFinancialWidget = false
+    private static var refreshFinancialWidgetAgain = false
+    private static var financialWidgetRefreshTask: Task<Void, Never>?
+    private static var financialWidgetGeneration = 0
 
     static var sharedDefaults: UserDefaults? {
         guard let identifier = Bundle.main.object(forInfoDictionaryKey: appGroupInfoKey) as? String,
@@ -66,13 +71,87 @@ enum SystemSurfaceCoordinator {
                 WidgetCenter.shared.reloadTimelines(ofKind: "CairnStatusWidget")
             }
         }
+        await refreshFinancialWidget(for: model)
         await scheduleNotifications(snapshot: snapshot, lastSuccessfulSync: lastSync, commitments: commitments)
     }
 
+    static func scheduleFinancialWidgetRefresh(for model: AppModel) {
+        financialWidgetRefreshTask?.cancel()
+        financialWidgetRefreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(750))
+            guard !Task.isCancelled else { return }
+            await refreshFinancialWidget(for: model)
+        }
+    }
+
+    private static func refreshFinancialWidget(for model: AppModel) async {
+        guard !isRefreshingFinancialWidget else {
+            refreshFinancialWidgetAgain = true
+            return
+        }
+        isRefreshingFinancialWidget = true
+        defer { isRefreshingFinancialWidget = false }
+        repeat {
+            refreshFinancialWidgetAgain = false
+            await refreshFinancialWidgetSnapshot(for: model)
+        } while refreshFinancialWidgetAgain
+    }
+
+    private static func refreshFinancialWidgetSnapshot(for model: AppModel) async {
+        guard model.storeFailure == nil,
+              !UserDefaults.standard.bool(forKey: appLockEnabledKey) else {
+            clearFinancialWidgetSnapshot()
+            return
+        }
+        let generation = financialWidgetGeneration
+        let container = model.container
+        let fetcher = await Task.detached(priority: .utility) {
+            FinancialWidgetFetcher(modelContainer: container)
+        }.value
+        let snapshot = try? await fetcher.snapshot()
+        // Do not let a suspended fetch restore private data after lock or deletion.
+        guard generation == financialWidgetGeneration,
+              !UserDefaults.standard.bool(forKey: appLockEnabledKey),
+              model.storeFailure == nil else {
+            clearFinancialWidgetSnapshot()
+            return
+        }
+        guard let snapshot, let data = try? JSONEncoder().encode(snapshot) else {
+            clearFinancialWidgetSnapshot()
+            return
+        }
+
+        let previous = sharedDefaults?.data(forKey: financialSnapshotKey)
+            .flatMap { try? JSONDecoder().decode(FinancialWidgetSnapshot.self, from: $0) }
+        sharedDefaults?.set(data, forKey: financialSnapshotKey)
+        let changed = previous?.netWorth != snapshot.netWorth
+            || previous?.primaryCurrency != snapshot.primaryCurrency
+            || previous?.monthToDateSpend != snapshot.monthToDateSpend
+            || previous?.monthStart != snapshot.monthStart
+            || previous?.isFresh() != true
+        if changed { reloadFinancialWidgets() }
+    }
+
+    private static func clearFinancialWidgetSnapshot() {
+        guard sharedDefaults?.object(forKey: financialSnapshotKey) != nil else { return }
+        sharedDefaults?.removeObject(forKey: financialSnapshotKey)
+        reloadFinancialWidgets()
+    }
+
     static func clear() async {
+        financialWidgetGeneration &+= 1
+        financialWidgetRefreshTask?.cancel()
+        financialWidgetRefreshTask = nil
         sharedDefaults?.removeObject(forKey: snapshotKey)
+        sharedDefaults?.removeObject(forKey: financialSnapshotKey)
         WidgetCenter.shared.reloadTimelines(ofKind: "CairnStatusWidget")
+        reloadFinancialWidgets()
         await clearNotifications()
+    }
+
+    private static func reloadFinancialWidgets() {
+        WidgetCenter.shared.reloadTimelines(ofKind: "CairnNetWorthWidget")
+        WidgetCenter.shared.reloadTimelines(ofKind: "CairnMonthToDateSpendWidget")
     }
 
     static func clearNotifications() async {

@@ -70,6 +70,8 @@ struct RootView: View {
         case .connections: ConnectionHealthView()
         case .commitments: RecurringView()
         case .commitment(let id): RecurringView(initialCommitmentID: id)
+        case .netWorth: NetWorthView()
+        case .activity: TransactionsView()
         }
     }
 }

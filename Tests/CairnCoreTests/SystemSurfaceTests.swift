@@ -89,7 +89,9 @@ struct SystemSurfaceTests {
     @Test("Routes round-trip and old widget links still open the forecast")
     func routes() throws {
         let id = UUID()
-        for route in [SystemSurfaceDestination.forecast, .connections, .commitments, .commitment(id)] {
+        for route in [
+            SystemSurfaceDestination.forecast, .connections, .commitments, .commitment(id), .netWorth, .activity,
+        ] {
             #expect(SystemSurfaceDestination(url: route.url) == route)
         }
         #expect(SystemSurfaceDestination(url: try #require(URL(string: "cairn://insights"))) == .forecast)

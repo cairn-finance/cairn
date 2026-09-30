@@ -15,6 +15,8 @@ struct TransactionDayList: View {
     var showsAccount: Bool = true
     /// Pin a month banner above the days that belong to it.
     var showsMonthHeaders: Bool = false
+    /// Hide aggregate spend when a caller may contain multiple currencies.
+    var showsSpendingTotals: Bool = true
     /// Called when the final row appears, so a windowed list can load more.
     var onReachEnd: (() -> Void)?
     /// Offered on each row's context menu when set. Used for manual editing;
@@ -26,6 +28,7 @@ struct TransactionDayList: View {
         sections: [TransactionMonthSection],
         showsAccount: Bool = true,
         showsMonthHeaders: Bool = false,
+        showsSpendingTotals: Bool = true,
         onReachEnd: (() -> Void)? = nil,
         onEdit: ((TransactionRowValue) -> Void)? = nil,
         onDelete: ((TransactionRowValue) -> Void)? = nil
@@ -33,6 +36,7 @@ struct TransactionDayList: View {
         self.sections = sections
         self.showsAccount = showsAccount
         self.showsMonthHeaders = showsMonthHeaders
+        self.showsSpendingTotals = showsSpendingTotals
         self.onReachEnd = onReachEnd
         self.onEdit = onEdit
         self.onDelete = onDelete
@@ -42,6 +46,7 @@ struct TransactionDayList: View {
         rows: [TransactionRowValue],
         showsAccount: Bool = true,
         showsMonthHeaders: Bool = false,
+        showsSpendingTotals: Bool = true,
         onReachEnd: (() -> Void)? = nil,
         onEdit: ((TransactionRowValue) -> Void)? = nil,
         onDelete: ((TransactionRowValue) -> Void)? = nil
@@ -50,6 +55,7 @@ struct TransactionDayList: View {
             sections: TransactionSectionBuilder.months(from: rows),
             showsAccount: showsAccount,
             showsMonthHeaders: showsMonthHeaders,
+            showsSpendingTotals: showsSpendingTotals,
             onReachEnd: onReachEnd,
             onEdit: onEdit,
             onDelete: onDelete
@@ -78,7 +84,7 @@ struct TransactionDayList: View {
 
     private func dayCard(_ day: TransactionDaySection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(title: day.day.cairnDayLabel, trailing: dayTotal(day))
+            SectionLabel(title: day.day.cairnDayLabel, trailing: showsSpendingTotals ? dayTotal(day) : nil)
             RowGroup {
                 ForEach(day.rows) { row in
                     TransactionRowEntry(
@@ -104,7 +110,7 @@ struct TransactionDayList: View {
             Text(month.month, format: .dateTime.month(.wide).year())
                 .font(.title3.weight(.semibold))
             Spacer()
-            if month.spentMinorUnits > 0 {
+            if showsSpendingTotals && month.spentMinorUnits > 0 {
                 HStack(spacing: 4) {
                     Text("Spent")
                         .foregroundStyle(.secondary)
