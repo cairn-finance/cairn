@@ -8,6 +8,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Added
 
+- Institution groups on Home show a cached favicon from the institution’s own
+  website, with initials as a fallback. No logo API key is required.
 - Cash-flow forecast details show each currency’s lowest projected balance and
   30-day outlook, with links to confirmed plans and connection health.
 - Home Screen and Lock Screen forecast widgets use layouts suited to each size,
