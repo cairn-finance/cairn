@@ -601,8 +601,47 @@ struct TransactionDetailView: View {
                         }
                     }
                 }
+
+                if !merchantKey.isEmpty, !merchantName.isEmpty {
+                    NavigationLink {
+                        MerchantDetailView(merchantKey: merchantKey, merchantName: merchantName)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "storefront")
+                                .foregroundStyle(CairnTheme.accent)
+                                .accessibilityHidden(true)
+                            Text("Merchant")
+                                .foregroundStyle(.secondary)
+                            Text(merchantName)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                        .font(.footnote)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows all transactions and spending totals for this merchant")
+                }
             }
         }
+    }
+
+    private var merchantName: String {
+        if !transaction.normalizedMerchant.isEmpty { return transaction.normalizedMerchant }
+        return MerchantNormalizer.normalize(transaction.payeeDescription)
+    }
+
+    private var merchantKey: String {
+        let source = transaction.normalizedMerchant.isEmpty
+            ? transaction.payeeDescription
+            : transaction.normalizedMerchant
+        return MerchantNormalizer.groupingKey(source)
     }
 
     private var categoryCard: some View {

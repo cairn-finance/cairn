@@ -8,6 +8,10 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Added
 
+- Home Screen widgets show net worth and month-to-date spending, with amounts
+  kept separate by currency and refreshed from saved data.
+- Transaction details link to merchant pages with the merchant's transactions
+  and week, month, and year spending totals.
 - Cash-flow forecast details show each currency’s lowest projected balance and
   30-day outlook, with links to confirmed plans and connection health.
 - Home Screen and Lock Screen forecast widgets use layouts suited to each size,

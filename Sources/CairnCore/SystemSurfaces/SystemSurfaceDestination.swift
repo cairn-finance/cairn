@@ -6,6 +6,8 @@ public enum SystemSurfaceDestination: Hashable, Sendable {
     case connections
     case commitments
     case commitment(UUID)
+    case netWorth
+    case activity
 
     public var url: URL {
         let host: String
@@ -14,6 +16,8 @@ public enum SystemSurfaceDestination: Hashable, Sendable {
         case .connections: host = "connections"
         case .commitments: host = "commitments"
         case .commitment(let id): host = "commitments/\(id.uuidString)"
+        case .netWorth: host = "net-worth"
+        case .activity: host = "activity"
         }
         // All components above are fixed strings or UUIDs.
         return URL(string: "cairn://\(host)") ?? URL(filePath: "/")
@@ -29,6 +33,10 @@ public enum SystemSurfaceDestination: Hashable, Sendable {
             self = .forecast
         case "connections" where path.isEmpty:
             self = .connections
+        case "net-worth" where path.isEmpty:
+            self = .netWorth
+        case "activity" where path.isEmpty:
+            self = .activity
         case "commitments" where path.isEmpty:
             self = .commitments
         case "commitments" where path.count == 1:
