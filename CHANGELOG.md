@@ -8,6 +8,9 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Added
 
+- Investments show currency-separated position totals and mix, searchable and
+  sortable holdings, account-level freshness, and selectable balance-history
+  ranges without presenting transaction history as investment performance.
 - Home Screen widgets show net worth and month-to-date spending, with amounts
   kept separate by currency and refreshed from saved data.
 - Transaction details link to merchant pages with the merchant's transactions
