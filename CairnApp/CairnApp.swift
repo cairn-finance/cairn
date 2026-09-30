@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 #if os(iOS)
 import UIKit
 #endif
@@ -26,6 +27,10 @@ struct CairnApp: App {
     @UIApplicationDelegateAdaptor(CairnAppDelegate.self) private var appDelegate
     #endif
 
+    init() {
+        UNUserNotificationCenter.current().delegate = CairnNotificationDelegate.shared
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -39,6 +44,7 @@ struct CairnApp: App {
                 }
             }
             .environment(model)
+            .onOpenURL { SystemSurfaceRouter.shared.open($0) }
             .task {
                 IntentBridge.shared.register(model)
                 await model.refreshSystemSurfaces()

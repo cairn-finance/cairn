@@ -5,6 +5,7 @@ import CairnCore
 /// Subscriptions and other regular payments Cairn has spotted in history.
 /// Detection is entirely on-device; nothing about a merchant leaves the phone.
 struct RecurringView: View {
+    var initialCommitmentID: UUID?
     @Environment(AppModel.self) private var model
     @Query(filter: #Predicate<Account> { $0.isHidden == false })
     private var accounts: [Account]
@@ -96,7 +97,15 @@ struct RecurringView: View {
             CommitmentEditSheet(commitment: commitment)
                 .cairnLockCover()
         }
-        .task { await model.refreshRecurring() }
+        .task {
+            await model.refreshRecurring()
+            if let id = initialCommitmentID {
+                editingCommitment = try? await model.engine.confirmedCommitmentSnapshot(id: id)
+                if editingCommitment == nil {
+                    model.banner = String(localized: "This plan is no longer available. Review your remaining plans here.")
+                }
+            }
+        }
     }
 
     private var confirmedSection: some View {

@@ -148,28 +148,7 @@ struct SettingsView: View {
     // MARK: - Sync
 
     private var alertsSection: some View {
-        Section {
-            Button {
-                Task {
-                    let granted = await SystemSurfaceCoordinator.requestAuthorizationAndSchedule(for: model)
-                    model.banner = granted
-                        ? "Alerts enabled for connection and forecast changes."
-                        : "Alerts were not enabled. You can change this in System Settings."
-                }
-            } label: {
-                IconRow("Enable Cairn Alerts", systemImage: "bell.badge", tint: CairnTheme.accent) {
-                    if UserDefaults.standard.bool(forKey: "cairn.notifications.enabled") {
-                        Text("Enabled").foregroundStyle(.secondary)
-                    }
-                }
-            }
-        } header: {
-            Text("Alerts")
-        } footer: {
-            // Keep this localized sentence as one catalog key.
-            // swiftlint:disable:next line_length
-            Text("Cairn schedules only actionable connection, forecast, and confirmed-commitment changes. It never claims live bank freshness or moves money.")
-        }
+        AlertsSettingsSection()
     }
 
     private var syncSection: some View {

@@ -16,6 +16,10 @@ public extension SyncEngine {
             .map(ConfirmedCommitmentSnapshot.init)
     }
 
+    func confirmedCommitmentSnapshot(id: UUID) throws -> ConfirmedCommitmentSnapshot? {
+        try confirmedCommitments().first { $0.uuid == id }.map(ConfirmedCommitmentSnapshot.init)
+    }
+
     func exportCommitmentsCSV() throws -> String {
         let rows = try confirmedCommitments().map {
             CommitmentExportRow(
@@ -177,14 +181,16 @@ public extension SyncEngine {
     func systemSurfaceCommitments(now: Date = .now) throws -> [SystemSurfaceCommitment] {
         try confirmedCommitments().filter { $0.state == .active }.map {
             SystemSurfaceCommitment(
-                id: $0.detectorID.isEmpty ? $0.uuid.uuidString : $0.detectorID,
+                id: $0.uuid.uuidString,
                 status: CommitmentStatusEvaluator.status(
                     nextDueDate: $0.nextDueDate,
                     now: now,
                     lastObservedDate: $0.lastObservedDate,
                     expectedAmount: $0.amountMinorUnits,
                     observedAmount: $0.lastObservedDate == nil ? nil : $0.lastObservedAmountMinorUnits,
-                    uncertain: $0.state == .active && $0.lastObservedDate == nil
+                    // A user-confirmed due date remains actionable even before
+                    // the first matching payment is observed.
+                    uncertain: false
                 ),
                 dueDate: $0.nextDueDate
             )

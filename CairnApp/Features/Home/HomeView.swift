@@ -91,6 +91,26 @@ struct HomeView: View {
 
     @ViewBuilder
     private var planningSection: some View {
+        NavigationLink {
+            ForecastView()
+        } label: {
+            Card {
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.xyaxis.line")
+                        .font(.title2)
+                        .foregroundStyle(CairnTheme.accent)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Cash-flow forecast").font(.headline)
+                        Text("Saved balances and plans over the next 30 days")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.pressableCard)
         if budgetingEnabled || !homeRecurring.isEmpty {
             VStack(alignment: .leading, spacing: CairnTheme.Spacing.m) {
                 ScreenSectionHeader(

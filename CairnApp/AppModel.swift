@@ -1300,6 +1300,9 @@ final class AppModel {
         // app lock is part of "everything", so it is turned off and forgotten.
         UserDefaults.standard.removeObject(forKey: Self.Keys.appLockEnabled)
         UserDefaults.standard.removeObject(forKey: "cairn.notifications.enabled")
+        UserDefaults.standard.removeObject(forKey: SystemSurfaceCoordinator.connectionsKey)
+        UserDefaults.standard.removeObject(forKey: SystemSurfaceCoordinator.forecastKey)
+        UserDefaults.standard.removeObject(forKey: SystemSurfaceCoordinator.commitmentsKey)
         lock.setEnabled(false)
         // Wallet access is granted to the system rather than to us, so it can't
         // be revoked here. Leaving the flag on would quietly re-import Apple Card
