@@ -18,6 +18,8 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
     public let persistentID: PersistentIdentifier?
 
     public let payeeDescription: String
+    /// Case-insensitive normalized merchant identity used by merchant pages.
+    public let merchantKey: String?
     public let displayName: String?
     public let isCompact: Bool
     public let note: String?
@@ -54,6 +56,7 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
         id: String,
         persistentID: PersistentIdentifier?,
         payeeDescription: String,
+        merchantKey: String? = nil,
         displayName: String? = nil,
         isCompact: Bool = false,
         note: String? = nil,
@@ -78,6 +81,7 @@ public struct TransactionRowValue: Sendable, Hashable, Identifiable {
         self.id = id
         self.persistentID = persistentID
         self.payeeDescription = payeeDescription
+        self.merchantKey = merchantKey
         self.displayName = displayName
         self.isCompact = isCompact
         self.note = note
@@ -140,6 +144,7 @@ extension CairnSchemaV4.LedgerTransaction {
             ),
             persistentID: persistentModelID,
             payeeDescription: payeeDescription,
+            merchantKey: MerchantNormalizer.groupingKey(normalizedMerchant.isEmpty ? payeeDescription : normalizedMerchant),
             displayName: autoDisplayName,
             isCompact: autoCompact,
             note: note,

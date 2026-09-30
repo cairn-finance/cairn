@@ -42,6 +42,8 @@ public struct TransactionFilter: Sendable, Equatable {
     public var accountID: PersistentIdentifier?
     public var tagID: PersistentIdentifier?
     public var searchText: String
+    /// Exact merchant identity for transaction-to-merchant drill-downs.
+    public var merchantKey: String?
     /// An exact currency descriptor identity for cross-account drill-downs.
     public var currencyIdentifier: String?
     public var startDate: Date?
@@ -55,6 +57,7 @@ public struct TransactionFilter: Sendable, Equatable {
         accountID: PersistentIdentifier? = nil,
         tagID: PersistentIdentifier? = nil,
         searchText: String = "",
+        merchantKey: String? = nil,
         categoryName: String? = nil,
         currencyIdentifier: String? = nil,
         startDate: Date? = nil,
@@ -67,6 +70,7 @@ public struct TransactionFilter: Sendable, Equatable {
         self.accountID = accountID
         self.tagID = tagID
         self.searchText = searchText
+        self.merchantKey = merchantKey
         self.currencyIdentifier = currencyIdentifier
         self.startDate = startDate
         self.endDate = endDate
@@ -86,6 +90,7 @@ public struct TransactionFilter: Sendable, Equatable {
             || accountID != nil
             || tagID != nil
             || !trimmedSearch.isEmpty
+            || merchantKey != nil
             || currencyIdentifier != nil
             || startDate != nil
             || endDate != nil
@@ -102,6 +107,7 @@ public struct TransactionFilter: Sendable, Equatable {
             accountID.map(String.init(describing:)) ?? "-",
             tagID.map(String.init(describing:)) ?? "-",
             trimmedSearch,
+            merchantKey ?? "-",
             currencyIdentifier ?? "-",
             startDate.map { String($0.timeIntervalSinceReferenceDate) } ?? "-",
             endDate.map { String($0.timeIntervalSinceReferenceDate) } ?? "-",
@@ -205,6 +211,11 @@ public enum TransactionRefinement {
         if let currencyIdentifier = filter.currencyIdentifier,
            row.currency.stableIdentifier != currencyIdentifier {
             return false
+        }
+
+        if let merchantKey = filter.merchantKey {
+            let rowKey = row.merchantKey ?? MerchantNormalizer.groupingKey(row.payeeDescription)
+            if rowKey != merchantKey { return false }
         }
 
         if let startDate = filter.startDate, row.effectiveDate < startDate {
