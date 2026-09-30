@@ -6,6 +6,9 @@ import Foundation
 /// charges, and de-duplicate imports. The result preserves the original casing
 /// where possible; callers compare case-insensitively.
 public enum MerchantNormalizer {
+    /// UserDefaults key for the display-only processor-prefix preference.
+    public static let removeProcessorPrefixesKey = "cairn.removePaymentProcessorPrefixes"
+
     /// Store/order numbers, e.g. `#1234` or a trailing 4+ digit run.
     private static let trailingNumberPattern = #"\s+#?\d{3,}\b"#
     /// A trailing hash code with no spaces, e.g. `#A1B2C3`.
@@ -19,6 +22,7 @@ public enum MerchantNormalizer {
     /// Payment processors that pass the real merchant name after an `*`.
     private static let markerPrefixes = [
         "sq *", "sq*", "tst*", "tst *", "sp *", "sp*", "wpy*", "wl *",
+        "aplpay *", "aplpay*",
         "paypal *", "paypal*", "pp*", "pp *", "toast*",
     ]
 
@@ -72,6 +76,24 @@ public enum MerchantNormalizer {
         text = text.trimmingCharacters(in: charactersToTrim)
 
         return text.isEmpty ? original : text
+    }
+
+    /// Returns a transaction name suitable for display without changing the
+    /// bank-provided description stored on the transaction.
+    public static func displayName(
+        _ raw: String,
+        removingPaymentProcessorPrefixes: Bool = true
+    ) -> String {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard removingPaymentProcessorPrefixes else { return text }
+
+        let candidate = strippingLeadingLabels(from: text)
+        let lowered = candidate.lowercased()
+        for prefix in markerPrefixes where lowered.hasPrefix(prefix) {
+            guard let marker = candidate.range(of: "*") else { break }
+            return String(candidate[marker.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return text
     }
 
     /// Leading protocol labels that carry no merchant information. Stripped

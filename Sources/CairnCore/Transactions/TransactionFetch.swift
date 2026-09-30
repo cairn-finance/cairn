@@ -215,7 +215,7 @@ public enum TransactionRefinement {
 
         if let merchantKey = filter.merchantKey {
             let rowKey = row.merchantKey ?? MerchantNormalizer.groupingKey(row.payeeDescription)
-            if rowKey != merchantKey { return false }
+            if !MerchantMatcher.matches(rowKey, merchantKey) { return false }
         }
 
         if let startDate = filter.startDate, row.effectiveDate < startDate {

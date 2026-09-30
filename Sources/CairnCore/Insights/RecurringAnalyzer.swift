@@ -26,10 +26,7 @@ extension RecurringDetector {
             // A hidden account is out of the picture everywhere else, so its
             // charges should not surface as recurring either.
             guard let account = transaction.account, !account.isHidden else { return nil }
-            let merchant = transaction.normalizedMerchant.isEmpty
-                ? transaction.payeeDescription
-                : transaction.normalizedMerchant
-            let trimmed = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = MerchantNormalizer.normalize(transaction.payeeDescription)
             guard !trimmed.isEmpty else { return nil }
 
             return RecurringInput(

@@ -68,7 +68,7 @@ public enum MerchantSpendSummaryBuilder {
         var month: [Currency: Int64] = [:]
         var year: [Currency: Int64] = [:]
 
-        for transaction in transactions where transaction.merchantKey == merchantKey
+        for transaction in transactions where MerchantMatcher.matches(transaction.merchantKey, merchantKey)
             && transaction.effectiveDate >= yearStart
             && transaction.effectiveDate <= now
             && !transaction.isPending
@@ -113,11 +113,8 @@ public actor MerchantSpendFetcher {
         let transactions = try modelContext.fetch(
             FetchDescriptor<LedgerTransaction>(predicate: #Predicate { !$0.isPending })
         ).map { transaction in
-            let merchant = transaction.normalizedMerchant.isEmpty
-                ? transaction.payeeDescription
-                : transaction.normalizedMerchant
             return MerchantSpendTransaction(
-                merchantKey: MerchantNormalizer.groupingKey(merchant),
+                merchantKey: MerchantNormalizer.groupingKey(transaction.payeeDescription),
                 currency: transaction.account?.currency ?? Currency(code: "USD", exponent: transaction.currencyExponent),
                 amountMinorUnits: transaction.amountMinorUnits,
                 effectiveDate: transaction.effectiveDate,

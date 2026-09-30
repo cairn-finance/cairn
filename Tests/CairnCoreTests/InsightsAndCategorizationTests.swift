@@ -235,6 +235,28 @@ struct InsightsCalculatorTests {
         #expect(snapshot.averageDailySpending(now: date(2026, 3, 15), calendar: Self.calendar) == 464)
     }
 
+    @Test("Top merchants combine close names from different institutions")
+    func fuzzyTopMerchants() {
+        let merchants = InsightsCalculator.topMerchants(
+            monthStart: date(2026, 2, 1),
+            transactions: [
+                InsightTransaction(
+                    date: date(2026, 2, 3), amountMinorUnits: -1_000,
+                    categoryName: "Shopping", merchant: "Private Payment Serv"
+                ),
+                InsightTransaction(
+                    date: date(2026, 2, 5), amountMinorUnits: -2_000,
+                    categoryName: "Shopping", merchant: "Private Payment Service"
+                ),
+            ],
+            calendar: Self.calendar
+        )
+
+        #expect(merchants.count == 1)
+        #expect(merchants.first?.name == "Private Payment Service")
+        #expect(merchants.first?.amountMinorUnits == 3_000)
+    }
+
     @Test("Cumulative spending accumulates by day")
     func cumulative() {
         let points = InsightsCalculator.cumulativeSpending(
