@@ -17,6 +17,9 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Fixed
 
+- Security purchases and sales in investment accounts are treated as money
+  movement instead of shopping or income. Earlier automatic shopping labels
+  are corrected without changing manual categories or transaction amounts.
 - Small forecast widgets use a compact layout, and sync labels show a fixed
   time or date instead of a ticking elapsed-time counter.
 - Notification responses complete on the main thread to avoid a UIKit

@@ -1857,6 +1857,21 @@ public actor SyncEngine {
         for transaction in transactions {
             if applyRulesIfNeeded(to: transaction, rules: rules, applyCategory: false) { didChange = true }
             guard transaction.userCategory == nil, !transaction.isIgnored else { continue }
+            // Trade wording is account-specific. Resolve it before remembered
+            // model guesses so earlier Shopping labels cannot teach themselves
+            // back onto purchases. Explicit category rules retain precedence.
+            if !transaction.isTransferUserSet,
+               TransactionHints.isInvestmentTrade(
+                   description: transaction.payeeDescription,
+                   accountType: transaction.account?.accountType ?? .other
+               ), RulesEngine.categoryID(
+                   amountMinorUnits: transaction.amountMinorUnits,
+                   description: transaction.payeeDescription,
+                   rules: rules
+               ) == nil {
+                if applyMoneyMovement(.transfer, to: transaction, now: now) { didChange = true }
+                continue
+            }
             // Money movement is a deterministic outcome. Once a row is recognized
             // as a transfer, merchant memory and fuzzy matches must not pull it
             // back into a spending or income category on a later pass.
@@ -2284,6 +2299,11 @@ public actor SyncEngine {
         var changed = 0
         for other in all where other.persistentModelID != transactionID {
             guard other.userCategory == nil, !other.isIgnored else { continue }
+            if !other.isTransferUserSet,
+               TransactionHints.isInvestmentTrade(
+                   description: other.payeeDescription,
+                   accountType: other.account?.accountType ?? .other
+               ) { continue }
             guard MerchantMemory.key(for: Self.merchantName(other)) == key else { continue }
             if other.autoCategory?.uuid == category.uuid,
                other.autoCategorySource == SuggestionSource.memory.rawValue {
@@ -2426,11 +2446,6 @@ public actor SyncEngine {
             .sorted { $0.effectiveDate > $1.effectiveDate }
 
         guard !candidates.isEmpty else { return outcome }
-        guard AppleIntelligenceCategorizer.isAvailable else {
-            outcome.remaining = candidates.count
-            return outcome
-        }
-
         let counterparties = try knownTransferCounterparties()
 
         // Group candidates by merchant and direction. A merchant that appears as
@@ -2459,7 +2474,8 @@ public actor SyncEngine {
                let kind = TransactionHints.moneyMovement(
                    description: transaction.payeeDescription,
                    merchant: transaction.normalizedMerchant,
-                   counterparties: counterparties
+                   counterparties: counterparties,
+                   accountType: transaction.account?.accountType ?? .other
                ) {
                 applyMoneyMovement(kind, to: transaction, now: now)
                 transaction.autoCategorizeAttemptedAt = now
@@ -2487,6 +2503,11 @@ public actor SyncEngine {
         let batchSize = limit > 0 ? limit : AppleIntelligenceCategorizer.recommendedMerchantBatchSize
         let selected = order.prefix(max(1, batchSize)).compactMap { groups[$0] }
         guard !selected.isEmpty else {
+            outcome.remaining = max(0, candidates.count - outcome.attempted)
+            try modelContext.save()
+            return outcome
+        }
+        guard AppleIntelligenceCategorizer.isAvailable else {
             outcome.remaining = max(0, candidates.count - outcome.attempted)
             try modelContext.save()
             return outcome

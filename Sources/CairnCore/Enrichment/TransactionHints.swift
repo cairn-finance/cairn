@@ -126,6 +126,30 @@ public enum TransactionHints {
         return transferSubstrings.contains { haystack.contains($0) }
     }
 
+    /// Buying and selling securities changes the form of an asset, rather than
+    /// recording household spending or income. Account context is required for
+    /// terse broker wording such as "buy 0.25 shares of Sample Fund".
+    public static func isInvestmentTrade(description: String, accountType: AccountType) -> Bool {
+        guard accountType == .investment, !isExplicitFee(description: description) else { return false }
+        let text = normalized(description: description, merchant: "")
+            .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        // Investment and HSA accounts may also have debit-card spending.
+        let retailMarkers = ["pos purchase", "debit card", "card purchase", "purchase authorized", "purchase authorised"]
+        guard !retailMarkers.contains(where: text.contains) else { return false }
+        let words = text.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        let action = words.first == "you" ? words.dropFirst().first : words.first
+        guard let action else { return false }
+        if ["buy", "bought", "sell", "sold", "bot", "sld", "reinvest", "reinvestment", "reinvested"]
+            .contains(action) {
+            return true
+        }
+        // "Purchase" alone also describes retail spending. Require a security
+        // term as well before treating that less specific wording as a trade.
+        let securityTerms: Set<String> = ["share", "shares", "stock", "stocks", "fund", "etf", "bond", "option", "security"]
+        return ["purchase", "purchased", "sale"].contains(action)
+            && !securityTerms.isDisjoint(with: words.dropFirst())
+    }
+
     /// Money movement that the generic keywords miss: a counterparty that is one
     /// of the person's own accounts or institutions, or a well-known card issuer,
     /// bank, credit union, or brokerage.
@@ -179,8 +203,10 @@ public enum TransactionHints {
     public static func moneyMovement(
         description: String,
         merchant: String = "",
-        counterparties: [String] = []
+        counterparties: [String] = [],
+        accountType: AccountType = .other
     ) -> MoneyMovementKind? {
+        if isInvestmentTrade(description: description, accountType: accountType) { return .transfer }
         if isLoanPayment(description: description, merchant: merchant) { return .loanPayment }
         if isCreditCardPayment(description: description, merchant: merchant) { return .creditCardPayment }
         if isMoneyMovement(description: description, merchant: merchant, counterparties: counterparties) {
