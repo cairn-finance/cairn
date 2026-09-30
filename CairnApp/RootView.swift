@@ -3,6 +3,8 @@ import CairnCore
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @State private var router = SystemSurfaceRouter.shared
+    @State private var surfaceRequest: SystemSurfaceRouter.Request?
 
     var body: some View {
         Group {
@@ -29,6 +31,21 @@ struct RootView: View {
         }
         .animation(CairnTheme.Motion.quick, value: model.banner)
         .tint(CairnTheme.accent)
+        .onChange(of: router.pending?.id, initial: true) { _, _ in presentSystemSurface() }
+        .onChange(of: model.onboardingComplete) { _, _ in presentSystemSurface() }
+        .onChange(of: model.lock.isLocked) { _, _ in presentSystemSurface() }
+        .sheet(item: $surfaceRequest) { request in
+            NavigationStack {
+                systemSurfaceDestination(request.destination)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { surfaceRequest = nil }
+                        }
+                    }
+            }
+            .id(request.id)
+            .cairnLockCover()
+        }
         // Banners are transient: clear them after a few seconds so they never
         // sit over the toolbar.
         .task(id: model.banner) {
@@ -36,6 +53,23 @@ struct RootView: View {
             try? await Task.sleep(for: .seconds(4.5))
             guard !Task.isCancelled else { return }
             model.banner = nil
+        }
+    }
+
+    private func presentSystemSurface() {
+        guard model.onboardingComplete, !model.lock.isLocked,
+              let request = router.pending else { return }
+        surfaceRequest = request
+        router.pending = nil
+    }
+
+    @ViewBuilder
+    private func systemSurfaceDestination(_ destination: SystemSurfaceDestination) -> some View {
+        switch destination {
+        case .forecast: ForecastView()
+        case .connections: ConnectionHealthView()
+        case .commitments: RecurringView()
+        case .commitment(let id): RecurringView(initialCommitmentID: id)
         }
     }
 }

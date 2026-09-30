@@ -14,6 +14,28 @@ All notable changes to Cairn are documented here. This project follows
   schedule while keeping the original transaction amount in history and
   account balances.
 
+- Cash-flow forecast details show each currency’s lowest projected balance and
+  30-day outlook, with links to confirmed plans and connection health.
+- Home Screen and Lock Screen forecast widgets use layouts suited to each size,
+  with sample gallery previews and freshness information.
+- Alerts have individual controls for connection health, forecast shortfalls,
+  and confirmed plans, plus a test alert in Settings.
+
+### Fixed
+
+- Small forecast widgets use a compact layout, and sync labels show a fixed
+  time or date instead of a ticking elapsed-time counter.
+- Notification responses complete on the main thread to avoid a UIKit
+  assertion while handling alerts.
+- Widgets adopt the system container background so gallery previews render
+  correctly.
+- Notification taps and widget links open the relevant forecast, connection
+  health, or confirmed plan, including alerts delivered by earlier versions.
+- Confirmed plans can send due-date reminders before their first observed
+  payment. Unresolved alerts no longer repeat after delivery or dismissal.
+- Stale-connection alerts are scheduled ahead of time and upcoming plans remind
+  a day before they are due.
+
 ## [1.2.1] - 2026-09-29
 
 ### Fixed
