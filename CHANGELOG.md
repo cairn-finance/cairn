@@ -6,13 +6,7 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
-## [1.3.0] - 2026-09-29
-
 ### Added
-
-- Spread a one-time expense across monthly budgets with a custom name and
-  schedule while keeping the original transaction amount in history and
-  account balances.
 
 - Cash-flow forecast details show each currency’s lowest projected balance and
   30-day outlook, with links to confirmed plans and connection health.
@@ -35,6 +29,14 @@ All notable changes to Cairn are documented here. This project follows
   payment. Unresolved alerts no longer repeat after delivery or dismissal.
 - Stale-connection alerts are scheduled ahead of time and upcoming plans remind
   a day before they are due.
+
+## [1.3.0] - 2026-09-29
+
+### Added
+
+- Spread a one-time expense across monthly budgets with a custom name and
+  schedule while keeping the original transaction amount in history and
+  account balances.
 
 ## [1.2.1] - 2026-09-29
 
