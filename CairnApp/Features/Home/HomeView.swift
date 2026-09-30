@@ -496,7 +496,8 @@ struct HomeView: View {
                     accountGroup(
                         title: institution.name.isEmpty ? "Institution" : LocalizedStringKey(institution.name),
                         trailing: institutionTrailing(institution),
-                        accounts: institutionAccounts
+                        accounts: institutionAccounts,
+                        institution: institution
                     )
                 }
             }
@@ -517,9 +518,34 @@ struct HomeView: View {
         return date.formatted(.relative(presentation: .named))
     }
 
-    private func accountGroup(title: LocalizedStringKey, trailing: String?, accounts: [Account]) -> some View {
+    private func accountGroup(
+        title: LocalizedStringKey,
+        trailing: String?,
+        accounts: [Account],
+        institution: Institution? = nil
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(title: title, trailing: trailing)
+            HStack(alignment: .center, spacing: 8) {
+                if let institution {
+                    InstitutionLogo(
+                        organizationURL: institution.orgURL,
+                        displayName: institution.name.isEmpty ? String(localized: "Institution") : institution.name,
+                        size: 26
+                    )
+                }
+                Text(title)
+                    .textCase(.uppercase)
+                    .font(.cairnLabel)
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: CairnTheme.Spacing.s)
+                if let trailing {
+                    Text(trailing)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 4)
             RowGroup {
                 ForEach(accounts) { account in
                     AccountGroupEntry(
