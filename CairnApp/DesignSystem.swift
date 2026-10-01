@@ -872,7 +872,7 @@ struct SettingsIcon: View {
 /// A row with a leading icon, a title, and trailing content.
 struct IconRow<Trailing: View>: View {
     let title: LocalizedStringKey
-    var subtitle: LocalizedStringKey?
+    var subtitle: Text?
     let systemImage: String
     var tint: Color = CairnTheme.accent
     @ViewBuilder var trailing: Trailing
@@ -885,7 +885,24 @@ struct IconRow<Trailing: View>: View {
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
     ) {
         self.title = title
-        self.subtitle = subtitle
+        self.subtitle = subtitle.map { Text($0) }
+        self.systemImage = systemImage
+        self.tint = tint
+        self.trailing = trailing()
+    }
+
+    /// A subtitle that arrives as a `LocalizedStringResource`, such as a value
+    /// computed in CairnCore, so it renders as localized text instead of the
+    /// resource's debug description.
+    init(
+        _ title: LocalizedStringKey,
+        resource: LocalizedStringResource,
+        systemImage: String,
+        tint: Color = CairnTheme.accent,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) {
+        self.title = title
+        self.subtitle = Text(resource)
         self.systemImage = systemImage
         self.tint = tint
         self.trailing = trailing()
@@ -897,7 +914,7 @@ struct IconRow<Trailing: View>: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 if let subtitle {
-                    Text(subtitle)
+                    subtitle
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -926,9 +943,24 @@ struct FootnoteText: View {
 
 /// A small inline status such as "Synced 2m ago" or "Pending".
 struct StatusPill: View {
-    let text: LocalizedStringKey
+    let text: Text
     var systemImage: String?
     var tint: Color = .secondary
+
+    init(text: LocalizedStringKey, systemImage: String? = nil, tint: Color = .secondary) {
+        self.text = Text(text)
+        self.systemImage = systemImage
+        self.tint = tint
+    }
+
+    /// A pill whose label arrives as a `LocalizedStringResource`, such as a
+    /// value computed in CairnCore, so it renders as localized text instead of
+    /// the resource's debug description.
+    init(resource: LocalizedStringResource, systemImage: String? = nil, tint: Color = .secondary) {
+        self.text = Text(resource)
+        self.systemImage = systemImage
+        self.tint = tint
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -937,7 +969,7 @@ struct StatusPill: View {
                     .font(.system(size: 9, weight: .bold))
                     .accessibilityHidden(true)
             }
-            Text(text)
+            text
                 .font(.caption2.weight(.semibold))
         }
         .foregroundStyle(tint)

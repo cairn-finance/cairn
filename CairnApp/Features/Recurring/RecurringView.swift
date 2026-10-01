@@ -226,7 +226,7 @@ struct RecurringRow: View {
                     Text(nextText.text)
                         .foregroundStyle(nextText.isOverdue ? CairnTheme.warning : .secondary)
                     if let label = series.confidenceLabel {
-                        StatusPill(text: "\(label)", tint: .secondary)
+                        StatusPill(resource: label, tint: .secondary)
                     }
                 }
                 .font(.caption)
@@ -477,7 +477,7 @@ struct RecurringDetailView: View {
                                 StatusPill(text: "Varies", tint: .secondary)
                             }
                             if let label = series.confidenceLabel {
-                                StatusPill(text: "\(label)", tint: .secondary)
+                                StatusPill(resource: label, tint: .secondary)
                             }
                         }
                         .font(.subheadline)
@@ -497,7 +497,7 @@ struct RecurringDetailView: View {
                     minorUnits: series.monthlyEquivalentMinorUnits,
                     currency: series.currency
                 ).formatted()
-                Text("\(series.cadence.displayName) · about \(monthly)/mo")
+                Text("\(String(localized: series.cadence.displayName)) · about \(monthly)/mo")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

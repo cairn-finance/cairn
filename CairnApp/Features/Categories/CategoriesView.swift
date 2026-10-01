@@ -268,10 +268,14 @@ struct CategoriesView: View {
         let budgetEntryCount = categoryBudgets.filter { $0.categoryUUID == category.uuid }.count
         var parts: [String] = []
         if transactionCount > 0 {
-            parts.append(String(localized: "^[\(transactionCount) transaction](inflect: true)"))
+            parts.append(String(AttributedString(
+                localized: "^[\(transactionCount) transaction](inflect: true)"
+            ).characters))
         }
         if ruleCount > 0 {
-            parts.append(String(localized: "^[\(ruleCount) rule](inflect: true)"))
+            parts.append(String(AttributedString(
+                localized: "^[\(ruleCount) rule](inflect: true)"
+            ).characters))
         }
         if budgetEntryCount > 0 {
             parts.append(String(localized: "Budget history"))
