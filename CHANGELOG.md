@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-01
+
 ### Added
 
 - Investments show currency-separated position totals and mix, searchable and
