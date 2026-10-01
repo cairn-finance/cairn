@@ -28,6 +28,10 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Fixed
 
+- Category details, category deletion messages, import summaries, rule tag
+  counts, and recurring payment details no longer display raw pluralization
+  markup or debug descriptions.
+- Settings shows the Apple Intelligence model summary as readable text.
 - Security purchases and sales in investment accounts are treated as money
   movement instead of shopping or income. Earlier automatic shopping labels
   are corrected without changing manual categories or transaction amounts.

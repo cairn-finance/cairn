@@ -42,6 +42,29 @@ struct CategoryManagementTests {
             .sorted(by: SyncEngine.categoryOrder)
     }
 
+    @Test("Reference counts read as plain text, without inflection markup")
+    func referenceCountsHaveNoMarkup() {
+        let errors: [CategoryManagementError] = [
+            .referenced(transactionCount: 1, ruleCount: 2),
+            .referenced(transactionCount: 0, ruleCount: 1),
+            .budgetEntriesReferenced(count: 1),
+            .budgetEntriesReferenced(count: 3)
+        ]
+        for error in errors {
+            let description = error.errorDescription ?? ""
+            #expect(!description.contains("^["))
+            #expect(!description.contains("inflect: true"))
+        }
+    }
+
+    @Test("One budget entry reads as singular")
+    func oneBudgetEntryIsSingular() {
+        let singular = CategoryManagementError.budgetEntriesReferenced(count: 1).errorDescription ?? ""
+        let plural = CategoryManagementError.budgetEntriesReferenced(count: 3).errorDescription ?? ""
+        #expect(singular.contains("budget entry still uses"))
+        #expect(plural.contains("budget entries still use"))
+    }
+
     @Test("A new category is trimmed and appended to the ordering")
     func createAppends() async throws {
         let (container, engine) = try makeEngine()

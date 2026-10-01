@@ -342,7 +342,7 @@ struct SettingsView: View {
             )) {
                 IconRow(
                     "Use Apple Intelligence",
-                    subtitle: "\(AppleIntelligenceCategorizer.deviceProfile.summary)",
+                    resource: AppleIntelligenceCategorizer.deviceProfile.summary,
                     systemImage: "sparkles",
                     tint: Color(red: 0.62, green: 0.36, blue: 0.87)
                 )

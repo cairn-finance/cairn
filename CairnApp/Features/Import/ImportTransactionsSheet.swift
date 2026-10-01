@@ -60,7 +60,7 @@ struct ImportTransactionsSheet: View {
                 } header: {
                     Text("File")
                 } footer: {
-                    Text("\(document.headers.count) columns detected. \(preset.summary)")
+                    Text("\(document.headers.count) columns detected. \(String(localized: preset.summary))")
                 }
 
                 if mapping == nil {
@@ -149,11 +149,13 @@ struct ImportTransactionsSheet: View {
             if let outcome {
                 let skipped = outcome.duplicatesSkipped
                 if skipped > 0 {
-                    model.banner = String(
+                    model.banner = String(AttributedString(
                         localized: "Imported ^[\(outcome.inserted) transaction](inflect: true), skipped \(skipped)."
-                    )
+                    ).characters)
                 } else {
-                    model.banner = String(localized: "Imported ^[\(outcome.inserted) transaction](inflect: true).")
+                    model.banner = String(AttributedString(
+                        localized: "Imported ^[\(outcome.inserted) transaction](inflect: true)."
+                    ).characters)
                 }
                 // A caller that supplies a callback owns dismissal, so the
                 // sheet is not told to close twice.

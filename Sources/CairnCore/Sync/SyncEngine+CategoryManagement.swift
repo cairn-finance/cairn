@@ -23,17 +23,23 @@ public enum CategoryManagementError: Error, LocalizedError, Equatable {
         case let .referenced(transactionCount, ruleCount):
             var parts: [String] = []
             if transactionCount > 0 {
-                parts.append(String(localized: "^[\(transactionCount) transaction](inflect: true)"))
+                parts.append(String(AttributedString(
+                    localized: "^[\(transactionCount) transaction](inflect: true)"
+                ).characters))
             }
             if ruleCount > 0 {
-                parts.append(String(localized: "^[\(ruleCount) rule](inflect: true)"))
+                parts.append(String(AttributedString(
+                    localized: "^[\(ruleCount) rule](inflect: true)"
+                ).characters))
             }
             let list = parts.isEmpty
                 ? String(localized: "Records")
                 : parts.joined(separator: String(localized: " and "))
             return String(localized: "\(list) still use this category, so it wasn’t deleted.")
         case let .budgetEntriesReferenced(count):
-            return String(localized: "^[\(count) budget entry](inflect: true) still use this category, so it wasn’t deleted.")
+            return count == 1
+                ? String(localized: "\(count) budget entry still uses this category, so it wasn’t deleted.")
+                : String(localized: "\(count) budget entries still use this category, so it wasn’t deleted.")
         }
     }
 }

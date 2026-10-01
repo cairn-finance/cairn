@@ -184,7 +184,9 @@ struct RulesView: View {
             actions.append("Name: \(displayName)")
         }
         if let tags = rule.appliedTags, !tags.isEmpty {
-            actions.append(String(localized: "^[\(tags.count) tag](inflect: true)"))
+            actions.append(String(AttributedString(
+                localized: "^[\(tags.count) tag](inflect: true)"
+            ).characters))
         }
         if rule.makesCompact { actions.append("Compact") }
         return parts.joined(separator: " · ") + " → " + actions.joined(separator: " · ")
