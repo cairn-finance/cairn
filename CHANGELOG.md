@@ -6,6 +6,11 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Releases are signed with a stored certificate instead of one created on every
+  build, so a release can no longer exhaust the account's certificate limit.
+
 ## [1.3.1] - 2026-10-01
 
 ### Added
