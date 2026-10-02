@@ -104,6 +104,15 @@ struct TransactionsView: View {
         .onChange(of: filter) { _, newValue in
             feed?.filter = newValue
         }
+        .onChange(of: model.historyProgressRevision) { _, _ in
+            feed?.reload()
+        }
+        .onChange(of: model.syncState) { _, state in
+            if state != .syncing { feed?.reload() }
+        }
+        .onChange(of: reviewTransactions.count) { _, _ in
+            feed?.reload()
+        }
     }
 
     private var reviewInboxEntryPoint: some View {

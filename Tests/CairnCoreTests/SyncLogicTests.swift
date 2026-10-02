@@ -200,4 +200,30 @@ struct BalanceHistoryTests {
         #expect(first.date <= last.date)
         #expect(series.allSatisfy { $0.balanceMinorUnits == 1_000 })
     }
+
+    @Test("Recent transactions preserve the entire selected chart period")
+    func dailySeriesKeepsSelectedPeriod() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        let end = calendar.startOfDay(for: base)
+        let requestedStart = end.addingTimeInterval(-30 * 86_400)
+        let recentTransaction = BalanceHistory.Entry(
+            date: end.addingTimeInterval(12 * 3_600),
+            amountMinorUnits: -100
+        )
+        let series = BalanceHistory.dailyBalances(
+            from: requestedStart,
+            through: end,
+            currentBalanceMinorUnits: 1_000,
+            transactions: [recentTransaction],
+            calendar: calendar
+        )
+        #expect(series.count == 31)
+        let first = try #require(series.first)
+        let last = try #require(series.last)
+        #expect(first.date == requestedStart)
+        #expect(first.balanceMinorUnits == 1_100)
+        #expect(last.date == end)
+        #expect(last.balanceMinorUnits == 1_000)
+    }
 }

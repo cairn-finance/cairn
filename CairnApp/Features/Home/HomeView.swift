@@ -667,8 +667,15 @@ struct SyncButton: View {
 struct NetWorthHero: View {
     let accounts: [Account]
     let settings: [AppSettings]
+    @Query private var chartTransactions: [LedgerTransaction]
 
     @State private var selectedIndex: Int?
+
+    init(accounts: [Account], settings: [AppSettings]) {
+        self.accounts = accounts
+        self.settings = settings
+        _chartTransactions = Query(filter: NetWorthMath.transactionPredicate(days: 30))
+    }
 
     private var totals: [CurrencyTotal] { NetWorthMath.totals(accounts: accounts) }
     private var currency: Currency {
@@ -678,7 +685,7 @@ struct NetWorthHero: View {
         totals.first { $0.currency == currency }?.totalMinorUnits ?? 0
     }
     private var series: [(date: Date, balanceMinorUnits: Int64)] {
-        NetWorthMath.series(accounts: accounts, currency: currency, days: 30)
+        NetWorthMath.series(accounts: accounts, currency: currency, transactions: chartTransactions, days: 30)
     }
     private var selectedPoint: (date: Date, balanceMinorUnits: Int64)? {
         guard let selectedIndex, series.indices.contains(selectedIndex) else { return nil }

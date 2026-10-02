@@ -8,10 +8,15 @@ import CairnCore
 struct NetWorthView: View {
     @Query private var accounts: [Account]
     @Query private var settings: [AppSettings]
+    @Query private var chartTransactions: [LedgerTransaction]
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var range: RangeOption = .ninetyDays
     @State private var selectedDate: Date?
+
+    init() {
+        _chartTransactions = Query(filter: NetWorthMath.transactionPredicate(days: 365))
+    }
 
     enum RangeOption: String, CaseIterable, Identifiable {
         case thirtyDays, ninetyDays, sixMonths, oneYear
@@ -22,6 +27,14 @@ struct NetWorthView: View {
             case .ninetyDays: "3M"
             case .sixMonths: "6M"
             case .oneYear: "1Y"
+            }
+        }
+        var longTitle: LocalizedStringKey {
+            switch self {
+            case .thirtyDays: "Last 30 days"
+            case .ninetyDays: "Last 90 days"
+            case .sixMonths: "Last 6 months"
+            case .oneYear: "Last year"
             }
         }
         var days: Int {
@@ -74,7 +87,7 @@ struct NetWorthView: View {
     }
 
     private var series: [(date: Date, balanceMinorUnits: Int64)] {
-        NetWorthMath.series(accounts: accounts, currency: currency, days: range.days)
+        NetWorthMath.series(accounts: accounts, currency: currency, transactions: chartTransactions, days: range.days)
     }
 
     private var selectedPoint: (date: Date, balanceMinorUnits: Int64)? {

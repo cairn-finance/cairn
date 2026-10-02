@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CryptoKit
 
 /// Identifies a transaction by the fields the store actually persists, so a row
 /// can be re-fetched after an `await`.
@@ -32,6 +33,12 @@ public struct SyncOutcome: Sendable, Equatable {
     public var pendingPromoted: Int = 0
     public var stalePendingRemoved: Int = 0
     public var serverErrors: [String] = []
+    /// The start bound used by the successful primary fetch. History backfill
+    /// continues from this boundary rather than inferring one from stored rows.
+    public var requestedStartDate: Date?
+    /// A one-way digest of the credential's account IDs, used only to detect
+    /// when a new account should receive its own history scan.
+    public var accountSetFingerprint: String?
     /// Connections this pass found stored under more than one credential. The
     /// pass wrote them to the survivor and left the other rows for the repair.
     public var ambiguousConnections: Int = 0
@@ -47,11 +54,19 @@ public struct SyncOutcome: Sendable, Equatable {
 
 /// A summary of one historical backfill pass, surfaced to the UI and logs.
 public struct BackfillOutcome: Sendable, Equatable {
+    /// Successful windows, including windows with no transactions.
     public var pagesFetched: Int = 0
+    /// Attempts made, including failures, for request-budget accounting.
+    public var pagesAttempted: Int = 0
     public var transactionsInserted: Int = 0
     public var transactionsUpdated: Int = 0
-    /// A window came back with no transactions, so there is no older history.
-    public var reachedFloor: Bool = false
+    /// The returned cursor is the end bound for the next older request.
+    public var nextCursor: Date?
+    /// The oldest start bound successfully searched in this pass.
+    public var lastSearchedDate: Date?
+    /// The configured search horizon was reached. This does not claim that the
+    /// institution has no older history.
+    public var reachedTarget: Bool = false
     /// The page cap was spent; another pass should continue from here.
     public var hitPageLimit: Bool = false
     /// The daily request budget for this credential ran out mid-pass.
@@ -78,6 +93,9 @@ public enum SyncDecision: Sendable, Equatable {
 @ModelActor
 public actor SyncEngine {
     private var activeRuleTags: [PersistentIdentifier: Tag] = [:]
+    /// Actor reentrancy during network awaits must not start two scans for the
+    /// same credential from overlapping sync and Connection Health actions.
+    private var activeBackfillCredentialIDs: Set<UUID> = []
     /// SimpleFIN Bridge's documented daily request ceiling per token. Kept
     /// conservative because every signed-in device shares one Access URL.
     public static let dailyRequestLimit = 24
@@ -90,6 +108,9 @@ public actor SyncEngine {
     /// A backfill page. The beta bridge recommends keeping a request under 45
     /// days and may cap longer ones later, so pages stay inside that.
     public static let backfillPageDays = 45
+    /// Default history horizon. The bridge's per-request limit is separate
+    /// from the amount of history requested across multiple pages.
+    public static let defaultHistoryDays = 365
     public static let syncOverlapDays = 7
     public static let stalePendingThreshold = 2
 
@@ -212,6 +233,7 @@ public actor SyncEngine {
         guard let institution = liveModel(Institution.self, institutionID) else {
             throw SimpleFINError.institutionGone
         }
+        let credentialID = institution.credentialID
 
         rollRequestCounterIfNeeded(institution, now: now, calendar: calendar)
 
@@ -256,13 +278,21 @@ public actor SyncEngine {
                     await cairnLog(.warning, "Range note: \(rangeMessage).")
                 }
 
-                return try await applyAccountSet(
+                var outcome = try await applyAccountSet(
                     accountSet,
                     institutionID: institutionID,
                     accessURL: accessURL,
                     now: now,
                     calendar: calendar
                 )
+                outcome.requestedStartDate = startDate
+                if outcome.serverErrors.isEmpty {
+                    outcome.accountSetFingerprint = Self.accountSetFingerprint(
+                        accountIDs: accountSet.accounts.map(\.id),
+                        credentialID: credentialID
+                    )
+                }
+                return outcome
             } catch {
                 if Self.isRangeLimitError(error), !isLast {
                     await cairnLog(.warning, "Range rejected: \(Self.describe(error)). Retrying with a shorter window.")
@@ -411,24 +441,29 @@ public actor SyncEngine {
 
     // MARK: - Historical backfill
 
-    /// Fetches older transactions one 89-day window at a time, walking back
-    /// from the oldest row already stored until a window comes back empty or
-    /// the page or budget cap is reached.
+    /// Fetches older transactions in bounded windows from a caller-persisted
+    /// cursor to a fixed history target. Empty windows are searched successfully
+    /// and advance the cursor; they do not establish an institution history
+    /// floor because SimpleFIN provides no authoritative floor signal.
     ///
     /// This never touches balances, connection metadata, pending aging, or the
     /// sync cursor: each page only adds transactions, so a historical window
-    /// cannot resurrect a stale balance or age out a live pending charge. The
-    /// caller decides whether to try again; `reachedFloor` means there is
-    /// nothing older to fetch.
+    /// cannot resurrect a stale balance or age out a live pending charge.
+    /// The caller persists `nextCursor` only after this method has saved fetched
+    /// transaction rows. Reaching `targetDate` means only that the configured
+    /// horizon was searched.
     public func backfillHistory(
         institutionID: PersistentIdentifier,
         accessURL: URL,
+        cursor initialCursor: Date,
+        targetDate: Date,
         fetch: @Sendable (URL, Date, Date) async throws -> SimpleFINAccountSet,
         maxPages: Int,
         now: Date = .now,
         calendar: Calendar = .current
     ) async -> BackfillOutcome {
         var outcome = BackfillOutcome()
+        outcome.nextCursor = initialCursor
         guard maxPages > 0 else { return outcome }
         guard let owner = liveModel(Institution.self, institutionID) else {
             outcome.failure = "connection is no longer saved"
@@ -436,27 +471,46 @@ public actor SyncEngine {
         }
         let credentialID = owner.credentialID
 
-        // Start at the oldest row already stored so a short primary window and
-        // a later backfill leave no gap between them. With nothing stored, start
-        // before the primary window.
-        let primaryStart = calendar.date(byAdding: .day, value: -Self.initialBackfillDays, to: now) ?? now
-        var cursor = (try? oldestTransactionDate(credentialID: credentialID)) ?? primaryStart
-        if cursor > now { cursor = now }
+        guard !activeBackfillCredentialIDs.contains(credentialID) else {
+            outcome.failure = "history search is already running"
+            return outcome
+        }
+        activeBackfillCredentialIDs.insert(credentialID)
+        defer { activeBackfillCredentialIDs.remove(credentialID) }
+
+        var cursor = min(initialCursor, now)
+        let startingCursor = cursor
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        var requestDiagnostics: [String] = []
+        var rangeWarnings: [String] = []
+
+        if cursor <= targetDate {
+            outcome.nextCursor = targetDate
+            outcome.reachedTarget = true
+            return outcome
+        }
 
         for _ in 0..<maxPages {
+            if cursor <= targetDate {
+                outcome.reachedTarget = true
+                break
+            }
             guard let holder = liveModel(Institution.self, institutionID) else {
                 outcome.failure = "connection is no longer saved"
-                return outcome
+                break
             }
             rollRequestCounterIfNeeded(holder, now: now, calendar: calendar)
             guard holder.dailyRequestCount < Self.dailyRequestLimit else {
                 outcome.budgetExhausted = true
                 break
             }
-            guard let start = calendar.date(byAdding: .day, value: -Self.backfillPageDays, to: cursor) else {
+            guard let proposedStart = calendar.date(byAdding: .day, value: -Self.backfillPageDays, to: cursor) else {
                 break
             }
+            let start = max(targetDate, proposedStart)
             holder.dailyRequestCount += 1
+            outcome.pagesAttempted += 1
 
             do {
                 let accountSet = try await fetch(accessURL, start, cursor)
@@ -467,48 +521,87 @@ public actor SyncEngine {
                 let hardError = accountSet.errors.first { !Self.isRangeLimitError($0.message) }
                 if let hardError {
                     outcome.failure = hardError.message
+                    requestDiagnostics.append(
+                        "Backfill window \(formatter.string(from: start))..<\(formatter.string(from: cursor)): server error."
+                    )
                     break
                 }
                 if let warning = accountSet.errors.first(where: { Self.isRangeLimitError($0.message) }) {
-                    await cairnLog(.warning, "Backfill range note: \(warning.message)")
+                    rangeWarnings.append(warning.message)
                 }
 
                 let transactions = accountSet.accounts.reduce(0) { $0 + $1.transactions.count }
-                if transactions == 0 {
-                    outcome.reachedFloor = true
+                let returnedDates = accountSet.accounts.flatMap(\.transactions).compactMap { transaction in
+                    transaction.postedDate ?? transaction.transactedAt
+                }
+                let oldestReturned = returnedDates.min().map(formatter.string(from:)) ?? "none"
+                let newestReturned = returnedDates.max().map(formatter.string(from:)) ?? "none"
+                let unresolvedBeforePage = outcome.unresolvedAccounts
+                if transactions > 0 {
+                    guard liveModel(Institution.self, institutionID) != nil else {
+                        outcome.failure = "connection is no longer saved"
+                        break
+                    }
+                    try applyHistoricalAccountSet(
+                        accountSet,
+                        institutionID: institutionID,
+                        now: now,
+                        calendar: calendar,
+                        outcome: &outcome
+                    )
+                }
+                requestDiagnostics.append(
+                    "Backfill window \(formatter.string(from: start))..<\(formatter.string(from: cursor)): "
+                        + "transactions=\(transactions), accounts=\(accountSet.accounts.count), "
+                        + "oldestReturned=\(oldestReturned), newestReturned=\(newestReturned), "
+                        + "unresolved=\(outcome.unresolvedAccounts - unresolvedBeforePage)."
+                )
+                guard outcome.unresolvedAccounts == unresolvedBeforePage else {
+                    outcome.failure = "some historical accounts are not mapped to saved accounts"
                     break
                 }
-                guard liveModel(Institution.self, institutionID) != nil else {
-                    outcome.failure = "connection is no longer saved"
-                    return outcome
-                }
-                try applyHistoricalAccountSet(
-                    accountSet,
-                    institutionID: institutionID,
-                    now: now,
-                    calendar: calendar,
-                    outcome: &outcome
-                )
                 cursor = start
+                outcome.nextCursor = cursor
+                outcome.lastSearchedDate = start
+                if cursor <= targetDate {
+                    outcome.reachedTarget = true
+                    break
+                }
             } catch {
                 outcome.failure = Self.describe(error)
                 break
             }
         }
 
+        if outcome.failure == nil, !outcome.reachedTarget, !outcome.budgetExhausted,
+           outcome.pagesFetched >= maxPages {
+            outcome.hitPageLimit = true
+        }
+        // Persist request counters even after an empty window or failed request.
+        // If save fails, return the original cursor so the caller cannot skip
+        // past transactions whose writes were not confirmed durable.
+        if outcome.pagesAttempted > 0 {
+            do {
+                try modelContext.save()
+            } catch {
+                outcome.failure = Self.describe(error)
+                outcome.nextCursor = startingCursor
+                outcome.lastSearchedDate = nil
+                outcome.reachedTarget = false
+                outcome.hitPageLimit = false
+            }
+        }
         if outcome.unresolvedAccounts > 0 {
             await cairnLog(
                 .warning,
                 "Backfill skipped \(outcome.unresolvedAccounts) account(s) the store no longer holds."
             )
         }
-        if outcome.failure == nil, !outcome.reachedFloor, outcome.pagesFetched >= maxPages {
-            outcome.hitPageLimit = true
+        for warning in rangeWarnings {
+            await cairnLog(.warning, "Backfill range note: \(warning)")
         }
-        // Persist the request-counter increments even when a page held no rows
-        // and nothing else needed saving.
-        if outcome.pagesFetched > 0 {
-            try? modelContext.save()
+        for diagnostic in requestDiagnostics {
+            await cairnLog(.info, diagnostic)
         }
         return outcome
     }
@@ -1379,6 +1472,13 @@ public actor SyncEngine {
             return errors.contains { isRangeLimitError($0.message) }
         }
         return isRangeLimitError(describe(error))
+    }
+
+    private static func accountSetFingerprint(accountIDs: [String], credentialID: UUID) -> String {
+        let input = credentialID.uuidString + "\n" + accountIDs.sorted().joined(separator: "\n")
+        return SHA256.hash(data: Data(input.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     static func describe(_ error: any Error) -> String {

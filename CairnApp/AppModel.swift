@@ -4,6 +4,29 @@ import Observation
 import SwiftData
 import CairnCore
 
+/// Device-local checkpoint for a bounded SimpleFIN history scan. Keeping this
+/// outside SwiftData avoids a CloudKit schema change and prevents bank account
+/// identifiers from being copied into synced app records.
+private struct HistoryBackfillProgress: Codable, Equatable {
+    var version = 1
+    var nextCursor: Date
+    var targetDate: Date
+    var lastSearchedDate: Date?
+    var accountSetFingerprint: String?
+    var lastAttemptFailed = false
+    var pausedForBudget = false
+}
+
+struct HistoryBackfillStatus: Equatable {
+    var lastSearchedDate: Date?
+    var targetDate: Date?
+    var isComplete: Bool
+    var isSearching: Bool
+    var lastAttemptFailed: Bool
+    var pausedForBudget: Bool
+    var hasStarted: Bool
+}
+
 /// The app-wide coordinator. Owns the store, the sync engine, the credential
 /// store, and the small amount of UI state that needs to survive navigation.
 @MainActor
@@ -71,6 +94,11 @@ final class AppModel {
     var syncState: SyncState = .idle
     var remainingBudget: Int = SyncEngine.dailyRequestLimit
     var banner: String?
+    /// Credential IDs whose history request is currently running, so the
+    /// Connection Health screen can show progress and suppress duplicate taps.
+    private(set) var activeHistoryBackfills: Set<UUID> = []
+    /// Triggers observation after UserDefaults-backed history state changes.
+    private(set) var historyProgressRevision = 0
 
     /// Keychain credentials with no `Institution` row, offered for reconnection.
     private(set) var recoverableCredentials: [RecoverableCredential] = []
@@ -762,11 +790,14 @@ final class AppModel {
             }
             let name = institution.name.isEmpty ? "A bank" : institution.name
             do {
+                let now = Date()
+                let previousSuccessfulFetch = institution.lastSuccessfulFetch
                 let decision = try await engine.decideSync(
                     institutionID: institution.persistentModelID,
                     force: force,
-                    now: Date()
+                    now: now
                 )
+                let shouldPerformPrimarySync: Bool
                 switch decision {
                 case .budgetExhausted:
                     await cairnLog(.warning, "\(name): daily request budget exhausted.")
@@ -776,6 +807,7 @@ final class AppModel {
                         )
                         reportedBudget = true
                     }
+                    continue
                 case let .throttled(until):
                     await cairnLog(.info, "\(name): throttled until \(until.formatted(date: .omitted, time: .shortened)).")
                     if force, !reportedThrottle {
@@ -785,23 +817,29 @@ final class AppModel {
                         )
                         reportedThrottle = true
                     }
+                    shouldPerformPrimarySync = false
                 case .proceed:
-                    guard let secret = try credentials.secret(for: institution.credentialID),
-                          let accessURL = URL(string: secret) else {
-                        let reason = useCloudKit
-                            ? "no stored credential on this device yet (may still arrive via iCloud Keychain)"
-                            : "no stored credential on this device (This Device Only, so it can’t arrive later)"
-                        await cairnLog(.warning, "\(name): \(reason); skipping.")
-                        missingCredentialIDs.append(institution.credentialID)
-                        missingCredentialNames.append(name)
-                        skipped += 1
-                        continue
-                    }
+                    shouldPerformPrimarySync = true
+                }
+
+                guard let secret = try credentials.secret(for: institution.credentialID),
+                      let accessURL = URL(string: secret) else {
+                    let reason = useCloudKit
+                        ? "no stored credential on this device yet (may still arrive via iCloud Keychain)"
+                        : "no stored credential on this device (This Device Only, so it can’t arrive later)"
+                    await cairnLog(.warning, "\(name): \(reason); skipping.")
+                    missingCredentialIDs.append(institution.credentialID)
+                    missingCredentialNames.append(name)
+                    skipped += 1
+                    continue
+                }
+
+                if shouldPerformPrimarySync {
                     let outcome = try await engine.performSync(
                         institutionID: institution.persistentModelID,
                         accessURL: accessURL,
                         client: client,
-                        now: Date()
+                        now: now
                     )
                     await cairnLog(
                         .info,
@@ -810,10 +848,29 @@ final class AppModel {
                             + "serverErrors=\(outcome.serverErrors.count)"
                     )
                     failures.append(contentsOf: outcome.serverErrors.map { "\(name): \($0)" })
+                    let wasLongGap = previousSuccessfulFetch.map {
+                        now.timeIntervalSince($0) > TimeInterval(SyncEngine.maximumRequestDays * 86_400)
+                    } ?? false
                     await backfillIfNeeded(
                         institution: institution,
                         accessURL: accessURL,
-                        name: name
+                        name: name,
+                        requestedStartDate: outcome.requestedStartDate,
+                        accountSetFingerprint: outcome.accountSetFingerprint,
+                        reopenForLongGap: wasLongGap,
+                        now: now
+                    )
+                } else {
+                    // A throttled primary refresh can still use any remaining
+                    // daily requests to resume an already-started history scan.
+                    await backfillIfNeeded(
+                        institution: institution,
+                        accessURL: accessURL,
+                        name: name,
+                        requestedStartDate: nil,
+                        accountSetFingerprint: nil,
+                        reopenForLongGap: false,
+                        now: now
                     )
                 }
             } catch SimpleFINError.institutionGone {
@@ -870,22 +927,69 @@ final class AppModel {
         return syncState
     }
 
-    /// Fetches older transactions for a credential until the institution's
-    /// history runs out. Runs once per credential per device, two 45-day pages
-    /// per pass, and keeps the daily request budget in mind.
+    /// Resumes a device-local, date-bounded scan. Empty windows advance the
+    /// cursor because they do not prove that SimpleFIN has no older records.
     private func backfillIfNeeded(
         institution: Institution,
         accessURL: URL,
-        name: String
+        name: String,
+        requestedStartDate: Date?,
+        accountSetFingerprint: String?,
+        reopenForLongGap: Bool,
+        now: Date
     ) async {
         let credentialID = institution.credentialID
-        let key = Self.backfillCompleteKey(credentialID)
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        guard !activeHistoryBackfills.contains(credentialID) else { return }
+
+        let calendar = Calendar.current
+        let targetDate = calendar.date(
+            byAdding: .day,
+            value: -SyncEngine.defaultHistoryDays,
+            to: now
+        ) ?? now
+        var progress = loadHistoryBackfillProgress(for: credentialID)
+        UserDefaults.standard.removeObject(forKey: Self.backfillCompleteKey(credentialID))
+
+        if var existing = progress {
+            let accountSetChanged = accountSetFingerprint.map {
+                existing.accountSetFingerprint != $0
+            } ?? false
+            if reopenForLongGap || accountSetChanged {
+                existing.nextCursor = requestedStartDate
+                    ?? SyncEngine.requestStartDate(lastSyncDate: institution.lastSyncDate, now: now, calendar: calendar)
+                existing.targetDate = targetDate
+                existing.lastSearchedDate = nil
+                existing.accountSetFingerprint = accountSetFingerprint ?? existing.accountSetFingerprint
+                existing.lastAttemptFailed = false
+                existing.pausedForBudget = false
+                progress = existing
+            }
+        } else if let requestedStartDate {
+            progress = HistoryBackfillProgress(
+                nextCursor: min(requestedStartDate, now),
+                targetDate: targetDate,
+                accountSetFingerprint: accountSetFingerprint
+            )
+        } else {
+            // A throttled primary sync may resume an existing checkpoint, but
+            // it cannot safely invent the initial boundary before a successful
+            // primary request has established the covered range.
+            return
+        }
+
+        guard var checkpoint = progress else { return }
+        guard checkpoint.nextCursor > checkpoint.targetDate else { return }
+        saveHistoryBackfillProgress(checkpoint, for: credentialID)
+        historyProgressRevision += 1
+        activeHistoryBackfills.insert(credentialID)
+        defer { activeHistoryBackfills.remove(credentialID) }
 
         let client = self.client
         let outcome = await engine.backfillHistory(
             institutionID: institution.persistentModelID,
             accessURL: accessURL,
+            cursor: checkpoint.nextCursor,
+            targetDate: checkpoint.targetDate,
             fetch: { url, start, end in
                 try await client.fetchAccounts(
                     accessURL: url,
@@ -894,34 +998,133 @@ final class AppModel {
                     includePending: false
                 )
             },
-            maxPages: Self.backfillPagesPerPass
+            maxPages: Self.backfillPagesPerPass,
+            now: now,
+            calendar: calendar
         )
 
-        if outcome.reachedFloor {
-            UserDefaults.standard.set(true, forKey: key)
+        if let nextCursor = outcome.nextCursor {
+            checkpoint.nextCursor = nextCursor
         }
-        if outcome.pagesFetched > 0 {
+        if let lastSearchedDate = outcome.lastSearchedDate {
+            checkpoint.lastSearchedDate = lastSearchedDate
+        }
+        checkpoint.lastAttemptFailed = outcome.failure != nil
+            && outcome.failure != "history search is already running"
+        checkpoint.pausedForBudget = outcome.budgetExhausted
+        saveHistoryBackfillProgress(checkpoint, for: credentialID)
+        historyProgressRevision += 1
+
+        if outcome.pagesAttempted > 0 {
+            let searchedThrough = checkpoint.lastSearchedDate?
+                .formatted(date: .numeric, time: .omitted) ?? "unchanged"
             await cairnLog(
                 .info,
-                "\(name): backfill pages=\(outcome.pagesFetched) "
+                "\(name): history windows=\(outcome.pagesFetched) "
                     + "inserted=\(outcome.transactionsInserted) updated=\(outcome.transactionsUpdated) "
-                    + "floor=\(outcome.reachedFloor)"
+                    + "searchedThrough=\(searchedThrough) "
+                    + "targetReached=\(outcome.reachedTarget)"
             )
         }
         if let failure = outcome.failure {
-            await cairnLog(.warning, "\(name): backfill stopped: \(failure)")
+            await cairnLog(.warning, "\(name): history search paused: \(failure)")
         }
     }
 
-    /// Whether one credential's history has already been walked back to its
-    /// floor on this device. Device-local: a reinstall repeats the walk once,
-    /// which is harmless because the rows are deduplicated.
+    func historyBackfillStatus(for credentialID: UUID) -> HistoryBackfillStatus {
+        _ = historyProgressRevision
+        let progress = loadHistoryBackfillProgress(for: credentialID)
+        return HistoryBackfillStatus(
+            lastSearchedDate: progress?.lastSearchedDate,
+            targetDate: progress?.targetDate,
+            isComplete: progress.map { $0.nextCursor <= $0.targetDate } ?? false,
+            isSearching: activeHistoryBackfills.contains(credentialID),
+            lastAttemptFailed: progress?.lastAttemptFailed ?? false,
+            pausedForBudget: progress?.pausedForBudget ?? false,
+            hasStarted: progress != nil
+        )
+    }
+
+    /// Starts a scan, resumes a paused one, or extends a completed scan by one
+    /// additional year. The stored boundary always precedes the requested
+    /// range, so each run picks up without re-scanning prior pages.
+    func searchOlderHistory(for institution: Institution) async {
+        let credentialID = institution.credentialID
+        guard !activeHistoryBackfills.contains(credentialID), syncState != .syncing else { return }
+
+        do {
+            guard let secret = try credentials.secret(for: credentialID),
+                  let accessURL = URL(string: secret) else {
+                // Keep this localized sentence as one catalog key.
+                // swiftlint:disable:next line_length
+                banner = String(localized: "This device can’t access the saved connection. Reconnect it to search older history.")
+                return
+            }
+            let institutions = try container.mainContext.fetch(FetchDescriptor<Institution>())
+            let holder = institutions.first(where: {
+                $0.credentialID == credentialID && $0.isCredentialHolder
+            }) ?? institution
+            let now = Date()
+            let calendar = Calendar.current
+            var progress = loadHistoryBackfillProgress(for: credentialID)
+            if var completed = progress, completed.nextCursor <= completed.targetDate {
+                let olderTarget = completed.targetDate
+                completed.targetDate = calendar.date(
+                    byAdding: .day,
+                    value: -SyncEngine.defaultHistoryDays,
+                    to: olderTarget
+                ) ?? olderTarget
+                completed.nextCursor = olderTarget
+                completed.lastAttemptFailed = false
+                completed.pausedForBudget = false
+                progress = completed
+                saveHistoryBackfillProgress(completed, for: credentialID)
+            }
+            let requestedStartDate = progress?.nextCursor
+                ?? SyncEngine.requestStartDate(lastSyncDate: holder.lastSyncDate, now: now, calendar: calendar)
+            await backfillIfNeeded(
+                institution: holder,
+                accessURL: accessURL,
+                name: holder.name.isEmpty ? "A bank" : holder.name,
+                requestedStartDate: requestedStartDate,
+                accountSetFingerprint: progress?.accountSetFingerprint,
+                reopenForLongGap: false,
+                now: now
+            )
+            await refreshBudget()
+        } catch {
+            banner = String(localized: "Couldn’t search older history: \(error.localizedDescription)")
+        }
+    }
+
+    private func loadHistoryBackfillProgress(for credentialID: UUID) -> HistoryBackfillProgress? {
+        guard let data = UserDefaults.standard.data(forKey: Self.backfillProgressKey(credentialID)),
+              let progress = try? JSONDecoder().decode(HistoryBackfillProgress.self, from: data),
+              progress.version == 1 else {
+            return nil
+        }
+        return progress
+    }
+
+    private func saveHistoryBackfillProgress(_ progress: HistoryBackfillProgress, for credentialID: UUID) {
+        guard let data = try? JSONEncoder().encode(progress) else { return }
+        UserDefaults.standard.set(data, forKey: Self.backfillProgressKey(credentialID))
+    }
+
+    private static func backfillProgressKey(_ credentialID: UUID) -> String {
+        backfillProgressPrefix + credentialID.uuidString
+    }
+
+    private static let backfillProgressPrefix = "cairn.backfillProgress.v1."
+
+    /// Previous builds permanently set this flag after the first empty window.
+    /// It is deleted when the new checkpoint is initialized so those users get
+    /// a fresh bounded scan.
     private static func backfillCompleteKey(_ credentialID: UUID) -> String {
         "cairn.backfillComplete.\(credentialID.uuidString)"
     }
 
-    /// How many older pages one sync pass may fetch for a credential. Two pages
-    /// plus the primary sync stays far inside the 24-requests-per-day budget.
+    /// Two history requests per credential per pass leave room for normal syncs.
     private static let backfillPagesPerPass = 2
 
     /// The notice shown when one or more saved connections have no credential on
@@ -972,7 +1175,10 @@ final class AppModel {
             let outcome = try await engine.removeConnections(credentialIDs: Set(credentialIDs))
             for credentialID in outcome.retiredCredentialIDs {
                 try? credentials.delete(id: credentialID)
+                UserDefaults.standard.removeObject(forKey: Self.backfillProgressKey(credentialID))
+                UserDefaults.standard.removeObject(forKey: Self.backfillCompleteKey(credentialID))
             }
+            historyProgressRevision += 1
             if outcome.retainedInstitutions > 0 {
                 banner = String(localized: "Some accounts are still used by another saved connection, so they were kept.")
             }
@@ -1275,6 +1481,7 @@ final class AppModel {
     }
 
     func deleteAllData() async {
+        let defaults = UserDefaults.standard
         do {
             try await engine.deleteAllData()
         } catch {
@@ -1303,6 +1510,13 @@ final class AppModel {
         UserDefaults.standard.removeObject(forKey: SystemSurfaceCoordinator.connectionsKey)
         UserDefaults.standard.removeObject(forKey: SystemSurfaceCoordinator.forecastKey)
         UserDefaults.standard.removeObject(forKey: SystemSurfaceCoordinator.commitmentsKey)
+        let historyKeys = defaults.dictionaryRepresentation().keys.filter {
+            $0.hasPrefix(Self.backfillProgressPrefix) || $0.hasPrefix("cairn.backfillComplete.")
+        }
+        for key in historyKeys {
+            defaults.removeObject(forKey: key)
+        }
+        historyProgressRevision += 1
         lock.setEnabled(false)
         // Wallet access is granted to the system rather than to us, so it can't
         // be revoked here. Leaving the flag on would quietly re-import Apple Card

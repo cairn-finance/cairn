@@ -3,7 +3,7 @@ import SwiftData
 import Testing
 @testable import CairnCore
 
-/// Walking older SimpleFIN transaction history back in 89-day windows.
+/// Walking older SimpleFIN transaction history back in bounded windows.
 @Suite("Transaction backfill")
 @MainActor
 struct TransactionBackfillTests {
@@ -127,8 +127,8 @@ struct TransactionBackfillTests {
         try #require(try context.fetch(FetchDescriptor<Institution>()).first { $0.isCredentialHolder })
     }
 
-    @Test("Backfill walks back in windows and stops at the first empty one")
-    func backfillWalksBack() async throws {
+    @Test("An empty window does not hide older transactions")
+    func backfillCrossesEmptyWindows() async throws {
         let (container, engine) = try makeEngine()
         let context = container.mainContext
         let credentialID = UUID()
@@ -139,10 +139,12 @@ struct TransactionBackfillTests {
         insertPosted(in: context, id: "T-NEW", daysAgo: 10, account: account, now: now)
         try context.save()
 
-        let stub = StubFetch { _, end in
-            // Page one ends at the oldest stored row; page two is empty.
-            if end > now.addingTimeInterval(-20 * 86_400) {
-                return self.accountSet([self.posted("T-OLD", daysAgo: 40, now: now)])
+        let olderDate = now.addingTimeInterval(-200 * 86_400)
+        let stub = StubFetch { start, end in
+            // Several empty windows separate the newest transactions from this
+            // older row. An empty response is not a reliable history floor.
+            if start <= olderDate, olderDate < end {
+                return self.accountSet([self.posted("T-OLD", daysAgo: 200, now: now)])
             }
             return self.accountSet([])
         }
@@ -150,25 +152,105 @@ struct TransactionBackfillTests {
         let outcome = await engine.backfillHistory(
             institutionID: try holder(in: context).persistentModelID,
             accessURL: accessURL(),
+            cursor: now.addingTimeInterval(-89 * 86_400),
+            targetDate: now.addingTimeInterval(-365 * 86_400),
             fetch: { url, start, end in try await stub.fetch(url, start, end) },
-            maxPages: 5,
+            maxPages: 7,
             now: now,
             calendar: calendar()
         )
 
-        #expect(outcome.pagesFetched == 2)
-        #expect(outcome.reachedFloor)
+        #expect(outcome.pagesFetched == 7)
+        #expect(outcome.reachedTarget)
         #expect(!outcome.hitPageLimit)
         #expect(outcome.transactionsInserted == 1)
         #expect(try context.fetch(FetchDescriptor<LedgerTransaction>())
             .contains { $0.bankTransactionID == "T-OLD" })
 
-        // Page one ends at the oldest stored row and reaches one page back.
-        #expect(stub.calls.count == 2)
-        #expect(abs(stub.calls[0].end.timeIntervalSince(now) + 10 * 86_400) < 1)
-        #expect(abs(stub.calls[0].start.timeIntervalSince(now) + 55 * 86_400) < 1)
-        // Page two picks up exactly where page one ended.
-        #expect(abs(stub.calls[1].end.timeIntervalSince(stub.calls[0].start)) < 1)
+        #expect(stub.calls.count == 7)
+        #expect(abs(stub.calls[0].end.timeIntervalSince(now) + 89 * 86_400) < 1)
+        #expect(abs(stub.calls[0].start.timeIntervalSince(now) + 134 * 86_400) < 1)
+        for index in 1..<stub.calls.count {
+            #expect(abs(stub.calls[index].end.timeIntervalSince(stub.calls[index - 1].start)) < 1)
+        }
+        #expect(abs(outcome.lastSearchedDate?.timeIntervalSince(now.addingTimeInterval(-365 * 86_400)) ?? 1) < 1)
+    }
+
+    @Test("Historical rows can be fetched after an account relationship was already loaded")
+    func backfilledRowsAreAvailableToLedgerQueries() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let credentialID = UUID()
+        insertHolder(in: context, credentialID: credentialID)
+        let child = insertConnection(in: context, credentialID: credentialID, connectionID: "CON-1", orgID: "ORG-1")
+        let account = insertAccount(in: context, bankAccountID: "1", institution: child, balance: 500)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        insertPosted(in: context, id: "CURRENT", daysAgo: 10, account: account, now: now)
+        try context.save()
+        #expect(account.transactions?.count == 1)
+        let historicalPage = accountSet([posted("OLDER", daysAgo: 120, now: now)])
+
+        let outcome = await engine.backfillHistory(
+            institutionID: try holder(in: context).persistentModelID,
+            accessURL: accessURL(),
+            cursor: now.addingTimeInterval(-90 * 86_400),
+            targetDate: now.addingTimeInterval(-135 * 86_400),
+            fetch: { _, _, _ in historicalPage },
+            maxPages: 1,
+            now: now,
+            calendar: calendar()
+        )
+
+        let bankID = account.bankAccountID
+        let rows = try context.fetch(FetchDescriptor<LedgerTransaction>(
+            predicate: #Predicate { $0.accountIDIndex == bankID && !$0.isPending }
+        ))
+        #expect(outcome.transactionsInserted == 1)
+        #expect(Set(rows.map(\.bankTransactionID)) == ["CURRENT", "OLDER"])
+        #expect(account.balanceMinorUnits == 500)
+    }
+
+    @Test("The next pass resumes at the first unsearched date")
+    func backfillResumesFromCursor() async throws {
+        let (container, engine) = try makeEngine()
+        let context = container.mainContext
+        let credentialID = UUID()
+        insertHolder(in: context, credentialID: credentialID)
+        insertConnection(in: context, credentialID: credentialID, connectionID: "CON-1", orgID: "ORG-1")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        try context.save()
+
+        let stub = StubFetch { _, _ in self.accountSet([]) }
+        let holderID = try holder(in: context).persistentModelID
+        let target = now.addingTimeInterval(-365 * 86_400)
+        let firstCursor = now.addingTimeInterval(-89 * 86_400)
+        let firstPass = await engine.backfillHistory(
+            institutionID: holderID,
+            accessURL: accessURL(),
+            cursor: firstCursor,
+            targetDate: target,
+            fetch: { url, start, end in try await stub.fetch(url, start, end) },
+            maxPages: 2,
+            now: now,
+            calendar: calendar()
+        )
+        let resumedCursor = try #require(firstPass.nextCursor)
+        let secondPass = await engine.backfillHistory(
+            institutionID: holderID,
+            accessURL: accessURL(),
+            cursor: resumedCursor,
+            targetDate: target,
+            fetch: { url, start, end in try await stub.fetch(url, start, end) },
+            maxPages: 2,
+            now: now,
+            calendar: calendar()
+        )
+
+        #expect(firstPass.hitPageLimit)
+        #expect(secondPass.hitPageLimit)
+        #expect(stub.calls.count == 4)
+        #expect(stub.calls[2].end == resumedCursor)
+        #expect(stub.calls[2].end == stub.calls[1].start)
     }
 
     @Test("Backfill never ages out a pending charge and never touches the balance")
@@ -205,13 +287,15 @@ struct TransactionBackfillTests {
         let outcome = await engine.backfillHistory(
             institutionID: try holder(in: context).persistentModelID,
             accessURL: accessURL(),
+            cursor: now.addingTimeInterval(-10 * 86_400),
+            targetDate: now.addingTimeInterval(-145 * 86_400),
             fetch: { url, start, end in try await stub.fetch(url, start, end) },
             maxPages: 5,
             now: now,
             calendar: calendar()
         )
         #expect(outcome.pagesFetched == 3)
-        #expect(outcome.reachedFloor)
+        #expect(outcome.reachedTarget)
 
         // The older rows were added, the balance was not overwritten, and the
         // pending charge survived without a mismatch count.
@@ -245,14 +329,17 @@ struct TransactionBackfillTests {
         let outcome = await engine.backfillHistory(
             institutionID: try holder(in: context).persistentModelID,
             accessURL: accessURL(),
+            cursor: now.addingTimeInterval(-5 * 86_400),
+            targetDate: now.addingTimeInterval(-365 * 86_400),
             fetch: { url, start, end in try await stub.fetch(url, start, end) },
             maxPages: 2,
             now: now,
             calendar: calendar()
         )
         #expect(outcome.pagesFetched == 2)
-        #expect(!outcome.reachedFloor)
+        #expect(!outcome.reachedTarget)
         #expect(outcome.hitPageLimit)
+        #expect(abs(outcome.nextCursor?.timeIntervalSince(now.addingTimeInterval(-95 * 86_400)) ?? 1) < 1)
     }
 
     @Test("A range warning that comes with rows is applied, not treated as a failure")
@@ -280,6 +367,8 @@ struct TransactionBackfillTests {
         let outcome = await engine.backfillHistory(
             institutionID: try holder(in: context).persistentModelID,
             accessURL: accessURL(),
+            cursor: now.addingTimeInterval(-10 * 86_400),
+            targetDate: now.addingTimeInterval(-100 * 86_400),
             fetch: { url, start, end in try await stub.fetch(url, start, end) },
             maxPages: 5,
             now: now,
@@ -287,7 +376,7 @@ struct TransactionBackfillTests {
         )
         #expect(outcome.failure == nil)
         #expect(outcome.transactionsInserted == 1)
-        #expect(outcome.reachedFloor)
+        #expect(outcome.reachedTarget)
         #expect(try context.fetch(FetchDescriptor<LedgerTransaction>())
             .contains { $0.bankTransactionID == "T-OLD" })
     }
@@ -311,17 +400,22 @@ struct TransactionBackfillTests {
             )
         }
 
+        let cursor = now.addingTimeInterval(-10 * 86_400)
         let outcome = await engine.backfillHistory(
             institutionID: try holder(in: context).persistentModelID,
             accessURL: accessURL(),
+            cursor: cursor,
+            targetDate: now.addingTimeInterval(-100 * 86_400),
             fetch: { url, start, end in try await stub.fetch(url, start, end) },
             maxPages: 5,
             now: now,
             calendar: calendar()
         )
         #expect(outcome.failure == "the bank is unavailable")
-        #expect(!outcome.reachedFloor)
+        #expect(!outcome.reachedTarget)
         #expect(outcome.transactionsInserted == 0)
+        #expect(outcome.nextCursor == cursor)
+        #expect(outcome.pagesAttempted == 1)
     }
 
     @Test("A normal sync does not surface a range warning as a failure")

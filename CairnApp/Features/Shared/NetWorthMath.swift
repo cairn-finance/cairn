@@ -11,6 +11,27 @@ struct CurrencyTotal: Identifiable, Hashable {
 /// Net-worth arithmetic shared by the Home hero, the Net Worth screen, and
 /// account detail. Totals are never summed across currencies.
 enum NetWorthMath {
+    /// Observe saved ledger rows directly. An account's relationship can stay
+    /// cached after the sync actor adds historical transactions.
+    static func transactionPredicate(
+        days: Int,
+        accountID: String? = nil,
+        calendar: Calendar = .current
+    ) -> Predicate<LedgerTransaction> {
+        let end = calendar.startOfDay(for: .now)
+        let start = calendar.date(byAdding: .day, value: -days, to: end) ?? end
+        if let accountID {
+            return #Predicate<LedgerTransaction> {
+                !$0.isPending
+                    && ($0.accountIDIndex == accountID || $0.account?.bankAccountID == accountID)
+                    && ($0.postedDate ?? $0.transactedAt ?? $0.createdAt) >= start
+            }
+        }
+        return #Predicate<LedgerTransaction> {
+            !$0.isPending && ($0.postedDate ?? $0.transactedAt ?? $0.createdAt) >= start
+        }
+    }
+
     static func homeCurrency(settings: [AppSettings]) -> Currency {
         let code = settings.first?.homeCurrencyCode ?? "USD"
         return Currency(code: code, exponent: Currency.defaultExponent(forISOCode: code))
@@ -63,25 +84,36 @@ enum NetWorthMath {
     static func series(
         accounts: [Account],
         currency: Currency,
+        transactions: [LedgerTransaction],
         days: Int,
         calendar: Calendar = .current
     ) -> [(date: Date, balanceMinorUnits: Int64)] {
         let relevant = included(accounts).filter { $0.currency == currency }
-        let entries = relevant.flatMap { account in
-            (account.transactions ?? [])
-                .filter { !$0.isPending }
-                .map { BalanceHistory.Entry(date: $0.effectiveDate, amountMinorUnits: $0.amountMinorUnits) }
-        }
+        let entries = entries(transactions: transactions, accountIDs: Set(relevant.map(\.bankAccountID)))
         let current = relevant.reduce(Int64(0)) { MinorUnits.addClamped($0, $1.balanceMinorUnits) }
         return balances(current: current, entries: entries, days: days, calendar: calendar)
     }
 
     /// A daily balance series for a single account.
-    static func series(account: Account, days: Int, calendar: Calendar = .current) -> [(date: Date, balanceMinorUnits: Int64)] {
-        let entries = (account.transactions ?? [])
-            .filter { !$0.isPending }
-            .map { BalanceHistory.Entry(date: $0.effectiveDate, amountMinorUnits: $0.amountMinorUnits) }
+    static func series(
+        account: Account,
+        transactions: [LedgerTransaction],
+        days: Int,
+        calendar: Calendar = .current
+    ) -> [(date: Date, balanceMinorUnits: Int64)] {
+        let entries = entries(transactions: transactions, accountIDs: [account.bankAccountID])
         return balances(current: account.balanceMinorUnits, entries: entries, days: days, calendar: calendar)
+    }
+
+    private static func entries(transactions: [LedgerTransaction], accountIDs: Set<String>) -> [BalanceHistory.Entry] {
+        transactions
+            .filter { transaction in
+                !transaction.isPending && (
+                    accountIDs.contains(transaction.accountIDIndex)
+                        || (transaction.account.map { accountIDs.contains($0.bankAccountID) } ?? false)
+                )
+            }
+            .map { BalanceHistory.Entry(date: $0.effectiveDate, amountMinorUnits: $0.amountMinorUnits) }
     }
 
     private static func balances(
