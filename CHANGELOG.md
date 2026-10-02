@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-02
+
 ### Changed
 
 - Releases are signed with a stored certificate instead of one created on every
