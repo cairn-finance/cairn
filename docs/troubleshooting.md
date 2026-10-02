@@ -22,6 +22,22 @@ but are not faults. This page separates the noise from the real ones.
 
 ## Real problems and what to check
 
+### Older transactions stop appearing
+
+SimpleFIN limits the date range of one request, while the history available
+behind that request depends on the institution. Cairn searches older history in
+45-day windows and resumes across syncs for up to one year. An empty window is
+not proof that the institution has no older records. Check **Settings →
+Connection Health** for the oldest date searched; use **Search Another Year** to
+extend a completed search. A completed search confirms only that Cairn checked
+the displayed date range.
+
+Sync Diagnostics includes `oldestReturned` and `newestReturned` for each history
+window. These are the dates of the returned transactions; the window bounds
+describe the dates searched. If every earlier window is empty, Cairn has no
+additional rows to import from that feed. Institution exports or SimpleFIN
+support may provide access to older records.
+
 ### Data or credentials aren't syncing between devices
 
 Two independent channels must both work:

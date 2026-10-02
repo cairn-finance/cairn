@@ -6,6 +6,20 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Older transaction history no longer stops at the first empty 45-day response.
+  Cairn resumes a bounded one-year search across syncs, shows the searched date
+  in Connection Health, and lets you search another year. Account balance charts
+  offer ranges up to one year. Sync diagnostics show the oldest and newest
+  transaction dates returned for each history window.
+- Net worth and account balance charts keep the full selected period visible
+  when included accounts have little or no transaction history. Home, net worth,
+  account, and investment charts observe saved transactions directly so
+  historical sync results appear without reopening the screen.
+- Activity and account transaction lists refresh after sync and historical
+  backfill instead of retaining the rows loaded before the new data arrived.
+
 ## [1.3.2] - 2026-10-02
 
 ### Changed

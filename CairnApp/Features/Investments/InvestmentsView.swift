@@ -11,12 +11,17 @@ import CairnCore
 struct InvestmentsView: View {
     @Query private var accounts: [Account]
     @Query private var settings: [AppSettings]
+    @Query private var chartTransactions: [LedgerTransaction]
 
     @State private var selectedIndex: Int?
     @State private var historyRange: HistoryRange = .ninetyDays
     @State private var searchText = ""
     @State private var sortOption: HoldingSortOption = .value
     @State private var selectedMixCurrencyID: String?
+
+    init() {
+        _chartTransactions = Query(filter: NetWorthMath.transactionPredicate(days: 365))
+    }
 
     private var investments: [Account] {
         accounts.filter { !$0.isHidden && $0.accountType == .investment }
@@ -52,7 +57,7 @@ struct InvestmentsView: View {
     }
 
     private var series: [(date: Date, balanceMinorUnits: Int64)] {
-        NetWorthMath.series(accounts: investments, currency: currency, days: historyRange.days)
+        NetWorthMath.series(accounts: investments, currency: currency, transactions: chartTransactions, days: historyRange.days)
     }
 
     private var selectedPoint: (date: Date, balanceMinorUnits: Int64)? {

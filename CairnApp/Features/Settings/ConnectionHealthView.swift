@@ -93,6 +93,8 @@ struct ConnectionHealthView: View {
 
             detailRows(for: institution, snapshot: snapshot)
 
+            historySearchRows(for: institution, snapshot: snapshot)
+
             if let error = snapshot.errorMessage, !error.isEmpty {
                 Text(error)
                     .font(.caption)
@@ -146,12 +148,70 @@ struct ConnectionHealthView: View {
         }
     }
 
+    @ViewBuilder
+    private func historySearchRows(for institution: Institution, snapshot: ConnectionHealthSnapshot) -> some View {
+        let history = model.historyBackfillStatus(for: institution.credentialID)
+        LabeledContent("Older history searched through") {
+            if history.isSearching {
+                Text("Searching")
+            } else if let date = history.lastSearchedDate {
+                Text(date, format: .dateTime.year().month().day())
+            } else {
+                Text("Not started")
+            }
+        }
+
+        if history.lastAttemptFailed {
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
+            Label("The history search paused after an error. Retry to continue from its saved date.", systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(CairnTheme.warning)
+        } else if history.pausedForBudget {
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
+            Label("The history search will continue when SimpleFIN’s daily request budget is available.", systemImage: "gauge.with.dots.needle.67percent")
+                .font(.caption)
+                .foregroundStyle(CairnTheme.warning)
+        } else if history.isComplete {
+            // Keep this localized sentence as one catalog key.
+            // swiftlint:disable:next line_length
+            Text("Search reached its current date range. SimpleFIN’s available history varies by institution, so older records may not be available.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if history.hasStarted {
+            Text("More history will be checked on a later sync.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("Cairn checks older history in small date windows after a successful sync.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        Button {
+            Task { await model.searchOlderHistory(for: institution) }
+        } label: {
+            Label(
+                history.isComplete ? "Search Another Year" : "Continue History Search",
+                systemImage: "arrow.down.to.line"
+            )
+        }
+        .disabled(
+            history.isSearching || !snapshot.hasCredential || snapshot.isOffline
+                || snapshot.requestsRemaining == 0 || model.syncState == .syncing
+        )
+    }
+
     private func snapshot(for institution: Institution) -> ConnectionHealthSnapshot {
         let now = Date.now
+        let budgetOwner = institutions.first(where: {
+            $0.credentialID == institution.credentialID && $0.isCredentialHolder
+        }) ?? institution
         let requestsRemaining: Int
-        if let date = institution.dailyRequestDate,
+        if let date = budgetOwner.dailyRequestDate,
            Calendar.current.isDate(date, inSameDayAs: now) {
-            requestsRemaining = max(0, SyncEngine.dailyRequestLimit - institution.dailyRequestCount)
+            requestsRemaining = max(0, SyncEngine.dailyRequestLimit - budgetOwner.dailyRequestCount)
         } else {
             requestsRemaining = SyncEngine.dailyRequestLimit
         }

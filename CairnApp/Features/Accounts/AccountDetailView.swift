@@ -9,9 +9,11 @@ struct AccountDetailView: View {
     @Environment(AppModel.self) private var model
 
     let account: Account
+    @Query private var chartTransactions: [LedgerTransaction]
     @State private var feed: TransactionsFeed?
     @State private var searchText = ""
     @State private var historySelection: Int?
+    @State private var historyRange: NetWorthView.RangeOption = .ninetyDays
 
     /// The account's total row count, from `fetchCount`, so the hero never has
     /// to materialize the account's whole history.
@@ -34,6 +36,7 @@ struct AccountDetailView: View {
 
     init(account: Account) {
         self.account = account
+        _chartTransactions = Query(filter: NetWorthMath.transactionPredicate(days: 365, accountID: account.bankAccountID))
     }
 
     private var accountFilter: TransactionFilter {
@@ -101,6 +104,15 @@ struct AccountDetailView: View {
             if feed == nil {
                 feed = TransactionsFeed(container: model.container, filter: accountFilter)
             }
+        }
+        .onChange(of: model.historyProgressRevision) { _, _ in
+            feed?.reload()
+        }
+        .onChange(of: model.syncState) { _, state in
+            if state != .syncing { feed?.reload() }
+        }
+        .onChange(of: chartTransactions.count) { _, _ in
+            feed?.reload()
         }
         .task(id: searchText) {
             try? await Task.sleep(for: SearchDebounce.interval)
@@ -337,12 +349,12 @@ struct AccountDetailView: View {
     }
 
     private var historyCard: some View {
-        let series = NetWorthMath.series(account: account, days: 90)
+        let series = NetWorthMath.series(account: account, transactions: chartTransactions, days: historyRange.days)
         let change = NetWorthMath.change(in: series)
         let selected = historySelection.flatMap { series.indices.contains($0) ? series[$0] : nil }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                CardHeader("Last 90 days") {
+                CardHeader(historyRange.longTitle) {
                     if let selected {
                         AmountText(
                             money: Money(minorUnits: selected.balanceMinorUnits, currency: account.currency),
@@ -351,6 +363,13 @@ struct AccountDetailView: View {
                     } else if let ratio = change.ratio {
                         TrendPill(ratio: ratio, higherIsBad: account.accountType.isLiability)
                     }
+                }
+                HStack {
+                    Spacer()
+                    SegmentedPicker(options: NetWorthView.RangeOption.allCases, selection: $historyRange) {
+                        LocalizedStringKey($0.title)
+                    }
+                    .frame(maxWidth: 220)
                 }
                 Sparkline(
                     values: series.map { NetWorthMath.doubleValue($0.balanceMinorUnits, currency: account.currency) },
@@ -362,7 +381,7 @@ struct AccountDetailView: View {
                 .sensoryFeedback(.selection, trigger: historySelection)
                 Text(
                     selected.map { "Balance on \($0.date.formatted(date: .abbreviated, time: .omitted))" }
-                        ?? changeSentence(change.delta)
+                        ?? changeSentence(change.delta, since: series.first?.date)
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -370,13 +389,13 @@ struct AccountDetailView: View {
             }
         }
         .animation(CairnTheme.Motion.quick, value: historySelection)
+        .animation(CairnTheme.Motion.quick, value: historyRange)
     }
 
-    private func changeSentence(_ delta: Int64) -> String {
+    private func changeSentence(_ delta: Int64, since startDate: Date?) -> String {
         if delta == 0 { return "Balance unchanged over the period." }
         let money = Money(minorUnits: abs(delta), currency: account.currency)
-        let since = Calendar.current.date(byAdding: .day, value: -90, to: .now)?
-            .formatted(date: .abbreviated, time: .omitted) ?? "90 days ago"
+        let since = startDate?.formatted(date: .abbreviated, time: .omitted) ?? "the start of this period"
         return "\(delta > 0 ? "Up" : "Down") \(money.formatted()) since \(since)."
     }
 
