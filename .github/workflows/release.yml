@@ -128,9 +128,15 @@ jobs:
           TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
           BUNDLE_ID: ${{ secrets.PRODUCT_BUNDLE_IDENTIFIER }}
           CONTAINER_ID: ${{ secrets.ICLOUD_CONTAINER_ID }}
+          CERT_B64: ${{ secrets.APPSTORE_CERTIFICATES_FILE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
         run: |
           if [ -z "$TEAM" ] || [ -z "$BUNDLE_ID" ] || [ -z "$CONTAINER_ID" ]; then
             echo "::error::DEVELOPMENT_TEAM, PRODUCT_BUNDLE_IDENTIFIER and ICLOUD_CONTAINER_ID secrets are required."
+            exit 1
+          fi
+          if [ -z "$CERT_B64" ] || [ -z "$CERT_PASSWORD" ]; then
+            echo "::error::APPSTORE_CERTIFICATES_FILE_BASE64 and APPSTORE_CERTIFICATES_PASSWORD are required. See docs/releasing.md."
             exit 1
           fi
           cat > Config/Signing.local.xcconfig <<EOF
@@ -178,6 +184,20 @@ jobs:
           </dict>
           </plist>
           EOF
+
+      # Import the code-signing certificates before archiving. A GitHub-hosted
+      # runner starts with an empty keychain, and Apple never returns the private
+      # key for a certificate that already exists, so cloud signing has nothing
+      # to reuse and asks the portal for a new certificate on every run. Apple
+      # caps each certificate type at three per account, so that churn stops
+      # releases after a couple of tags. The action imports the stored .p12 into
+      # a temporary keychain and deletes the keychain when the job ends; see
+      # docs/releasing.md.
+      - name: Import code-signing certificate
+        uses: Apple-Actions/import-codesign-certs@v7
+        with:
+          p12-file-base64: ${{ secrets.APPSTORE_CERTIFICATES_FILE_BASE64 }}
+          p12-password: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
 
       - name: Generate Xcode project
         run: xcodegen generate

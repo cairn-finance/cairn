@@ -175,10 +175,10 @@ The tag must be contained in `main`; the workflow refuses anything else.
    `swiftlint`, refuses a schema that was never deployed to Production, and
    computes the version/build pair.
 2. **Archive** (matrix: iOS and macOS) — writes the signing config and App Store
-   Connect API key from secrets, generates the project, archives Release with
-   `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`, then exports with
-   `method=app-store-connect`, `destination=upload` to send the build straight to
-   TestFlight. dSYMs are collected as artifacts.
+   Connect API key from secrets, imports the signing certificates, generates the
+   project, archives Release with `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`,
+   then exports with `method=app-store-connect`, `destination=upload` to send the
+   build straight to TestFlight. dSYMs are collected as artifacts.
 3. **Publish** — creates the GitHub Release with generated notes and attaches the
    dSYM zips.
 
@@ -194,12 +194,13 @@ Add these under **Settings → Secrets and variables → Actions**:
 | `APPSTORE_API_KEY_ID` | the App Store Connect API key's Key ID |
 | `APPSTORE_API_ISSUER_ID` | the key's Issuer ID |
 | `APPSTORE_API_PRIVATE_KEY` | the `.p8` file, **base64-encoded** |
+| `APPSTORE_CERTIFICATES_FILE_BASE64` | the signing `.p12`, **base64-encoded** |
+| `APPSTORE_CERTIFICATES_PASSWORD` | the password you chose for that `.p12` |
 
 Create the key in **App Store Connect → Users and Access → Integrations → App
-Store Connect API**. Automatic signing has to create certificates and
-provisioning profiles, so use a key with access to Certificates, Identifiers &
-Profiles — an **Admin** key is the safe choice (an App Manager key may not be
-enough).
+Store Connect API**. Automatic signing has to manage provisioning profiles, so
+use a key with access to Certificates, Identifiers & Profiles — an **Admin** key
+is the safe choice (an App Manager key may not be enough).
 
 Encode the key without line wrapping:
 
@@ -207,8 +208,57 @@ Encode the key without line wrapping:
 base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy   # paste into APPSTORE_API_PRIVATE_KEY
 ```
 
-CI decorates the build with `-allowProvisioningUpdates` and the API key, so no
-certificates or provisioning profiles are stored anywhere.
+CI imports the code-signing certificates into a temporary keychain before
+archiving, then decorates the build with `-allowProvisioningUpdates` and the API
+key so Xcode can manage provisioning profiles. Importing the certificates is what
+stops Xcode from creating new ones on every run. A GitHub-hosted runner starts
+with an empty keychain, and Apple never returns the private key for a certificate
+that already exists, so cloud signing has nothing to reuse and mints a new
+certificate each time. Apple caps each certificate type at three per account, so
+the churn breaks releases after a couple of tags. See
+[The signing certificate](#the-signing-certificate).
+
+## The signing certificate
+
+Every release archive so far has signed with an **Apple Development** certificate
+that cloud signing created on the runner, and the App Store export re-signs with
+a distribution identity. Importing those certificates from a stored `.p12` is what
+stops the churn.
+
+Put every certificate the two archives need into one `.p12`:
+
+| Certificate | Why the build needs it |
+| --- | --- |
+| **Apple Development** | `xcodebuild archive` signs the app and the widget with this and a Team provisioning profile. |
+| **Apple Distribution** | the App Store Connect export re-signs the app with this. |
+| **Mac Installer Distribution** | the macOS export packages a `.pkg`. |
+
+To create it once:
+
+1. In **Certificates, Identifiers & Profiles → Certificates**, make sure all
+   three exist for your team. Certificates CI created are named
+   *"…: Created via API"* — you can revoke those and keep one of each type.
+2. Download each `.cer` and open it in Keychain Access so it appears under **My
+   Certificates**.
+3. Select all of them — hold ⌘ to select more than one — then **File → Export
+   Items** and save a single `.p12` with a password you choose.
+4. Store both values as secrets:
+
+   ```sh
+   base64 -i CairnSigning.p12 | gh secret set APPSTORE_CERTIFICATES_FILE_BASE64
+   gh secret set APPSTORE_CERTIFICATES_PASSWORD
+   ```
+
+   `gh secret set` reads the value from stdin, so neither one passes through a
+   shell argument or into your shell history.
+
+If a certificate is missing from the `.p12`, Xcode creates a new one on the
+runner and the account limit applies again.
+
+Keep the `.p12` out of the repository. The private keys inside it are the signing
+identity: anyone holding it can sign as your team until you revoke the
+certificates. Where you can, use certificates dedicated to CI rather than your
+personal Xcode identity, so revoking one affects releases only.
 
 ## One-time App Store Connect setup
 
@@ -274,9 +324,18 @@ gh release delete v0.1.1 --yes
 - **"Cloud signing permission error" / no profiles** — the API key lacks access
   to Certificates, Identifiers & Profiles. Use an Admin key, or create the App ID
   and a distribution certificate manually first.
+- **"Choose a certificate to revoke" / maximum number of certificates** — Xcode
+  created a certificate instead of reusing a stored one. Check that
+  `APPSTORE_CERTIFICATES_FILE_BASE64` and `APPSTORE_CERTIFICATES_PASSWORD` are
+  set and that the `.p12` holds an Apple Development, an Apple Distribution, and
+  a Mac Installer Distribution certificate (see [The signing
+  certificate](#the-signing-certificate)), then revoke the certificates CI
+  created in the portal. Each release can leave two behind, and each type is
+  capped at three.
 - **macOS export asks for installer signing** — the app needs a *Mac Installer
-  Distribution* certificate. Cloud signing creates one when the API key can
-  manage certificates; otherwise create it in the portal once.
+  Distribution* certificate. Add it to the same `.p12` when you export it (see
+  [The signing certificate](#the-signing-certificate)); the export signs with the
+  imported identity.
 - **CloudKit container missing** — cloud signing creates provisioning profiles,
   not CloudKit containers. Create the container named by `ICLOUD_CONTAINER_ID` in
   the developer portal and enable iCloud for the App ID.
