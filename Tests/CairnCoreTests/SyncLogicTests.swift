@@ -91,6 +91,14 @@ struct TransactionMatchingTests {
         )
         #expect(match == "RIGHT")
     }
+
+    @Test("A one-character containment is not evidence of a match")
+    func rejectsTinyContainment() {
+        #expect(TransactionMatching.findMatch(
+            for: pending(amount: -100, description: "a", at: 0),
+            among: [posted(id: "S", amount: -100, description: "An unrelated merchant", at: 1)]
+        ) == nil)
+    }
 }
 
 @Suite("Text similarity")

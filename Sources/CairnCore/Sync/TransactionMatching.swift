@@ -59,14 +59,14 @@ public enum TransactionMatching {
         guard !sameAccount.isEmpty else { return nil }
 
         var best: (id: String, score: Double)?
+        var tied = false
 
         for candidate in sameAccount {
-            if let transactedAt = pending.transactedAt, let postedDate = candidate.postedDate {
-                let distance = abs(postedDate.timeIntervalSince(transactedAt))
-                let window = Double(windowDays) * 86_400
-                // A small negative tolerance handles timezone/rounding drift.
-                if distance > window + 3_600 { continue }
-            }
+            guard let transactedAt = pending.transactedAt, let postedDate = candidate.postedDate else { continue }
+            let distance = abs(postedDate.timeIntervalSince(transactedAt))
+            let window = Double(windowDays) * 86_400
+            // A small negative tolerance handles timezone/rounding drift.
+            if distance > window + 3_600 { continue }
 
             var score = TextSimilarity.ratio(pending.description, candidate.description)
             // An exact amount plus a containment relationship is strong enough
@@ -74,17 +74,21 @@ public enum TransactionMatching {
             if score < similarityThreshold,
                let a = normalized(pending.description),
                let b = normalized(candidate.description),
-               !a.isEmpty, !b.isEmpty,
+               min(a.count, b.count) >= 4,
+               Double(min(a.count, b.count)) / Double(max(a.count, b.count)) >= 0.5,
                a.contains(b) || b.contains(a) {
                 score = max(score, similarityThreshold + 0.1)
             }
 
             if score >= similarityThreshold, score > (best?.score ?? 0) {
                 best = (candidate.id, score)
+                tied = false
+            } else if score >= similarityThreshold, score == best?.score {
+                tied = true
             }
         }
 
-        return best?.id
+        return tied ? nil : best?.id
     }
 
     private static func normalized(_ text: String) -> String? {

@@ -451,7 +451,7 @@ final class AppModel {
     }
 
     /// Debug-only: `-cairn-skip-credential-rekey` runs the duplicate repair but
-    /// only logs which local Keychain copy a re-key would keep, so a repair can
+    /// only logs the credential-preservation policy, so a repair can
     /// be exercised on a copied store without touching its credentials. Always
     /// `false` in Release.
     private static var skipCredentialReKey: Bool {
@@ -481,15 +481,10 @@ final class AppModel {
         do {
             let accessURL = try await client.claim(token: token)
             await cairnLog(.info, "Claimed access URL for \(accessURL.host ?? "unknown host").")
-            let adoption = try await establishConnection(
+            try await establishConnection(
                 accessURL: accessURL,
                 proposedCredentialID: UUID()
             )
-            if case .ambiguous = adoption {
-                banner = String(
-                    localized: "This account matches more than one saved connection. Cairn left both and will combine them."
-                )
-            }
             return true
         } catch {
             let message: String
@@ -524,6 +519,13 @@ final class AppModel {
             client: client,
             now: Date()
         )
+        if case .ambiguous = probe.adoption { throw SimpleFINError.connectionConflict }
+        if let secret = try credentials.secret(for: probe.credentialID) {
+            guard let origin = SimpleFINServerOrigin.normalized(secret),
+                  origin == SimpleFINServerOrigin.normalized(accessURL) else {
+                throw SimpleFINError.connectionConflict
+            }
+        }
         // Store only once the probe has proved the token works. A setup token is
         // single-use, so a Keychain failure here leaves nothing to clean up and
         // the caller can ask for a new token.
@@ -580,16 +582,11 @@ final class AppModel {
         let id = credential.id
         syncState = .syncing
         do {
-            let adoption = try await establishConnection(
+            try await establishConnection(
                 accessURL: accessURL,
                 proposedCredentialID: id,
                 retiringCredentialID: id
             )
-            if case .ambiguous = adoption {
-                banner = String(
-                    localized: "This saved connection’s banks match more than one saved connection. Cairn left both."
-                )
-            }
             removeRecoverable(id: id)
             // Reconnecting from onboarding has to leave that screen; from
             // Settings the app is already past it.

@@ -347,6 +347,19 @@ public actor SyncEngine {
             throw SimpleFINError.institutionGone
         }
 
+        // Only the connection-less holder records trusted provenance. Its URL
+        // comes from the credential being used, never from connection metadata.
+        if owner.bankConnectionID.isEmpty {
+            guard let origin = SimpleFINServerOrigin.normalized(accessURL) else {
+                throw SimpleFINError.insecureURL
+            }
+            if !owner.sfinURL.isEmpty,
+               SimpleFINServerOrigin.normalized(owner.sfinURL) != origin {
+                throw SimpleFINError.connectionConflict
+            }
+            owner.sfinURL = origin
+        }
+
         var outcome = SyncOutcome()
         // The bridge can return every requested row *and* an errlist warning
         // that the range is longer than it recommends. That is not a failure:
@@ -384,8 +397,9 @@ public actor SyncEngine {
         // already owned by another connection are left untouched.
         for simpleAccount in accountSet.accounts {
             let target = owners[simpleAccount.connectionID] ?? owner
-            if let existing = try accountByBankID(simpleAccount.id),
-               existing.institution == nil || existing.institution === owner {
+            if let existing = (owner.accounts ?? []).first(where: {
+                $0.bankAccountID == simpleAccount.id && $0.sourceRaw == AccountSource.simpleFIN.rawValue
+            }), existing.institution === owner {
                 existing.institution = target
             }
         }
@@ -401,6 +415,8 @@ public actor SyncEngine {
                 rules: ruleSnapshots,
                 now: now,
                 calendar: calendar,
+                agesOutPending: !hadServerErrors,
+                promotesPending: !hadServerErrors,
                 outcome: &outcome
             )
             try recordSnapshot(for: account, now: now, calendar: calendar)
@@ -616,13 +632,15 @@ public actor SyncEngine {
         calendar: Calendar,
         outcome: inout BackfillOutcome
     ) throws {
-        guard liveModel(Institution.self, institutionID) != nil else {
+        guard let owner = liveModel(Institution.self, institutionID) else {
             throw SimpleFINError.institutionGone
         }
         let rules = try loadRuleSnapshots()
         var pageOutcome = SyncOutcome()
         for simpleAccount in accountSet.accounts where !simpleAccount.transactions.isEmpty {
-            guard let account = try accountByBankID(simpleAccount.id) else {
+            guard let account = try accountByBankID(
+                simpleAccount.id, credentialID: owner.credentialID, connectionID: simpleAccount.connectionID
+            ) else {
                 outcome.unresolvedAccounts += 1
                 continue
             }
@@ -647,13 +665,12 @@ public actor SyncEngine {
     /// The earliest effective date among a credential's stored transactions.
     func oldestTransactionDate(credentialID: UUID) throws -> Date? {
         let siblings = try siblingInstitutions(credentialID: credentialID)
-        let bankIDs = Set((siblings.flatMap { $0.accounts ?? [] }).map(\.bankAccountID))
-        guard !bankIDs.isEmpty else { return nil }
+        let accountIDs = Set((siblings.flatMap { $0.accounts ?? [] }).map(\.persistentModelID))
+        guard !accountIDs.isEmpty else { return nil }
         let transactions = try modelContext.fetch(FetchDescriptor<LedgerTransaction>())
         return transactions
             .filter {
-                bankIDs.contains($0.accountIDIndex)
-                    || ($0.account.map { bankIDs.contains($0.bankAccountID) } ?? false)
+                $0.account.map { accountIDs.contains($0.persistentModelID) } ?? false
             }
             // Only posted rows mark history; a pending row has no posted date
             // and its creation date says nothing about how far back data goes.
@@ -675,18 +692,15 @@ public actor SyncEngine {
     /// `credentialID`; the owner itself stays connection-less and acts as the
     /// credential holder (and is hidden in the UI once it has children).
     ///
-    /// A connection is matched by its identity — connection id plus
-    /// organization id — across *every* credential, not just the owner's. That
-    /// is what stops a second claim from creating a parallel row for a
-    /// connection already stored. A connection that matches more than one
-    /// institution is resolved to the repair's survivor so the sync keeps
-    /// importing; the duplicate rows stay for the repair to merge.
+    /// Matching is confined to the fetching credential. A response cannot
+    /// authorize writes to another credential by naming its connection ids.
     private func institutions(
         forConnections connections: [SimpleFINConnection],
         owner: Institution
     ) throws -> ConnectionMatch {
         let all = try modelContext.fetch(FetchDescriptor<Institution>())
-        let stored = all.compactMap { institution -> (identity: ConnectionIdentity, institution: Institution)? in
+        let owned = all.filter { $0.credentialID == owner.credentialID }
+        let stored = owned.compactMap { institution -> (identity: ConnectionIdentity, institution: Institution)? in
             guard let identity = ConnectionIdentity.of(
                 connectionID: institution.bankConnectionID,
                 organizationID: institution.orgID
@@ -710,6 +724,7 @@ public actor SyncEngine {
                     name: connection.name,
                     credentialID: owner.credentialID
                 )
+                created.orgID = connection.organizationID
                 modelContext.insert(created)
                 match.resolved[connection.id] = created
             } else {
@@ -758,7 +773,7 @@ public actor SyncEngine {
         public let accountSet: SimpleFINAccountSet
         public let adoption: ConnectionAdoption
         /// The credential to store the Access URL under: the adopted one, or the
-        /// proposed one when this is a fresh or ambiguous claim.
+        /// proposed one when this is a fresh claim. Ambiguous claims are rejected.
         public let credentialID: UUID
     }
 
@@ -797,8 +812,10 @@ public actor SyncEngine {
 
                 let adoption = ConnectionMatcher.decide(
                     incoming: accountSet.connections,
-                    stored: try storedConnections()
+                    stored: try storedConnections(),
+                    serverOrigin: accessURL.absoluteString
                 )
+                if case .ambiguous = adoption { throw SimpleFINError.connectionConflict }
                 let credentialID: UUID
                 switch adoption {
                 case let .adopt(existing):
@@ -828,8 +845,15 @@ public actor SyncEngine {
         now: Date,
         calendar: Calendar = .current
     ) async throws -> SyncOutcome {
+        if case .ambiguous = probe.adoption { throw SimpleFINError.connectionConflict }
         let holder: Institution
         let siblings = try siblingInstitutions(credentialID: probe.credentialID)
+        if case .adopt = probe.adoption {
+            guard let origin = Self.trustedOrigin(credentialID: probe.credentialID, institutions: siblings),
+                  origin == SimpleFINServerOrigin.normalized(accessURL) else {
+                throw SimpleFINError.connectionConflict
+            }
+        }
         if let existing = siblings.first(where: { $0.bankConnectionID.isEmpty }) {
             holder = existing
         } else {
@@ -838,9 +862,10 @@ public actor SyncEngine {
                 name: SyncEngine.fallbackName(for: accessURL),
                 credentialID: probe.credentialID
             )
-            if let scheme = accessURL.scheme, let host = accessURL.host {
-                created.sfinURL = "\(scheme)://\(host)"
+            guard let origin = SimpleFINServerOrigin.normalized(accessURL) else {
+                throw SimpleFINError.insecureURL
             }
+            created.sfinURL = origin
             modelContext.insert(created)
             try modelContext.save()
             holder = created
@@ -860,16 +885,33 @@ public actor SyncEngine {
 
     /// Every stored connection, across all credentials.
     func storedConnections() throws -> [ConnectionMatcher.StoredConnection] {
-        try modelContext.fetch(FetchDescriptor<Institution>()).compactMap { institution in
+        let all = try modelContext.fetch(FetchDescriptor<Institution>())
+        return all.compactMap { institution in
             guard let identity = ConnectionIdentity.of(
                 connectionID: institution.bankConnectionID,
                 organizationID: institution.orgID
             ) else { return nil }
             return ConnectionMatcher.StoredConnection(
                 identity: identity,
-                credentialID: institution.credentialID
+                credentialID: institution.credentialID,
+                serverOrigin: Self.trustedOrigin(credentialID: institution.credentialID, institutions: all)
             )
         }
+    }
+
+    /// Missing or inconsistent holders remain unverified while CloudKit imports.
+    private static func trustedOrigin(credentialID: UUID, institutions: [Institution]) -> String? {
+        let holders = institutions.filter { $0.credentialID == credentialID && $0.bankConnectionID.isEmpty }
+        let origins = holders.compactMap { SimpleFINServerOrigin.normalized($0.sfinURL) }
+        guard !holders.isEmpty, origins.count == holders.count, Set(origins).count == 1 else { return nil }
+        return origins.first
+    }
+
+    private static func canShareData(_ institutions: [Institution], in all: [Institution]) -> Bool {
+        let credentials = Set(institutions.map(\.credentialID))
+        if credentials.count <= 1 { return true }
+        let origins = credentials.compactMap { trustedOrigin(credentialID: $0, institutions: all) }
+        return origins.count == credentials.count && Set(origins).count == 1
     }
 
     /// The credential ids whose connections are also held by another credential.
@@ -879,8 +921,8 @@ public actor SyncEngine {
 
     // MARK: - Repairing duplicate connections
 
-    /// One credential the repair merged away, and what decides which local
-    /// Keychain copy to keep when both copies exist.
+    /// One credential the repair merged away, with pre-merge fetch diagnostics.
+    /// Fetch times never authorize replacing or deleting a distinct secret.
     public struct CredentialRetirement: Sendable, Equatable {
         /// The credential the Access URL should move to.
         public let survivorCredentialID: UUID
@@ -949,11 +991,15 @@ public actor SyncEngine {
         var changed = false
 
         // Read each credential's freshest successful fetch before anything is
-        // merged away; the re-key needs it to keep the working Keychain copy.
+        // merged away, retaining diagnostics without using them to choose secrets.
         let fetchesByCredential = Self.mostRecentFetches(in: all)
 
         for members in groups.values where members.count > 1 {
             outcome.duplicateGroups += 1
+            guard Self.canShareData(members, in: all) else {
+                outcome.indeterminateGroups += 1
+                continue
+            }
             guard let survivor = Self.survivingInstitution(members) else {
                 outcome.indeterminateGroups += 1
                 continue
@@ -1069,7 +1115,9 @@ public actor SyncEngine {
             if let identity = ConnectionIdentity.of(
                 connectionID: institution.bankConnectionID,
                 organizationID: institution.orgID
-            ), let targets = survivorsByIdentity[identity], !targets.isEmpty,
+            ), let candidates = survivorsByIdentity[identity],
+               case let targets = candidates.filter({ Self.canShareData([institution, $0], in: all) }),
+               !targets.isEmpty,
                let survivor = Self.survivingInstitution(targets) {
                 for account in institution.accounts ?? [] where !account.isDeleted {
                     switch try moveAccount(account, to: survivor) {
@@ -1093,7 +1141,14 @@ public actor SyncEngine {
                 for account in institution.accounts ?? []
                 where !account.isDeleted
                     && account.institution?.persistentModelID == institution.persistentModelID {
-                    try deleteBudgetExpenseSmoothingPlans(accountIDIndex: account.bankAccountID)
+                    // Legacy plan keys contain only the bank's account id.
+                    // Preserve them if another credential uses the same id.
+                    let sharedID = survivors.contains { survivor in
+                        (survivor.accounts ?? []).contains { $0.bankAccountID == account.bankAccountID }
+                    }
+                    if !sharedID {
+                        try deleteBudgetExpenseSmoothingPlans(accountIDIndex: account.bankAccountID)
+                    }
                 }
                 modelContext.delete(institution)
                 outcome.removedInstitutions += 1
@@ -1368,10 +1423,15 @@ public actor SyncEngine {
     }
 
     /// One account by its connection-scoped SimpleFIN id, if it exists.
-    private func accountByBankID(_ id: String) throws -> Account? {
-        var descriptor = FetchDescriptor<Account>(predicate: #Predicate { $0.bankAccountID == id })
-        descriptor.fetchLimit = 1
-        return try modelContext.fetch(descriptor).first
+    private func accountByBankID(_ id: String, credentialID: UUID, connectionID: String) throws -> Account? {
+        let descriptor = FetchDescriptor<Account>(predicate: #Predicate { $0.bankAccountID == id })
+        let matches = try modelContext.fetch(descriptor).filter {
+            $0.sourceRaw == AccountSource.simpleFIN.rawValue
+                && $0.institution?.credentialID == credentialID
+                && $0.institution?.bankConnectionID == connectionID
+        }
+        // An ambiguous imported store cannot authorize choosing an account.
+        return matches.count == 1 ? matches.first : nil
     }
 
     /// Every institution that shares one SimpleFIN Access URL.
@@ -1498,19 +1558,10 @@ public actor SyncEngine {
         outcome: inout SyncOutcome
     ) throws -> Account {
         let accountBankID = simpleAccount.id
-        var descriptor = FetchDescriptor<Account>(
-            predicate: #Predicate { $0.bankAccountID == accountBankID }
-        )
-        descriptor.fetchLimit = 1
-
         // Prefer an account already owned by this connection's institution, so
         // two banks that reuse an account id never steal each other's accounts.
         let account: Account
         if let existing = (institution.accounts ?? []).first(where: { $0.bankAccountID == accountBankID }) {
-            account = existing
-        } else if let existing = try modelContext.fetch(descriptor).first,
-                  existing.institution == nil
-                  || existing.institution?.bankConnectionID == institution.bankConnectionID {
             account = existing
         } else {
             account = Account(bankAccountID: simpleAccount.id, name: simpleAccount.name, currency: simpleAccount.currency)
@@ -1621,19 +1672,17 @@ public actor SyncEngine {
         promotesPending: Bool = true,
         outcome: inout SyncOutcome
     ) throws {
-        guard !incoming.isEmpty else {
-            if agesOutPending {
-                try ageOutPending(seenIDs: [], account: account)
-            }
-            return
-        }
+        // Missing/empty transaction lists are not an authoritative cancellation.
+        guard !incoming.isEmpty else { return }
 
         let accountBankID = account.bankAccountID
         var descriptor = FetchDescriptor<LedgerTransaction>(
             predicate: #Predicate { $0.accountIDIndex == accountBankID }
         )
         descriptor.relationshipKeyPathsForPrefetching = [\.account]
-        let existing = try modelContext.fetch(descriptor)
+        let existing = try modelContext.fetch(descriptor).filter {
+            $0.account?.persistentModelID == account.persistentModelID
+        }
         var byID = Dictionary(existing.map { ($0.bankTransactionID, $0) }, uniquingKeysWith: { first, _ in first })
 
         var incomingPendingIDs = Set<String>()
@@ -1646,6 +1695,9 @@ public actor SyncEngine {
             if txn.isPending { incomingPendingIDs.insert(txn.id) }
 
             if let model = byID[txn.id] {
+                // A stale response cannot re-enter the destructive pending
+                // lifecycle or replace posted metadata with pending metadata.
+                if !model.isPending && txn.isPending { continue }
                 let changed = model.payeeDescription != txn.description
                     || model.amountMinorUnits != txn.amountMinorUnits
                     || model.postedDate != txn.postedDate
@@ -1694,115 +1746,80 @@ public actor SyncEngine {
         }
 
         if promotesPending {
-            try promotePending(newlyPostedIDs: newlyPostedIDs, byID: byID, now: now)
+            try promotePending(
+                newlyPostedIDs: newlyPostedIDs, byID: byID,
+                stillReportedIDs: incomingPendingIDs, now: now, outcome: &outcome
+            )
         }
         if agesOutPending {
-            try ageOutPending(seenIDs: incomingPendingIDs, account: account, existing: existing)
+            try ageOutPending(seenIDs: incomingPendingIDs, account: account, existing: existing, outcome: &outcome)
         }
     }
 
-    /// Links a pending charge to a posted charge the bank just reported under a
-    /// different id. Only newly-posted transactions are considered, and each is
-    /// consumed at most once, so an older posted transaction with a coincidental
-    /// amount match cannot eat a live pending charge. User-owned fields move to
-    /// the posted charge so a manual category, note, or tag is preserved.
+    /// Only unannotated, absent pending rows can be replaced heuristically.
+    /// Server-authored fields cannot authorize moving the person's work.
     private func promotePending(
         newlyPostedIDs: Set<String>,
         byID: [String: LedgerTransaction],
-        now: Date
+        stillReportedIDs: Set<String>,
+        now: Date,
+        outcome: inout SyncOutcome
     ) throws {
-        guard !newlyPostedIDs.isEmpty else { return }
-
-        let postedCandidates: [(model: LedgerTransaction, candidate: PostedTransactionCandidate)] =
-            newlyPostedIDs.compactMap { id in
-                guard let model = byID[id], !model.isPending, !model.isDeleted else { return nil }
-                return (
-                    model,
-                    PostedTransactionCandidate(
-                        id: id,
-                        accountID: model.accountIDIndex,
-                        amountMinorUnits: model.amountMinorUnits,
-                        description: model.payeeDescription,
-                        postedDate: model.postedDate ?? model.transactedAt
-                    )
-                )
-            }
-        guard !postedCandidates.isEmpty else { return }
-
-        let pendingModels = byID.values.filter { $0.isPending && !$0.isDeleted }
-        var consumedPostedIDs = Set<String>()
-
-        for pending in pendingModels {
-            let candidate = PendingTransactionCandidate(
-                id: pending.bankTransactionID,
-                accountID: pending.accountIDIndex,
-                amountMinorUnits: pending.amountMinorUnits,
-                description: pending.payeeDescription,
-                transactedAt: pending.transactedAt ?? pending.postedDate
+        let posted = newlyPostedIDs.compactMap { id -> PostedTransactionCandidate? in
+            guard let model = byID[id], !model.isPending, !model.isDeleted else { return nil }
+            return PostedTransactionCandidate(
+                id: id, accountID: model.accountIDIndex, amountMinorUnits: model.amountMinorUnits,
+                description: model.payeeDescription, postedDate: model.postedDate ?? model.transactedAt
             )
-            let available = postedCandidates
-                .filter { !consumedPostedIDs.contains($0.model.bankTransactionID) }
-                .map(\.candidate)
-            guard let matchID = TransactionMatching.findMatch(for: candidate, among: available),
-                  let posted = byID[matchID] else { continue }
-
-            consumedPostedIDs.insert(matchID)
-            adoptUserFields(from: pending, into: posted)
+        }
+        let pending = byID.values.filter {
+            $0.isPending && !$0.isDeleted && !stillReportedIDs.contains($0.bankTransactionID)
+        }
+        // Decide all matches before deleting anything. Multiple pending rows
+        // competing for the same posted row are left for a later response.
+        var matches: [String: [LedgerTransaction]] = [:]
+        for model in pending {
+            let candidate = PendingTransactionCandidate(
+                id: model.bankTransactionID, accountID: model.accountIDIndex,
+                amountMinorUnits: model.amountMinorUnits, description: model.payeeDescription,
+                transactedAt: model.transactedAt ?? model.postedDate
+            )
+            if let id = TransactionMatching.findMatch(for: candidate, among: posted) {
+                matches[id, default: []].append(model)
+            }
+        }
+        for (id, candidates) in matches where candidates.count == 1 {
+            guard let pending = candidates.first, !Self.hasUserAnnotations(pending),
+                  let posted = byID[id] else { continue }
             posted.modifiedAt = now
             modelContext.delete(pending)
+            outcome.pendingPromoted += 1
         }
     }
 
-    /// Moves user-owned annotations from a pending charge to the posted charge
-    /// that supersedes it.
-    private func adoptUserFields(from pending: LedgerTransaction, into posted: LedgerTransaction) {
-        posted.note = pending.note ?? posted.note
-        posted.userCategory = pending.userCategory ?? posted.userCategory
-        posted.isTransfer = pending.isTransfer
-        posted.isIgnored = pending.isIgnored
-        posted.reviewedAt = pending.reviewedAt ?? posted.reviewedAt
-        posted.settlementID = pending.settlementID ?? posted.settlementID
-        if pending.settlementRole != .none {
-            posted.settlementRoleRaw = pending.settlementRoleRaw
-            posted.settlementStatusRaw = pending.settlementStatusRaw
-            posted.settlementCounterparty = pending.settlementCounterparty
-            posted.settlementExpectedAmountMinorUnits = pending.settlementExpectedAmountMinorUnits
-            posted.settlementLinkedAmountMinorUnits = pending.settlementLinkedAmountMinorUnits
-        }
-
-        if let pendingTags = pending.tags, !pendingTags.isEmpty {
-            var merged = posted.tags ?? []
-            let existingNames = Set(merged.map(\.name))
-            for tag in pendingTags where !existingNames.contains(tag.name) {
-                merged.append(tag)
-            }
-            posted.tags = merged
-        }
+    private static func hasUserAnnotations(_ transaction: LedgerTransaction) -> Bool {
+        transaction.note != nil || transaction.userCategory != nil
+            || !(transaction.tags ?? []).isEmpty || transaction.isTransfer
+            || transaction.isTransferUserSet || transaction.isIgnored || transaction.reviewedAt != nil
+            || transaction.settlementID != nil || transaction.settlementRole != .none
+            || transaction.settlementCounterparty != nil || transaction.settlementExpectedAmountMinorUnits != nil
+            || transaction.settlementLinkedAmountMinorUnits != nil || transaction.isImported
     }
 
-    /// Pending transactions that the bank stopped reporting were either posted
-    /// under a new id (handled above) or cancelled. Count mismatches and drop
-    /// them after a couple of syncs.
+    /// Absence may retire derived pending rows, but never annotations.
     private func ageOutPending(
         seenIDs: Set<String>,
         account: Account,
-        existing: [LedgerTransaction]? = nil
+        existing: [LedgerTransaction],
+        outcome: inout SyncOutcome
     ) throws {
-        let pendingModels: [LedgerTransaction]
-        if let existing {
-            pendingModels = existing.filter { $0.isPending && !seenIDs.contains($0.bankTransactionID) }
-        } else {
-            let accountBankID = account.bankAccountID
-            let descriptor = FetchDescriptor<LedgerTransaction>(
-                predicate: #Predicate { $0.accountIDIndex == accountBankID && $0.isPending }
-            )
-            pendingModels = try modelContext.fetch(descriptor)
-        }
-
-        for model in pendingModels where !model.isDeleted {
-            model.pendingMismatchCount += 1
+        for model in existing where !model.isDeleted && model.isPending
+            && model.account?.persistentModelID == account.persistentModelID
+            && !seenIDs.contains(model.bankTransactionID) && !Self.hasUserAnnotations(model) {
+            model.pendingMismatchCount = min(Self.stalePendingThreshold, model.pendingMismatchCount) + 1
             if model.pendingMismatchCount >= Self.stalePendingThreshold {
                 modelContext.delete(model)
+                outcome.stalePendingRemoved += 1
             }
         }
     }

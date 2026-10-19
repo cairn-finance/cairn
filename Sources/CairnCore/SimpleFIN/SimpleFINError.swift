@@ -22,6 +22,8 @@ public enum SimpleFINError: Error, LocalizedError, Sendable, Equatable {
     /// repair can merge a duplicate row away mid-sync, so this is a skip, not a
     /// connection failure.
     case institutionGone
+    /// A claim cannot safely replace or combine the saved credentials.
+    case connectionConflict
 
     public var errorDescription: String? {
         switch self {
@@ -45,6 +47,8 @@ public enum SimpleFINError: Error, LocalizedError, Sendable, Equatable {
             errors.first?.message ?? "The SimpleFIN server reported an error."
         case .institutionGone:
             "This saved connection was merged or removed while syncing."
+        case .connectionConflict:
+            "This connection could not be verified against the saved connections. No saved credential was replaced."
         }
     }
 }
