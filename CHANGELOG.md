@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-10-19
+
 ### Security
 
 - Bank sync keeps credentials, accounts, and transaction history scoped to the
