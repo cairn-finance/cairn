@@ -56,6 +56,7 @@ struct DuplicateConnectionTests {
         createdAt: Date = Date(timeIntervalSince1970: 1_000)
     ) -> Institution {
         let holder = Institution(bankConnectionID: "", name: name, credentialID: credentialID)
+        holder.sfinURL = "https://example.com"
         holder.createdAt = createdAt
         context.insert(holder)
         return holder
@@ -118,11 +119,11 @@ struct DuplicateConnectionTests {
         let stored = [
             ConnectionMatcher.StoredConnection(
                 identity: ConnectionIdentity(connectionID: "CON-1", organizationID: "ORG-1"),
-                credentialID: UUID()
+                credentialID: UUID(), serverOrigin: "https://example.com"
             )
         ]
         let renamed = SimpleFINConnection(id: "CON-1", name: "A New Name", organizationID: "ORG-1")
-        #expect(ConnectionMatcher.decide(incoming: [renamed], stored: stored) != .fresh)
+        #expect(ConnectionMatcher.decide(incoming: [renamed], stored: stored, serverOrigin: "https://example.com") != .fresh)
     }
 
     @Test("A different organization is a different connection")
@@ -131,11 +132,11 @@ struct DuplicateConnectionTests {
         let stored = [
             ConnectionMatcher.StoredConnection(
                 identity: ConnectionIdentity(connectionID: "CON-1", organizationID: "ORG-1"),
-                credentialID: credentialID
+                credentialID: credentialID, serverOrigin: "https://example.com"
             )
         ]
         let other = SimpleFINConnection(id: "CON-1", name: "Same id, other org", organizationID: "ORG-2")
-        #expect(ConnectionMatcher.decide(incoming: [other], stored: stored) == .fresh)
+        #expect(ConnectionMatcher.decide(incoming: [other], stored: stored, serverOrigin: "https://example.com") == .fresh)
     }
 
     @Test("Connections spanning two stored credentials are ambiguous")
@@ -145,39 +146,43 @@ struct DuplicateConnectionTests {
         let stored = [
             ConnectionMatcher.StoredConnection(
                 identity: ConnectionIdentity(connectionID: "CON-1", organizationID: "ORG-1"),
-                credentialID: a
+                credentialID: a, serverOrigin: "https://example.com"
             ),
             ConnectionMatcher.StoredConnection(
                 identity: ConnectionIdentity(connectionID: "CON-1", organizationID: "ORG-1"),
-                credentialID: b
+                credentialID: b, serverOrigin: "https://example.com"
             ),
         ]
         #expect(
-            ConnectionMatcher.decide(incoming: [connection("CON-1", org: "ORG-1")], stored: stored)
+            ConnectionMatcher.decide(
+                incoming: [connection("CON-1", org: "ORG-1")], stored: stored, serverOrigin: "https://example.com"
+            )
                 == .ambiguous(credentialIDs: [a, b].sorted { $0.uuidString < $1.uuidString })
         )
     }
 
-    @Test("A stored row without an organization id matches on the connection id alone")
+    @Test("A claim cannot adopt an orgless row on the connection id alone")
     func orglessStoredConnectionMatches() {
         let credentialID = UUID()
         let legacy = ConnectionMatcher.StoredConnection(
             identity: ConnectionIdentity(connectionID: "CON-1", organizationID: ""),
-            credentialID: credentialID
+            credentialID: credentialID, serverOrigin: "https://example.com"
         )
         let incoming = SimpleFINConnection(id: "CON-1", name: "Bank", organizationID: "ORG-1")
         #expect(
-            ConnectionMatcher.decide(incoming: [incoming], stored: [legacy])
-                == .adopt(credentialID: credentialID)
+            ConnectionMatcher.decide(incoming: [incoming], stored: [legacy], serverOrigin: "https://example.com")
+                == .fresh
         )
 
         // A second row with that connection id makes the fallback unsafe, so
         // the claim is treated as new rather than attached to the wrong bank.
         let other = ConnectionMatcher.StoredConnection(
             identity: ConnectionIdentity(connectionID: "CON-1", organizationID: "ORG-2"),
-            credentialID: UUID()
+            credentialID: UUID(), serverOrigin: "https://example.com"
         )
-        #expect(ConnectionMatcher.decide(incoming: [incoming], stored: [legacy, other]) == .fresh)
+        #expect(ConnectionMatcher.decide(
+            incoming: [incoming], stored: [legacy, other], serverOrigin: "https://example.com"
+        ) == .fresh)
     }
 
     @Test("The survivor rule is deterministic and refuses to guess on a tie")
@@ -207,8 +212,8 @@ struct DuplicateConnectionTests {
         let shared = ConnectionIdentity(connectionID: "CON-1", organizationID: "ORG-1")
         let lone = ConnectionIdentity(connectionID: "CON-2", organizationID: "ORG-2")
         let stored = [
-            ConnectionMatcher.StoredConnection(identity: shared, credentialID: a),
-            ConnectionMatcher.StoredConnection(identity: shared, credentialID: b),
+            ConnectionMatcher.StoredConnection(identity: shared, credentialID: a, serverOrigin: "https://example.com"),
+            ConnectionMatcher.StoredConnection(identity: shared, credentialID: b, serverOrigin: "https://example.com"),
             ConnectionMatcher.StoredConnection(identity: lone, credentialID: c),
         ]
         #expect(ConnectionMatcher.redundantCredentialIDs(stored: stored) == [a, b])
@@ -230,7 +235,7 @@ struct DuplicateConnectionTests {
 
         let incoming = [connection("CON-1", org: "ORG-1")]
         let stored = try await engine.storedConnections()
-        let adoption = ConnectionMatcher.decide(incoming: incoming, stored: stored)
+        let adoption = ConnectionMatcher.decide(incoming: incoming, stored: stored, serverOrigin: "https://example.com")
         #expect(adoption == .adopt(credentialID: credentialID))
 
         let probe = SyncEngine.ConnectionProbe(
@@ -260,7 +265,7 @@ struct DuplicateConnectionTests {
 
         let incoming = [connection("CON-9", org: "ORG-9")]
         let stored = try await engine.storedConnections()
-        #expect(ConnectionMatcher.decide(incoming: incoming, stored: stored) == .fresh)
+        #expect(ConnectionMatcher.decide(incoming: incoming, stored: stored, serverOrigin: "https://example.com") == .fresh)
 
         let proposed = UUID()
         let probe = SyncEngine.ConnectionProbe(
@@ -330,7 +335,7 @@ struct DuplicateConnectionTests {
 
         let incoming = [connection("CON-1", org: "ORG-1"), connection("CON-2", org: "ORG-2")]
         let stored = try await engine.storedConnections()
-        let adoption = ConnectionMatcher.decide(incoming: incoming, stored: stored)
+        let adoption = ConnectionMatcher.decide(incoming: incoming, stored: stored, serverOrigin: "https://example.com")
         #expect(adoption == .adopt(credentialID: credentialID))
 
         let probe = SyncEngine.ConnectionProbe(
@@ -389,51 +394,29 @@ struct DuplicateConnectionTests {
         #expect(try context.fetch(FetchDescriptor<LedgerTransaction>()).count == 1)
     }
 
-    @Test("An overlap with two credentials resolves the sync to the survivor")
-    func ambiguousOverlapResolvesToSurvivor() async throws {
+    @Test("An ambiguous claim is rejected without creating a hidden holder")
+    func ambiguousClaimIsRejected() async throws {
         let (container, engine) = try makeEngine()
         let context = container.mainContext
         let a = UUID()
         let b = UUID()
-        insertHolder(in: context, credentialID: a)
-        let childA = insertConnection(
-            in: context, credentialID: a, connectionID: "CON-1", orgID: "ORG-1",
-            createdAt: Date(timeIntervalSince1970: 1_000)
-        )
-        insertAccount(in: context, bankAccountID: "1", institution: childA)
-        insertHolder(in: context, credentialID: b)
-        let childB = insertConnection(
-            in: context, credentialID: b, connectionID: "CON-1", orgID: "ORG-1",
-            createdAt: Date(timeIntervalSince1970: 2_000)
-        )
-        insertAccount(in: context, bankAccountID: "1", institution: childB, balance: 100)
+        for id in [a, b] {
+            insertHolder(in: context, credentialID: id)
+            insertConnection(in: context, credentialID: id, connectionID: "CON-1", orgID: "ORG-1")
+        }
         try context.save()
-
-        let incoming = [connection("CON-1", org: "ORG-1")]
-        let stored = try await engine.storedConnections()
-        let adoption = ConnectionMatcher.decide(incoming: incoming, stored: stored)
-        #expect(adoption == .ambiguous(credentialIDs: [a, b].sorted { $0.uuidString < $1.uuidString }))
-
-        let proposed = UUID()
         let probe = SyncEngine.ConnectionProbe(
             accountSet: SimpleFINAccountSet(
-                connections: incoming,
+                connections: [connection("CON-1", org: "ORG-1")],
                 accounts: [account("1", connection: "CON-1", balance: 999)]
             ),
-            adoption: adoption,
-            credentialID: proposed
+            adoption: .ambiguous(credentialIDs: [a, b]), credentialID: UUID()
         )
-        let outcome = try await engine.applyClaim(probe, accessURL: accessURL(), now: .now)
-        #expect(outcome.ambiguousConnections == 1)
-
-        // No third child was created, and the imported balance landed on the
-        // older survivor. The other row waits for the repair, untouched.
-        let institutions = try context.fetch(FetchDescriptor<Institution>())
-        let children = institutions.filter { !$0.bankConnectionID.isEmpty }
-        #expect(children.count == 2)
-        #expect(Set(children.map(\.credentialID)) == [a, b])
-        #expect(childA.accounts?.first?.balanceMinorUnits == 999)
-        #expect(childB.accounts?.first?.balanceMinorUnits == 100)
+        await #expect(throws: SimpleFINError.connectionConflict) {
+            try await engine.applyClaim(probe, accessURL: accessURL(), now: .now)
+        }
+        #expect(try context.fetch(FetchDescriptor<Institution>()).count == 4)
+        #expect(try context.fetch(FetchDescriptor<Account>()).isEmpty)
     }
 
     // MARK: - Repair
@@ -599,7 +582,7 @@ struct DuplicateConnectionTests {
         #expect(!second.didChange)
     }
 
-    @Test("Sync keeps importing to the survivor while an unsafe duplicate awaits a merge")
+    @Test("Sync writes only its own credential while an unsafe duplicate awaits a merge")
     func syncKeepsImportingWhileDuplicateUnmerged() async throws {
         let (container, engine) = try makeEngine()
         let context = container.mainContext
@@ -656,19 +639,20 @@ struct DuplicateConnectionTests {
             )
         }
 
-        // Every transaction kept importing, onto the survivor's account.
+        // Every credential imports into its own account until a safe repair.
         let transactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
         #expect(Set(transactions.map(\.bankTransactionID)) == ["T1", "T2", "T3"])
-        #expect(transactions.allSatisfy { $0.account?.institution?.credentialID == a })
+        #expect(transactions.filter { $0.account?.institution?.credentialID == a }.count == 3)
+        #expect(transactions.filter { $0.account?.institution?.credentialID == b }.count == 3)
         // Both account rows stayed put with their chosen names untouched; the
-        // imported balance landed on the survivor.
+        // imported balances stay scoped to the syncing credentials.
         let accounts = try context.fetch(FetchDescriptor<Account>())
         #expect(accounts.count == 2)
         let survivorAccount = try #require(accounts.first { $0.institution?.credentialID == a })
         let otherAccount = try #require(accounts.first { $0.institution?.credentialID == b })
         #expect(survivorAccount.balanceMinorUnits == 300)
         #expect(survivorAccount.customDisplayName == "Alpha")
-        #expect(otherAccount.balanceMinorUnits == 100)
+        #expect(otherAccount.balanceMinorUnits == 300)
         #expect(otherAccount.customDisplayName == "Beta")
     }
 
@@ -785,82 +769,39 @@ struct DuplicateConnectionTests {
         #expect(try failing.secret(for: new) == nil)
     }
 
-    @Test("Re-keying a credential whose survivor already has a secret drops the old copy")
-    func reKeyWhenSurvivorHasSecret() throws {
+    @Test("Re-keying keeps distinct secrets on the same server regardless of freshness",
+          arguments: [true, false])
+    func reKeyKeepsBothSecrets(retiredIsFresher: Bool) throws {
         let old = UUID()
         let new = UUID()
         let store = InMemoryCredentialStore()
-        try store.store("https://old.example/simplefin", id: old, synchronizable: false)
-        try store.store("https://new.example/simplefin", id: new, synchronizable: false)
+        let oldSecret = "https://example.com/old/simplefin"
+        let newSecret = "https://example.com/new/simplefin"
+        try store.store(oldSecret, id: old, synchronizable: false)
+        try store.store(newSecret, id: new, synchronizable: false)
+        let retirement = SyncEngine.CredentialRetirement(
+            survivorCredentialID: new,
+            retiredLastSuccessfulFetch: retiredIsFresher ? .distantFuture : .distantPast,
+            survivorLastSuccessfulFetch: .now
+        )
+        let results = CredentialReKey.reKey(retirements: [old: retirement], store: store,
+                                          synchronizable: false, dryRun: false)
+        #expect(results.first?.failure == nil)
+        #expect(try store.secret(for: new) == newSecret)
+        #expect(try store.secret(for: old) == oldSecret)
+    }
 
+    @Test("Re-keying may collapse identical copies without losing the secret")
+    func reKeyIdenticalCopies() throws {
+        let old = UUID()
+        let new = UUID()
+        let store = InMemoryCredentialStore()
+        let secret = "https://example.com/same/simplefin"
+        try store.store(secret, id: old, synchronizable: false)
+        try store.store(secret, id: new, synchronizable: false)
         #expect(try CredentialReKey.move(store: store, from: old, to: new, synchronizable: false))
-        #expect(try store.secret(for: new) == "https://new.example/simplefin")
+        #expect(try store.secret(for: new) == secret)
         #expect(try store.secret(for: old) == nil)
-    }
-
-    @Test("Re-keying keeps the fresher secret when the older survivor's copy is stale")
-    func reKeyKeepsRetiredSecretWhenSurvivorStale() throws {
-        let old = UUID()
-        let new = UUID()
-        let store = InMemoryCredentialStore()
-        try store.store("https://retired.example/simplefin", id: old, synchronizable: false)
-        try store.store("https://stale.example/simplefin", id: new, synchronizable: false)
-
-        // The retired credential fetched more recently, so its working Access
-        // URL must win under the survivor's id.
-        #expect(try CredentialReKey.move(
-            store: store,
-            from: old,
-            to: new,
-            synchronizable: false,
-            retiredLastSuccessfulFetch: Date(timeIntervalSince1970: 200),
-            survivorLastSuccessfulFetch: Date(timeIntervalSince1970: 100)
-        ))
-        #expect(try store.secret(for: new) == "https://retired.example/simplefin")
-        #expect(try store.secret(for: old) == nil)
-    }
-
-    @Test("Re-keying keeps the survivor's secret when it fetched more recently")
-    func reKeyKeepsSurvivorSecretWhenFresh() throws {
-        let old = UUID()
-        let new = UUID()
-        let store = InMemoryCredentialStore()
-        try store.store("https://stale.example/simplefin", id: old, synchronizable: false)
-        try store.store("https://survivor.example/simplefin", id: new, synchronizable: false)
-
-        #expect(try CredentialReKey.move(
-            store: store,
-            from: old,
-            to: new,
-            synchronizable: false,
-            retiredLastSuccessfulFetch: Date(timeIntervalSince1970: 100),
-            survivorLastSuccessfulFetch: Date(timeIntervalSince1970: 200)
-        ))
-        #expect(try store.secret(for: new) == "https://survivor.example/simplefin")
-        #expect(try store.secret(for: old) == nil)
-    }
-
-    @Test("The re-key preview names the copy it would keep without a store")
-    func reKeyPreviewReasons() {
-        let retired = CredentialReKey.preview(
-            retiredLastSuccessfulFetch: Date(timeIntervalSince1970: 200),
-            survivorLastSuccessfulFetch: Date(timeIntervalSince1970: 100)
-        )
-        #expect(retired.kept == .retired)
-        #expect(retired.reason == "the retired credential fetched more recently")
-
-        let survivor = CredentialReKey.preview(
-            retiredLastSuccessfulFetch: Date(timeIntervalSince1970: 100),
-            survivorLastSuccessfulFetch: Date(timeIntervalSince1970: 200)
-        )
-        #expect(survivor.kept == .survivor)
-
-        let neither = CredentialReKey.preview(
-            retiredLastSuccessfulFetch: nil,
-            survivorLastSuccessfulFetch: nil
-        )
-        #expect(neither.kept == .survivor)
-        #expect(neither.reason == "neither credential has fetched")
     }
 
     @Test("Skipping the credential re-key leaves the credential store unchanged")
@@ -876,8 +817,8 @@ struct DuplicateConnectionTests {
 
         // Both copies exist, as they would on the device being tested.
         let backing = InMemoryCredentialStore()
-        try backing.store("https://retired.example/simplefin", id: seed.credentialB, synchronizable: false)
-        try backing.store("https://survivor.example/simplefin", id: seed.credentialA, synchronizable: false)
+        try backing.store("https://example.com/retired/simplefin", id: seed.credentialB, synchronizable: false)
+        try backing.store("https://example.com/survivor/simplefin", id: seed.credentialA, synchronizable: false)
         let store = AccessRecordingStore(backing: backing)
 
         let results = CredentialReKey.reKey(
@@ -890,17 +831,16 @@ struct DuplicateConnectionTests {
         #expect(results.count == 1)
         let result = try #require(results.first)
         #expect(result.failure == nil)
-        // The retired credential fetched more recently, so its secret is the one
-        // that would be kept, named by a short opaque id.
-        #expect(result.message.contains("would keep the retired secret"))
+        // The dry run describes the policy without reading either secret.
+        #expect(result.message.contains("distinct existing secrets are both kept"))
         #expect(result.message.contains(CredentialReKey.shortID(seed.credentialB)))
 
         // The skip path must not read, write, or delete anything.
         #expect(store.reads.isEmpty)
         #expect(store.writes.isEmpty)
         #expect(store.deletes.isEmpty)
-        #expect(try backing.secret(for: seed.credentialB) == "https://retired.example/simplefin")
-        #expect(try backing.secret(for: seed.credentialA) == "https://survivor.example/simplefin")
+        #expect(try backing.secret(for: seed.credentialB) == "https://example.com/retired/simplefin")
+        #expect(try backing.secret(for: seed.credentialA) == "https://example.com/survivor/simplefin")
     }
 }
 

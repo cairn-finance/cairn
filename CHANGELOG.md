@@ -8,6 +8,14 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Fixed
 
+- Sync keeps each saved connection's accounts and transaction history separate.
+- Posted transactions stay posted when an older pending version is returned.
+  Notes, categories, tags, and settlement links on pending transactions stay
+  on their original rows when matching a posted charge is uncertain.
+- Empty transaction responses no longer remove pending charges.
+- Reconnecting and combining duplicate connections preserve saved credentials
+  when the connection's server cannot be verified. Distinct credentials remain
+  available for recovery instead of replacing each other automatically.
 - Older transaction history no longer stops at the first empty 45-day response.
   Cairn resumes a bounded one-year search across syncs, shows the searched date
   in Connection Health, and lets you search another year. Account balance charts

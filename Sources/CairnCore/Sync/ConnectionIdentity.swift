@@ -1,7 +1,7 @@
 import Foundation
 
 /// Stable identity of one SimpleFIN connection: the connection id together with
-/// the organization it belongs to.
+/// the organization it belongs to, within one authenticated server.
 ///
 /// A display name is never part of the identity. The same bank can be renamed,
 /// and two logins at one organization can share a name, so names are unusable
@@ -25,7 +25,7 @@ public struct ConnectionIdentity: Hashable, Sendable {
 }
 
 /// What a newly claimed or reconnected Access URL should attach to, decided from
-/// the connection identities already stored.
+/// the connection identities and trusted server origins already stored.
 public enum ConnectionAdoption: Sendable, Equatable {
     /// No stored connection matches, so this is a separate SimpleFIN user. It
     /// gets its own credential and holder, as before.
@@ -44,31 +44,35 @@ public enum ConnectionMatcher {
     public struct StoredConnection: Sendable, Equatable {
         public let identity: ConnectionIdentity
         public let credentialID: UUID
+        public let serverOrigin: String?
 
-        public init(identity: ConnectionIdentity, credentialID: UUID) {
+        public init(identity: ConnectionIdentity, credentialID: UUID, serverOrigin: String? = nil) {
             self.identity = identity
             self.credentialID = credentialID
+            self.serverOrigin = serverOrigin.flatMap { SimpleFINServerOrigin.normalized($0) }
         }
     }
 
     /// Decides how a claimed token's connections map onto stored ones.
     ///
-    /// Only connections with a usable identity participate; a connection the
-    /// server did not identify can never match and so is treated as new.
+    /// Adoption requires a complete exact identity and a matching origin from
+    /// the saved credential holder. Server-reported URLs do not prove ownership.
     public static func decide(
         incoming: [SimpleFINConnection],
-        stored: [StoredConnection]
+        stored: [StoredConnection],
+        serverOrigin: String
     ) -> ConnectionAdoption {
-        let storedIdentities = stored.map(\.identity)
+        guard let origin = SimpleFINServerOrigin.normalized(serverOrigin) else { return .fresh }
 
         var matched: Set<UUID> = []
         for connection in incoming {
             guard let identity = ConnectionIdentity.of(
                 connectionID: connection.id,
                 organizationID: connection.organizationID
-            ) else { continue }
-            let matches = Set(matchingIdentities(identity, stored: storedIdentities))
-            for row in stored where matches.contains(row.identity) {
+            ), !identity.organizationID.isEmpty else { continue }
+            // Identity strings alone cannot authorize replacing a credential.
+            // The origin comes from the locally claimed URL, never the feed.
+            for row in stored where row.identity == identity && row.serverOrigin == origin {
                 matched.insert(row.credentialID)
             }
         }
@@ -105,8 +109,15 @@ public enum ConnectionMatcher {
     /// for a row that is about to disappear.
     public static func redundantCredentialIDs(stored: [StoredConnection]) -> Set<UUID> {
         var redundant: Set<UUID> = []
-        for credentials in credentialsByIdentity(stored).values where credentials.count > 1 {
-            redundant.formUnion(credentials)
+        let verified = stored.compactMap { row -> (origin: String, connection: StoredConnection)? in
+            guard let origin = row.serverOrigin else { return nil }
+            return (origin, row)
+        }
+        for rows in Dictionary(grouping: verified, by: \.origin).values {
+            let group = rows.map(\.connection)
+            for credentials in credentialsByIdentity(group).values where credentials.count > 1 {
+                redundant.formUnion(credentials)
+            }
         }
         return redundant
     }
