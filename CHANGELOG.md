@@ -6,16 +6,24 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
-### Fixed
+### Security
 
-- Sync keeps each saved connection's accounts and transaction history separate.
+- Bank sync keeps credentials, accounts, and transaction history scoped to the
+  saved connection that supplied them, including historical imports and
+  duplicate connection repair.
 - Posted transactions stay posted when an older pending version is returned.
   Notes, categories, tags, and settlement links on pending transactions stay
   on their original rows when matching a posted charge is uncertain.
-- Empty transaction responses no longer remove pending charges.
 - Reconnecting and combining duplicate connections preserve saved credentials
   when the connection's server cannot be verified. Distinct credentials remain
   available for recovery instead of replacing each other automatically.
+- Thanks to [OpenVuln](https://openvuln.vulnhunter.pro/) and
+  [@Clouditera](https://github.com/Clouditera) for reviewing Cairn and reporting
+  these issues. [OpenVuln on GitHub](https://github.com/Clouditera/OpenVuln).
+
+### Fixed
+
+- Empty or incomplete transaction responses no longer remove pending charges.
 - Older transaction history no longer stops at the first empty 45-day response.
   Cairn resumes a bounded one-year search across syncs, shows the searched date
   in Connection Health, and lets you search another year. Account balance charts
