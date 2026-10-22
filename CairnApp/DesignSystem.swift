@@ -345,14 +345,27 @@ struct DashboardGrid<Content: View>: View {
     var minimumColumnWidth: CGFloat = 320
     var spacing: CGFloat = CairnTheme.Spacing.l
     @ViewBuilder var content: Content
+    @State private var availableWidth: CGFloat = 0
+
+    private var columns: [GridItem] {
+        let count = max(1, Int((availableWidth + spacing) / (minimumColumnWidth + spacing)))
+        // The preferred column width determines the count, not a hard minimum.
+        // A single column must still fit a folded display or narrow split view.
+        return Array(repeating: GridItem(.flexible(minimum: 0), spacing: spacing, alignment: .top), count: count)
+    }
 
     var body: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: minimumColumnWidth), spacing: spacing, alignment: .top)],
+            columns: columns,
             alignment: .leading,
             spacing: spacing
         ) {
             content
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            availableWidth = width
         }
     }
 }

@@ -111,7 +111,7 @@ on GitHub Pages.
 
 ## Requirements
 
-- Xcode 27 or newer
+- Xcode 27.1 or newer (iOS 27.1 SDK for native iPhone Duo layouts)
 - iOS 26 / iPadOS 26 / macOS 26 deployment target
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 

@@ -270,6 +270,11 @@ struct InsightsView: View {
                 )
                 .onAppear { scrollToSelected(proxy, animated: false) }
                 .onChange(of: month) { _, _ in scrollToSelected(proxy, animated: true) }
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.size.width
+                } action: { _ in
+                    scrollToSelected(proxy, animated: false)
+                }
             }
 
             stepButton("chevron.right", label: "Next month") { shiftMonth(1) }

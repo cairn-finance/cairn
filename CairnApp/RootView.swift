@@ -213,13 +213,24 @@ struct MainTabView: View {
                 }
             }
         }
-        // The same destinations become a compact tab bar on iPhone and a
-        // sidebar on iPad, matching the platform instead of stretching phone
-        // navigation across a wide window.
+        // Keep the same navigation state as the available space changes,
+        // including transitions between iPhone Duo's inner and outer displays.
         .tabViewStyle(.sidebarAdaptable)
+        .cairnDefaultTabBarPlacement()
         .tabBarMinimizeBehavior(.onScrollDown)
         .onChange(of: sections) { _, visible in
             if !visible.contains(selection) { selection = visible.first ?? .settings }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func cairnDefaultTabBarPlacement() -> some View {
+        if #available(iOS 27.0, *) {
+            defaultTabBarPlacement(.sidebar)
+        } else {
+            self
         }
     }
 }
