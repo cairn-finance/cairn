@@ -28,7 +28,7 @@ jobs:
 
   test-and-build:
     # Verify the runner has the iOS 27.1 SDK needed for native iPhone Duo layouts.
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v7
 
