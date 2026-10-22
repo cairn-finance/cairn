@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
   generateEmptyDirectories: true
-  xcodeVersion: "27.0"
+  xcodeVersion: "27.1"
   developmentLanguage: en
   knownRegions: [en, Base]
 

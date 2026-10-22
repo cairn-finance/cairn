@@ -52,11 +52,7 @@ jobs:
           fi
 
       - name: Select Xcode
-        run: |
-          if [ -d /Applications/Xcode_27.app ]; then
-            sudo xcode-select -s /Applications/Xcode_27.app
-          fi
-          xcodebuild -version
+        run: bash Scripts/select-xcode.sh
 
       - name: Install tooling
         run: brew install swiftlint
@@ -114,11 +110,7 @@ jobs:
           fetch-depth: 0
 
       - name: Select Xcode
-        run: |
-          if [ -d /Applications/Xcode_27.app ]; then
-            sudo xcode-select -s /Applications/Xcode_27.app
-          fi
-          xcodebuild -version
+        run: bash Scripts/select-xcode.sh
 
       - name: Install tooling
         run: brew install xcodegen

@@ -27,17 +27,13 @@ jobs:
         run: Scripts/schema-hash.sh --check
 
   test-and-build:
-    # macOS 26 runners ship Xcode 27, which Cairn's iOS 26 / macOS 26 baseline needs.
+    # Verify the runner has the iOS 27.1 SDK needed for native iPhone Duo layouts.
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
 
       - name: Select Xcode
-        run: |
-          if [ -d /Applications/Xcode_27.app ]; then
-            sudo xcode-select -s /Applications/Xcode_27.app
-          fi
-          xcodebuild -version
+        run: bash Scripts/select-xcode.sh
 
       - name: Install tooling
         run: brew install xcodegen swiftlint

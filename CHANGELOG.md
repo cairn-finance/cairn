@@ -6,6 +6,18 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Navigation uses a sidebar on iPhone Duo's inner display and adapts as the
+  device folds or unfolds.
+
+### Fixed
+
+- Home and Insights dashboard cards fit narrow windows and the folded display
+  while continuing to use multiple columns when space permits.
+- Insights keeps the selected month visible when folding, unfolding, or
+  resizing its window.
+
 ## [1.3.3] - 2026-10-19
 
 ### Security
