@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-22
+
 ### Changed
 
 - Navigation uses a sidebar on iPhone Duo's inner display and adapts as the
