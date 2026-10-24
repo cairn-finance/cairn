@@ -303,7 +303,47 @@ enum SampleData {
         paycheck.userCategory = category("Income")
         context.insert(paycheck)
 
+        try? insertPersonalPlans(context: context, now: now)
         try? context.save()
+    }
+
+    private static func insertPersonalPlans(context: ModelContext, now: Date) throws {
+        let people = [
+            ExpenseParticipant(name: "You", shareMinorUnits: 4_000, isMe: true),
+            ExpenseParticipant(name: "Alex", shareMinorUnits: 4_000),
+            ExpenseParticipant(name: "Sam", shareMinorUnits: 4_000),
+        ]
+        let expense = SharedExpense()
+        expense.title = "Dinner with friends"
+        expense.date = now.addingTimeInterval(-86_400)
+        expense.totalMinorUnits = 12_000
+        expense.currencyData = try JSONEncoder().encode(Currency.usd)
+        expense.participantsData = try JSONEncoder().encode(people)
+        expense.payerID = people[0].id
+        context.insert(expense)
+        let repayment = SharedExpensePayment()
+        repayment.expenseID = expense.uuid
+        repayment.participantID = people[1].id
+        repayment.amountMinorUnits = 2_000
+        repayment.date = now.addingTimeInterval(-3_600)
+        context.insert(repayment)
+        for (name, target, allocated) in [("Annual insurance", Int64(120_000), Int64(40_000)),
+                                          ("Next holiday", Int64(200_000), Int64(65_000))] {
+            let fund = SinkingFund()
+            fund.name = name
+            fund.currencyData = try JSONEncoder().encode(Currency.usd)
+            fund.targetMinorUnits = target
+            fund.targetDate = Calendar.current.date(byAdding: .month, value: 9, to: now)
+            fund.monthlyContributionMinorUnits = 10_000
+            fund.timeZoneIdentifier = TimeZone.current.identifier
+            context.insert(fund)
+            let entry = SinkingFundEntry()
+            entry.fundID = fund.uuid
+            entry.amountMinorUnits = allocated
+            entry.kindRaw = "opening"
+            entry.date = now.addingTimeInterval(-86_400)
+            context.insert(entry)
+        }
     }
 
     // Creates one sample position. `cost` is the total cost basis; both values

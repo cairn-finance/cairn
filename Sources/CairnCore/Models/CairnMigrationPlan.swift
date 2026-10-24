@@ -10,6 +10,7 @@ public enum CairnMigrationPlan: SchemaMigrationPlan {
             CairnSchemaV3.self,
             CairnSchemaV4.self,
             CairnSchemaV5.self,
+            CairnSchemaV6.self,
         ]
     }
 
@@ -19,6 +20,7 @@ public enum CairnMigrationPlan: SchemaMigrationPlan {
             MigrationStage.lightweight(fromVersion: CairnSchemaV2.self, toVersion: CairnSchemaV3.self),
             MigrationStage.lightweight(fromVersion: CairnSchemaV3.self, toVersion: CairnSchemaV4.self),
             MigrationStage.lightweight(fromVersion: CairnSchemaV4.self, toVersion: CairnSchemaV5.self),
+            MigrationStage.lightweight(fromVersion: CairnSchemaV5.self, toVersion: CairnSchemaV6.self),
         ]
     }
 }

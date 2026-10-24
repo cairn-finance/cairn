@@ -6,6 +6,17 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- Record shared expenses directly, with equal or custom shares, who paid,
+  partial repayments, and optional transaction attachments. Track what you owe
+  and what others owe you without selecting a bank transaction.
+- Track sinking funds with targets, opening allocations, monthly contribution
+  plans, contribution and withdrawal history, and progress toward a target date.
+- Export shared expenses and sinking funds, including their histories, as JSON
+  from Settings. These personal records use the existing device or private
+  iCloud store and do not invite or notify other people.
+
 ## [1.4.0] - 2026-10-22
 
 ### Changed

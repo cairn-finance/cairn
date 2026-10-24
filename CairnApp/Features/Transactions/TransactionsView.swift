@@ -88,6 +88,11 @@ struct TransactionsView: View {
             ToolbarItem(placement: .primaryAction) {
                 filtersMenu
             }
+            ToolbarItem(placement: .primaryAction) {
+                NavigationLink { SharedExpensesView() } label: {
+                    Label("Shared expenses", systemImage: "person.2")
+                }
+            }
         }
         .task {
             if feed == nil {
