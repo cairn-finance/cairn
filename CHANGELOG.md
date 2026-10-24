@@ -14,6 +14,10 @@ All notable changes to Cairn are documented here. This project follows
   another 14 days without activity.
   Assigned issues, planned work, feature requests, and confirmed bugs are exempt.
 
+### Changed
+
+- CodeQL workflow security scanning runs without a separate Swift build.
+
 ## [1.4.0] - 2026-10-22
 
 ### Changed

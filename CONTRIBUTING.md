@@ -47,6 +47,12 @@ CI checks all GitHub Actions workflows with actionlint, including embedded shell
 and Python scripts. For local workflow checks, run `actionlint` from the
 repository root. Custom runner labels are listed in `.github/actionlint.yaml`.
 
+CodeQL scans GitHub Actions workflows on pull requests, pushes to `main`, and
+weekly. Swift CodeQL scanning is disabled while CodeQL cannot trace Xcode 27
+builds. Core tests and both platform builds continue to run in CI with Xcode
+27.1. Revisit Swift scanning when CodeQL supports that toolchain; see the
+[CodeQL compatibility notes](https://github.com/github/codeql-cli-binaries/releases/tag/v2.27.3).
+
 ## Pull requests
 
 - Keep changes focused and explain the "why".
