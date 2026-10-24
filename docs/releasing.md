@@ -163,6 +163,11 @@ promotes the `Unreleased` notes in `CHANGELOG.md`, commits, tags `vX.Y.Z`, and
 pushes. CI does the rest. Watch it under the repository's **Actions → Release**
 tab.
 
+The account pushing the release must be a repository administrator. Required
+checks protect `main`, with administrator bypass enabled so this script can push
+its version commit before tagging. Contributors without bypass must use a pull
+request to land changes on `main`.
+
 Add user-facing notes under the single `Unreleased` section in `CHANGELOG.md`
 during feature work. The script requires notes there, moves them into the new
 versioned section, and leaves an empty `Unreleased` section for future work.

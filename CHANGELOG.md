@@ -6,6 +6,18 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Actions workflows are checked for configuration and script errors on
+  every pull request.
+- Inactive GitHub issues receive a reminder after 60 days and close after
+  another 14 days without activity.
+  Assigned issues, planned work, feature requests, and confirmed bugs are exempt.
+
+### Changed
+
+- CodeQL workflow security scanning runs without a separate Swift build.
+
 ## [1.4.0] - 2026-10-22
 
 ### Changed

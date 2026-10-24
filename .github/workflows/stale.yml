@@ -1,0 +1,50 @@
+name: Manage stale issues
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview changes without updating issues
+        type: boolean
+        default: true
+
+permissions:
+  issues: write
+
+concurrency:
+  group: stale-issues
+  cancel-in-progress: false
+
+jobs:
+  stale:
+    if: github.repository == 'cairn-finance/cairn'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Manage inactive issues
+        uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          stale-issue-label: stale
+          stale-issue-message: >-
+            This issue has had no activity for 60 days and has been marked as
+            stale. If it still needs attention, please add an update. It will be
+            closed after another 14 days without activity.
+          close-issue-message: >-
+            This issue was closed after 14 days without activity following the
+            stale reminder. If it still needs attention, please comment with an
+            update so a maintainer can reopen it.
+          close-issue-reason: not_planned
+          exempt-issue-labels: confirmed,enhancement,security,pinned,keep-open
+          exempt-all-issue-assignees: true
+          exempt-all-issue-milestones: true
+          remove-issue-stale-when-updated: true
+          # Pull requests are managed by their authors and reviewers.
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          remove-pr-stale-when-updated: false
+          operations-per-run: 30
+          debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
