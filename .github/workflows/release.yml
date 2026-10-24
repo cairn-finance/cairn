@@ -80,9 +80,8 @@ jobs:
           # the same tag on the same build number.
           build="$(git rev-list --count "$RELEASE_TAG^{commit}")"
           echo "Releasing $version (build $build)"
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "build=$build" >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\nversion=%s\nbuild=%s\n' \
+            "$RELEASE_TAG" "$version" "$build" >> "$GITHUB_OUTPUT"
 
   # One signed archive per platform, uploaded straight to TestFlight. Both use
   # the same tag and build number.
