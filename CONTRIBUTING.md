@@ -51,6 +51,24 @@ SimpleFIN demo token; use the `URLProtocol` stubs.
 - Maintainers: see [`docs/releasing.md`](docs/releasing.md) before tagging a
   release.
 
+## Inactive issues
+
+Unassigned issues with no activity for 60 days receive a `stale` label and a
+reminder. After another 14 days without activity, they are closed as not planned.
+An update or comment before closure removes the label on the next daily run and
+restarts the inactivity timer. If a closed issue still needs attention, comment
+with an update so a maintainer can reopen it.
+
+Issues with an assignee or milestone are exempt, as are issues labeled
+`confirmed`, `enhancement`, `security`, `pinned`, or `keep-open`. Use `confirmed`
+for a verified bug or `keep-open` for another issue that should remain active
+without periodic reminders. Pull requests are excluded.
+
+Maintainers can preview the daily workflow from **Actions → Manage stale issues
+→ Run workflow**. Leave **dry_run** enabled to see the proposed changes without
+updating issues. Scheduled runs apply changes automatically after the workflow
+is merged into the default branch.
+
 ## Commit messages
 
 Short (under ~60 words), imperative, and scoped.

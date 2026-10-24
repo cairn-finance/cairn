@@ -6,6 +6,12 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- Inactive GitHub issues receive a reminder after 60 days and close after
+  another 14 days without activity.
+  Assigned issues, planned work, feature requests, and confirmed bugs are exempt.
+
 ## [1.4.0] - 2026-10-22
 
 ### Changed
