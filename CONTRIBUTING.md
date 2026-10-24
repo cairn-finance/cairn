@@ -43,6 +43,16 @@ Add tests for any pure logic you change — money conversion, matching, balance
 history, rules, sanitization, decoding, export. Do not point tests at the live
 SimpleFIN demo token; use the `URLProtocol` stubs.
 
+CI checks all GitHub Actions workflows with actionlint, including embedded shell
+and Python scripts. For local workflow checks, run `actionlint` from the
+repository root. Custom runner labels are listed in `.github/actionlint.yaml`.
+
+CodeQL scans GitHub Actions workflows on pull requests, pushes to `main`, and
+weekly. Swift CodeQL scanning is disabled while CodeQL cannot trace Xcode 27
+builds. Core tests and both platform builds continue to run in CI with Xcode
+27.1. Revisit Swift scanning when CodeQL supports that toolchain; see the
+[CodeQL compatibility notes](https://github.com/github/codeql-cli-binaries/releases/tag/v2.27.3).
+
 ## Pull requests
 
 - Keep changes focused and explain the "why".
@@ -50,6 +60,24 @@ SimpleFIN demo token; use the `URLProtocol` stubs.
 - Update docs when behavior or the schema changes.
 - Maintainers: see [`docs/releasing.md`](docs/releasing.md) before tagging a
   release.
+
+## Inactive issues
+
+Unassigned issues with no activity for 60 days receive a `stale` label and a
+reminder. After another 14 days without activity, they are closed as not planned.
+An update or comment before closure removes the label on the next daily run and
+restarts the inactivity timer. If a closed issue still needs attention, comment
+with an update so a maintainer can reopen it.
+
+Issues with an assignee or milestone are exempt, as are issues labeled
+`confirmed`, `enhancement`, `security`, `pinned`, or `keep-open`. Use `confirmed`
+for a verified bug or `keep-open` for another issue that should remain active
+without periodic reminders. Pull requests are excluded.
+
+Maintainers can preview the daily workflow from **Actions → Manage stale issues
+→ Run workflow**. Leave **dry_run** enabled to see the proposed changes without
+updating issues. Scheduled runs apply changes automatically after the workflow
+is merged into the default branch.
 
 ## Commit messages
 
