@@ -91,6 +91,19 @@ targets:
         INFOPLIST_FILE: CairnWidgets/Info.plist
         SWIFT_VERSION: "6.0"
 
+  CairnUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/CairnUITests
+    dependencies:
+      - target: Cairn
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.cairn.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Cairn
+
 schemes:
   Cairn:
     build:
@@ -100,3 +113,11 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  Cairn UI Tests:
+    build:
+      targets:
+        Cairn: all
+    test:
+      targets:
+        - CairnUITests

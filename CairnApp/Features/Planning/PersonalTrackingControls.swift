@@ -2,6 +2,29 @@ import SwiftUI
 import SwiftData
 import CairnCore
 
+extension View {
+    /// Phone editors need a fixed navigation header while the keyboard resizes the form.
+    func trackingEditor<Editor: View>(
+        isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Editor
+    ) -> some View {
+        #if os(iOS)
+        fullScreenCover(isPresented: isPresented, content: content)
+        #else
+        sheet(isPresented: isPresented, content: content)
+        #endif
+    }
+
+    func trackingEditor<Item: Identifiable, Editor: View>(
+        item: Binding<Item?>, @ViewBuilder content: @escaping (Item) -> Editor
+    ) -> some View {
+        #if os(iOS)
+        fullScreenCover(item: item, content: content)
+        #else
+        sheet(item: item, content: content)
+        #endif
+    }
+}
+
 struct TrackingAmountField: View {
     let title: LocalizedStringKey
     @Binding var text: String
@@ -215,9 +238,19 @@ struct PersonalTrackingEntryPoints: View {
     @Query private var payments: [SharedExpensePayment]
     @Query private var funds: [SinkingFund]
     @Query private var entries: [SinkingFundEntry]
+    @State private var availableWidth: CGFloat = 0
+
+    private var layout: AnyLayout {
+        let spacing = CairnTheme.Spacing.l
+        if availableWidth >= 680 + spacing {
+            return AnyLayout(HStackLayout(alignment: .top, spacing: spacing))
+        }
+        return AnyLayout(VStackLayout(alignment: .leading, spacing: spacing))
+    }
 
     var body: some View {
-        DashboardGrid(minimumColumnWidth: 340) {
+        // Both navigation actions stay in the accessibility tree while Home scrolls.
+        layout {
             NavigationLink { SharedExpensesView() } label: {
                 Card {
                     HStack(spacing: CairnTheme.Spacing.m) {
@@ -237,6 +270,11 @@ struct PersonalTrackingEntryPoints: View {
                 }
             }
             .buttonStyle(.pressableCard)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Shared expenses")
+            .accessibilityValue(sharedCurrencies.map { sharedSummary($0) }.joined(separator: "; "))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("sharedExpensesEntry")
             NavigationLink { SinkingFundsView() } label: {
                 Card {
                     HStack(spacing: CairnTheme.Spacing.m) {
@@ -256,7 +294,14 @@ struct PersonalTrackingEntryPoints: View {
                 }
             }
             .buttonStyle(.pressableCard)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Sinking funds")
+            .accessibilityValue(fundCurrencies.map { fundSummary($0) }.joined(separator: "; "))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("sinkingFundsEntry")
         }
+        .accessibilityElement(children: .contain)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
     }
 
     private var sharedCurrencies: [Currency] {

@@ -49,13 +49,14 @@ struct SinkingFundsView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add sinking fund", systemImage: "plus") { showingAdd = true }
+                    .accessibilityIdentifier("addSinkingFund")
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu { Toggle("Show archived funds", isOn: $showsArchived) } label: { Image(systemName: "ellipsis.circle") }
                     .accessibilityLabel("Sinking fund options")
             }
         }
-        .sheet(isPresented: $showingAdd) { SinkingFundEditor().cairnLockCover() }
+        .trackingEditor(isPresented: $showingAdd) { SinkingFundEditor().cairnLockCover() }
     }
 
     @ViewBuilder
@@ -192,6 +193,7 @@ struct SinkingFundDetail: View {
                     if input.state == .active || input.state == .paused {
                         Button { showingEntry = true } label: { Label("Record allocation", systemImage: "plus") }
                             .buttonStyle(.cairnProminent).disabled(isSaving)
+                            .accessibilityIdentifier("recordFundAllocation")
                     }
                     planCard(input, summary: summary)
                 } else {
@@ -220,10 +222,10 @@ struct SinkingFundDetail: View {
                 .accessibilityLabel("Sinking fund options").disabled(isSaving)
             }
         }
-        .sheet(isPresented: $showingEdit) {
+        .trackingEditor(isPresented: $showingEdit) {
             SinkingFundEditor(existing: input, hasEntries: !entries.isEmpty).cairnLockCover()
         }
-        .sheet(isPresented: $showingEntry) { SinkingFundEntryEditor(fund: input).cairnLockCover() }
+        .trackingEditor(isPresented: $showingEntry) { SinkingFundEntryEditor(fund: input).cairnLockCover() }
     }
 
     private func hero(_ input: SinkingFundInput, summary: SinkingFundSummary) -> some View {
@@ -240,6 +242,7 @@ struct SinkingFundDetail: View {
                 }
                 AmountText(money: Money(minorUnits: summary.fundedMinorUnits, currency: input.currency),
                            font: .cairnHero, colorOverride: .white, deemphasizeFraction: true)
+                    .accessibilityIdentifier("fundedAmount")
                 Text("of \(Money(minorUnits: input.targetMinorUnits, currency: input.currency).formatted()) set aside")
                     .font(.subheadline).foregroundStyle(.white.opacity(0.75))
                 ProgressView(value: min(1, summary.progress)).tint(CairnTheme.inkGlow)

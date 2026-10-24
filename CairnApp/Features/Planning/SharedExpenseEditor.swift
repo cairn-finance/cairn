@@ -124,6 +124,8 @@ struct SharedExpenseEditor: View {
                 }
                 .cairnScreen(maxWidth: 560)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("trackingEditorScroll")
             .cairnCanvas()
             .navigationTitle(existing == nil ? "Add shared expense" : "Edit shared expense")
             #if os(iOS)
@@ -245,6 +247,8 @@ struct SharedPaymentEditor: View {
                 }
                 .cairnScreen(maxWidth: 560)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("trackingEditorScroll")
             .cairnCanvas()
             .navigationTitle("Record repayment")
             #if os(iOS)

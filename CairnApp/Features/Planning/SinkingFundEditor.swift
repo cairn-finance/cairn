@@ -66,6 +66,8 @@ struct SinkingFundEditor: View {
                 }
                 .cairnScreen(maxWidth: 560)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("trackingEditorScroll")
             .cairnCanvas()
             .navigationTitle(existing == nil ? "Add sinking fund" : "Edit sinking fund")
             #if os(iOS)
@@ -144,6 +146,7 @@ struct SinkingFundEntryEditor: View {
                                 Text(value.title).tag(value)
                             }
                         }
+                        .accessibilityIdentifier("fundEntryType")
                         TrackingAmountField("Amount", text: $amount)
                         DatePicker("Date", selection: $date, in: ...Date.now, displayedComponents: .date)
                         TextField("Note (optional)", text: $note, axis: .vertical).lineLimit(2...5)
@@ -156,6 +159,8 @@ struct SinkingFundEntryEditor: View {
                 }
                 .cairnScreen(maxWidth: 560)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("trackingEditorScroll")
             .cairnCanvas()
             .navigationTitle("Record allocation")
             #if os(iOS)

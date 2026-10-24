@@ -69,13 +69,14 @@ struct SharedExpensesView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add shared expense", systemImage: "plus") { showingAdd = true }
+                    .accessibilityIdentifier("addSharedExpense")
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu { Toggle("Show archived expenses", isOn: $showsArchived) } label: { Image(systemName: "ellipsis.circle") }
                     .accessibilityLabel("Shared expense options")
             }
         }
-        .sheet(isPresented: $showingAdd) { SharedExpenseEditor().cairnLockCover() }
+        .trackingEditor(isPresented: $showingAdd) { SharedExpenseEditor().cairnLockCover() }
     }
 
     @ViewBuilder
@@ -262,10 +263,10 @@ struct SharedExpenseDetail: View {
                 .disabled(isSaving).accessibilityLabel("Shared expense options")
             }
         }
-        .sheet(isPresented: $showingEdit) {
+        .trackingEditor(isPresented: $showingEdit) {
             SharedExpenseEditor(existing: input, hasPayments: !payments.isEmpty).cairnLockCover()
         }
-        .sheet(item: $paymentTarget) { balance in
+        .trackingEditor(item: $paymentTarget) { balance in
             SharedPaymentEditor(expense: input, balance: balance).cairnLockCover()
         }
         .sheet(item: $attachingPayment) { payment in
@@ -296,12 +297,14 @@ struct SharedExpenseDetail: View {
                                 Spacer()
                                 AmountText(money: Money(minorUnits: balance.outstandingMinorUnits, currency: input.currency),
                                            font: .title3.weight(.semibold))
+                                    .accessibilityIdentifier("sharedExpenseOutstanding")
                             }
                             if balance.outstandingMinorUnits > 0, !input.isArchived {
                                 Button { paymentTarget = balance } label: {
                                     Label("Record payment", systemImage: "plus")
                                 }
                                 .buttonStyle(.glass).controlSize(.regular)
+                                .accessibilityIdentifier("recordSharedPayment")
                                 .accessibilityHint(balance.owedToMe ? "Record received payment" : "Record your payment")
                             }
                         }

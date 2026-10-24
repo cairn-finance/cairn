@@ -557,7 +557,7 @@ struct TransactionDetailView: View {
             SettlementLinkSheet(expense: transaction)
                 .cairnLockCover()
         }
-        .sheet(isPresented: $showingSharedExpense) {
+        .trackingEditor(isPresented: $showingSharedExpense) {
             SharedExpenseEditor(prefill: sharedExpensePrefill)
                 .cairnLockCover()
         }
