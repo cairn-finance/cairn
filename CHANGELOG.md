@@ -6,6 +6,11 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- Support project generation and signing configuration for iOS and macOS
+  builds in Xcode Cloud.
+
 ### Changed
 
 - Update source-code, privacy-policy, and support links for the repository

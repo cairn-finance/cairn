@@ -282,7 +282,51 @@ Before the first tag can upload, the surrounding Apple configuration must exist
   **App Store Connect → TestFlight**.
 
 App Store Connect requires uploads built with **Xcode 26 or later** (since
-April 2026); the workflow runs on `macos-26` with Xcode 27.
+April 2026); the workflow runs on `xcode-27` and checks for the iOS 27.1 SDK.
+
+## Xcode Cloud builds
+
+Xcode Cloud validates iOS and macOS builds alongside GitHub Actions. Tagged
+GitHub Actions releases remain the publication pipeline for TestFlight and
+GitHub Releases. Keep the `Default` Xcode Cloud workflow's actions set to
+**Build**, without automatic TestFlight distribution.
+
+`Cairn.xcodeproj` is generated and is not committed. After checking out the
+repository, Xcode Cloud runs `ci_scripts/ci_post_clone.sh`, which installs
+XcodeGen if necessary, writes the ignored signing configuration, and generates
+the project at the path expected by the workflow.
+
+Configure **Cairn → Xcode Cloud → Manage Workflows → Default** in App Store
+Connect:
+
+1. Use the `sehejjain/cairn` repository, `Cairn.xcodeproj` at the repository
+   root, and the shared `Cairn` scheme.
+2. Under **Environment**, select Xcode 27.1 or later so the iOS 27.1 SDK is
+   available. The post-clone script checks the selected SDK without changing
+   the machine's Xcode selection or using `sudo`.
+3. Set `ICLOUD_CONTAINER_ID` to the **existing Production container**, using
+   the same value as the GitHub Actions repository secret. GitHub secrets are
+   not automatically available in Xcode Cloud. In App Store Connect, add it
+   under **Xcode Cloud → Settings → Shared Environment Variables**, select
+   **Secret**, and apply it to the `Default` workflow; a workflow-specific
+   environment variable also works.
+4. Xcode Cloud supplies `CI_TEAM_ID` and `CI_BUNDLE_ID` from the configured
+   product. The script uses these for signing. Optional `DEVELOPMENT_TEAM` and
+   `PRODUCT_BUNDLE_IDENTIFIER` variables override those defaults when needed;
+   keep them equal to the identities used by the release workflow.
+5. Start a new build from a branch containing the post-clone script. Confirm
+   that the **Post-Clone** step generates the project, then verify both the iOS
+   and macOS build actions succeed.
+
+Xcode Cloud manages its signing credentials through the configured Apple team;
+the post-clone script does not need the GitHub Actions App Store API key or
+certificate secrets. Keep the existing CloudKit container and App Group
+registrations attached to the App ID.
+
+`python3 Scripts/tests/xcode-cloud-test.py` checks project setup, missing
+configuration, unsupported SDKs, and generator failures without an Apple account
+or SDK. These checks also run in GitHub Actions. They do not replace a successful
+Xcode Cloud build with the configured product and signing identities.
 
 ## Release branches and hotfixes
 

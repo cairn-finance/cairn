@@ -13,6 +13,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  xcode-cloud-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check Xcode Cloud project setup
+        run: python3 Scripts/tests/xcode-cloud-test.py
+
   actionlint:
     runs-on: ubuntu-latest
     timeout-minutes: 5
