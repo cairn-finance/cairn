@@ -6,6 +6,11 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Update source-code, privacy-policy, and support links for the repository
+  under the maintainer's personal GitHub account.
+
 ## [1.5.0] - 2026-10-24
 
 ### Added

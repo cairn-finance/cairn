@@ -1,8 +1,8 @@
 ![Cairn — Your money. Your data. No account, no server, no tracking.](docs/images/banner.png)
 
-[![CI](https://github.com/cairn-finance/cairn/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/cairn-finance/cairn/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/cairn-finance/cairn)](https://github.com/cairn-finance/cairn/releases/latest)
-[![License](https://img.shields.io/github/license/cairn-finance/cairn)](LICENSE)
+[![CI](https://github.com/sehejjain/cairn/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sehejjain/cairn/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/sehejjain/cairn)](https://github.com/sehejjain/cairn/releases/latest)
+[![License](https://img.shields.io/github/license/sehejjain/cairn)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2026%20%C2%B7%20iPadOS%2026%20%C2%B7%20macOS%2026-blue)](#requirements)
 [![Swift 6](https://img.shields.io/badge/Swift-6-orange)](#build)
 [![TestFlight](https://img.shields.io/badge/TestFlight-join%20the%20beta-0D96F6?logo=apple&logoColor=white)](https://testflight.apple.com/join/zcmwDyef)
@@ -105,8 +105,8 @@ currencies.
 
 See [`docs/threat-model.md`](docs/threat-model.md) and
 [`docs/privacy-policy.md`](docs/privacy-policy.md). The app's public
-[Privacy Policy](https://cairn-finance.github.io/cairn/privacy.html) and
-[Support](https://cairn-finance.github.io/cairn/support.html) pages are hosted
+[Privacy Policy](https://sehejjain.github.io/cairn/privacy.html) and
+[Support](https://sehejjain.github.io/cairn/support.html) pages are hosted
 on GitHub Pages.
 
 ## Requirements

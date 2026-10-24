@@ -79,5 +79,5 @@ Material changes will be noted in the repository's release history.
 
 ## Contact
 
-See the [Cairn support page](https://cairn-finance.github.io/cairn/support.html)
-or open an issue at https://github.com/cairn-finance/cairn.
+See the [Cairn support page](https://sehejjain.github.io/cairn/support.html)
+or open an issue at https://github.com/sehejjain/cairn.
