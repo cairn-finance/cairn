@@ -8,6 +8,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ### Added
 
+- GitHub Actions workflows are checked for configuration and script errors on
+  every pull request.
 - Inactive GitHub issues receive a reminder after 60 days and close after
   another 14 days without activity.
   Assigned issues, planned work, feature requests, and confirmed bugs are exempt.

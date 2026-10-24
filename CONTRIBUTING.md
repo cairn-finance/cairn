@@ -43,6 +43,10 @@ Add tests for any pure logic you change — money conversion, matching, balance
 history, rules, sanitization, decoding, export. Do not point tests at the live
 SimpleFIN demo token; use the `URLProtocol` stubs.
 
+CI checks all GitHub Actions workflows with actionlint, including embedded shell
+and Python scripts. For local workflow checks, run `actionlint` from the
+repository root. Custom runner labels are listed in `.github/actionlint.yaml`.
+
 ## Pull requests
 
 - Keep changes focused and explain the "why".
