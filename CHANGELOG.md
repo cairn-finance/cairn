@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-24
+
 ### Added
 
 - Record shared expenses directly, with equal or custom shares, who paid,
