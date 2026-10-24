@@ -3182,6 +3182,10 @@ public actor SyncEngine {
     /// Children are removed before the models they point at so batch deletes
     /// never trip a relationship constraint.
     public func deleteAllData() throws {
+        try modelContext.delete(model: SharedExpensePayment.self)
+        try modelContext.delete(model: SharedExpense.self)
+        try modelContext.delete(model: SinkingFundEntry.self)
+        try modelContext.delete(model: SinkingFund.self)
         try modelContext.delete(model: BudgetSmoothingPlan.self)
         try modelContext.delete(model: LedgerTransaction.self)
         try modelContext.delete(model: CategoryBudget.self)

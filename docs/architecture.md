@@ -9,7 +9,7 @@ CairnApp (SwiftUI, iOS/iPadOS/macOS)
    │  @Query / @Observable
    ▼
 CairnCore (Swift package)
-   ├─ Models/        SwiftData @Model types (CairnSchemaV2; V1 retained for migration)
+   ├─ Models/        versioned SwiftData models (V1–V6 retained for migration)
    ├─ Persistence/   ModelContainerFactory, StoreMode
    ├─ Security/      CredentialStore, KeychainCredentialStore
    ├─ SimpleFIN/     client, DTOs, errors, sanitizer
@@ -17,6 +17,7 @@ CairnCore (Swift package)
    ├─ Enrichment/    rules engine, merchant memory, transfer pairing
    ├─ Insights/      month-over-month math, subscription detection
    ├─ Budgets/       monthly category limit math and ledger snapshots
+   ├─ Planning/      personal shared expenses and sinking-fund calculations
    └─ Export/        CSV + JSON
 ```
 
@@ -106,6 +107,27 @@ forces local-only storage at runtime, and the test host always uses local storag
   cache.
 
 ## Sync behavior
+
+Shared expenses and sinking funds are personal tracking records in the same
+device-only or private iCloud store as the ledger. Participant names are labels;
+there are no invitations, messages, shared databases, or application servers.
+Schema V6 adds these records without rewriting earlier reimbursement pairs or
+expense-smoothing plans. Earlier pairs remain available in transaction details.
+
+Shared-expense splits use integer minor units and preserve the complete currency
+descriptor. Repayments reduce an individual obligation; changes that would erase
+a paid obligation are rejected. Optional posted-transaction attachments are
+references only: they do not classify a bank row or add a second ledger entry.
+Existing bank-linked reimbursement pairs retain their budget and Insights rules.
+
+Sinking-fund balances are calculated from confirmed opening allocations,
+contributions, withdrawals, and corrections. Monthly plans never post themselves.
+Allocations affect neither net worth nor spending. Recording a withdrawal does
+not replace the actual purchase in the ledger. Targets and monthly suggestions
+use the fund's saved time zone. Financial attributes, participant payloads, and
+currency descriptors use `allowsCloudEncryption`; UUIDs and creation/modification
+bookkeeping remain structural metadata. Settings exports all personal records
+and their history as JSON, and Delete All Data includes all four new model types.
 
 - Each institution — one SimpleFIN Access URL — has its **own** request budget,
   stored on `Institution` (`lastSuccessfulFetch`, `dailyRequestCount`,

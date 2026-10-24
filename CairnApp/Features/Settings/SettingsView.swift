@@ -577,6 +577,9 @@ struct SettingsView: View {
             Button { exportCommitments() } label: {
                 IconRow("Export commitments as CSV", systemImage: "calendar.badge.clock", tint: .orange)
             }
+            Button { exportPersonalTracking() } label: {
+                IconRow("Export shared expenses and sinking funds", systemImage: "tray.and.arrow.up", tint: .blue)
+            }
             Button(role: .destructive) {
                 showingDeleteConfirm = true
             } label: {
@@ -661,6 +664,19 @@ struct SettingsView: View {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "\(version) (\(build))"
+    }
+
+    private func exportPersonalTracking() {
+        Task {
+            do {
+                let data = try await model.engine.exportPersonalTrackingJSON()
+                exportDocument = ExportFile(data: data)
+                exportType = .json
+                exportFileName = "cairn-personal-plans"
+            } catch {
+                model.banner = String(localized: "Export failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func export(json: Bool) {

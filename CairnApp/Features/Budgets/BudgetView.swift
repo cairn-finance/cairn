@@ -196,6 +196,20 @@ struct BudgetView: View {
                         unbudgetedCard(snapshot)
                     }
                 }
+                NavigationLink { SinkingFundsView() } label: {
+                    Card {
+                        HStack(spacing: CairnTheme.Spacing.m) {
+                            TrackingSymbol(name: "tray.and.arrow.down")
+                            VStack(alignment: .leading, spacing: CairnTheme.Spacing.xs) {
+                                Text("Sinking funds").font(.headline)
+                                Text("Set money aside for future expenses").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .buttonStyle(.pressableCard)
             }
             .cairnScreen(maxWidth: 920)
         }

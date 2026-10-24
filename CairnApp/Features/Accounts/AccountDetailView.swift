@@ -500,6 +500,7 @@ struct TransactionDetailView: View {
     @State private var showingRuleEditor = false
     @State private var ruleToEdit: CategorizationRule?
     @State private var showingSettlementLink = false
+    @State private var showingSharedExpense = false
     @State private var showingUnlinkConfirmation = false
     @State private var showingBudgetExpenseSmoothing = false
 
@@ -554,6 +555,10 @@ struct TransactionDetailView: View {
         }
         .sheet(isPresented: $showingSettlementLink) {
             SettlementLinkSheet(expense: transaction)
+                .cairnLockCover()
+        }
+        .trackingEditor(isPresented: $showingSharedExpense) {
+            SharedExpenseEditor(prefill: sharedExpensePrefill)
                 .cairnLockCover()
         }
         .sheet(isPresented: $showingBudgetExpenseSmoothing) {
@@ -879,7 +884,7 @@ struct TransactionDetailView: View {
                         transaction.settlementRole == .reimbursement ? "Shared expense reimbursement" : "Shared expense",
                         subtitle: transaction.isSettlementLinked
                             ? "Both original bank transactions remain visible."
-                            : "Link one incoming reimbursement without changing either bank row."
+                            : "Track repayments or link an incoming reimbursement."
                     )
                     if transaction.isSettlementLinked {
                         detailRow("Counterparty", transaction.settlementCounterparty ?? "—")
@@ -903,6 +908,10 @@ struct TransactionDetailView: View {
                             Label("Unlink settlement", systemImage: "link.badge.plus")
                         }
                     } else {
+                        Button("Track shared expense…", systemImage: "person.2") {
+                            showingSharedExpense = true
+                        }
+                        .font(.subheadline.weight(.medium))
                         Button("Link reimbursement…", systemImage: "link") {
                             showingSettlementLink = true
                         }
@@ -911,6 +920,22 @@ struct TransactionDetailView: View {
                 }
             }
         }
+    }
+
+    private var sharedExpensePrefill: SharedExpenseInput {
+        let total = MinorUnits.absClamped(transaction.amountMinorUnits)
+        let shares = (try? SharedExpenseCalculator.equalShares(total: total, count: 2)) ?? [0, 0]
+        let people = [
+            ExpenseParticipant(name: String(localized: "You"), shareMinorUnits: shares[0], isMe: true),
+            ExpenseParticipant(name: "", shareMinorUnits: shares[1]),
+        ]
+        return SharedExpenseInput(
+            title: transaction.displayDescription, date: transaction.effectiveDate,
+            totalMinorUnits: total, currency: transaction.amount.currency, participants: people, payerID: people[0].id,
+            bankLink: transaction.isPending ? nil : TrackingBankLink(
+                accountIDIndex: transaction.accountIDIndex, bankTransactionID: transaction.bankTransactionID
+            )
+        )
     }
 
     private var settlementSummary: SettlementSummary? {

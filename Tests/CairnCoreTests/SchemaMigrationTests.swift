@@ -6,7 +6,7 @@ import Testing
 @Suite("Schema migration")
 @MainActor
 struct SchemaMigrationTests {
-    @Test("A V1 disk store migrates to V3 without losing spending data")
+    @Test("A V1 disk store migrates to the current schema without losing spending data")
     func v1StoreMigratesToV3() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("cairn-migration-\(UUID().uuidString)", isDirectory: true)
@@ -19,7 +19,7 @@ struct SchemaMigrationTests {
         // Close the V1 container before opening the same SQLite file as V2.
         try createV1Store(at: storeURL, categoryID: categoryID, postedDate: postedDate)
 
-        let schema = Schema(versionedSchema: CairnSchemaV4.self)
+        let schema = Schema(versionedSchema: CairnSchemaV6.self)
         let configuration = ModelConfiguration(
             "Cairn", schema: schema, url: storeURL, cloudKitDatabase: .none
         )
@@ -68,7 +68,7 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<CategoryBudget>()).first?.amountMinorUnits == 50_000)
     }
 
-    @Test("A V2 budget store migrates to V3 with its rules and tags")
+    @Test("A V2 budget store migrates to the current schema with its rules and tags")
     func v2StoreMigratesToV3() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("cairn-v2-migration-\(UUID().uuidString)", isDirectory: true)
@@ -78,7 +78,7 @@ struct SchemaMigrationTests {
         let categoryID = UUID()
         try createV2Store(at: storeURL, categoryID: categoryID)
 
-        let schema = Schema(versionedSchema: CairnSchemaV4.self)
+        let schema = Schema(versionedSchema: CairnSchemaV6.self)
         let configuration = ModelConfiguration("Cairn", schema: schema, url: storeURL, cloudKitDatabase: .none)
         let container = try ModelContainer(
             for: schema, migrationPlan: CairnMigrationPlan.self, configurations: configuration
@@ -96,7 +96,7 @@ struct SchemaMigrationTests {
         #expect(budgets.first?.amountMinorUnits == 50_000)
     }
 
-    @Test("A V3 store migrates to V4 with settlement defaults")
+    @Test("A V3 store migrates to the current schema with settlement defaults")
     func v3StoreMigratesToV4() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("cairn-v3-migration-\(UUID().uuidString)", isDirectory: true)
@@ -105,7 +105,7 @@ struct SchemaMigrationTests {
         let storeURL = directory.appendingPathComponent("Cairn.store")
         try createV3Store(at: storeURL)
 
-        let schema = Schema(versionedSchema: CairnSchemaV4.self)
+        let schema = Schema(versionedSchema: CairnSchemaV6.self)
         let configuration = ModelConfiguration("Cairn", schema: schema, url: storeURL, cloudKitDatabase: .none)
         let container = try ModelContainer(
             for: schema, migrationPlan: CairnMigrationPlan.self, configurations: configuration
@@ -120,6 +120,55 @@ struct SchemaMigrationTests {
         #expect(transactions.first?.settlementRoleRaw == SettlementRole.none.rawValue)
         #expect(transactions.first?.settlementStatusRaw == SettlementStatus.expected.rawValue)
         #expect(commitments.isEmpty)
+    }
+
+    @Test("V4 and V5 stores preserve reimbursements and expense schedules", arguments: [4, 5])
+    func recentStoresMigrate(version: Int) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cairn-v6-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("Cairn.store")
+        let settlementID = try createRecentStore(at: url, version: version)
+        let schema = Schema(versionedSchema: CairnSchemaV6.self)
+        let configuration = ModelConfiguration("Cairn", schema: schema, url: url, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, migrationPlan: CairnMigrationPlan.self, configurations: configuration)
+        let context = container.mainContext
+        let transactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        #expect(transactions.count == 2)
+        #expect(transactions.allSatisfy { $0.settlementID == settlementID })
+        #expect(transactions.first { $0.amountMinorUnits < 0 }?.settlementExpectedAmountMinorUnits == 2_000)
+        #expect(transactions.first { $0.amountMinorUnits > 0 }?.settlementRole == .reimbursement)
+        #expect(try context.fetchCount(FetchDescriptor<BudgetSmoothingPlan>()) == (version == 5 ? 1 : 0))
+        #expect(try context.fetchCount(FetchDescriptor<SharedExpense>()) == 0)
+        #expect(try context.fetchCount(FetchDescriptor<SinkingFund>()) == 0)
+        let fund = SinkingFund()
+        fund.name = "New fund"
+        context.insert(fund)
+        try context.save()
+        #expect(try context.fetchCount(FetchDescriptor<SinkingFund>()) == 1)
+    }
+
+    private func createRecentStore(at url: URL, version: Int) throws -> UUID {
+        let schema = version == 4 ? Schema(versionedSchema: CairnSchemaV4.self) : Schema(versionedSchema: CairnSchemaV5.self)
+        let configuration = ModelConfiguration("Cairn", schema: schema, url: url, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let context = container.mainContext
+        let account = Account(bankAccountID: "old-account", name: "Checking")
+        let expense = LedgerTransaction(bankTransactionID: "expense", amountMinorUnits: -4_000)
+        let reimbursement = LedgerTransaction(bankTransactionID: "reimbursement", amountMinorUnits: 1_000)
+        expense.account = account
+        reimbursement.account = account
+        context.insert(account)
+        context.insert(expense)
+        context.insert(reimbursement)
+        try LedgerTransaction.linkSettlement(
+            expense: expense, reimbursement: reimbursement, counterparty: "Alex", expectedAmountMinorUnits: 2_000
+        )
+        if version == 5 {
+            context.insert(BudgetSmoothingPlan(accountIDIndex: "old-account", bankTransactionID: "schedule", name: "Insurance"))
+        }
+        try context.save()
+        return try #require(expense.settlementID)
     }
 
     private func createV3Store(at url: URL) throws {

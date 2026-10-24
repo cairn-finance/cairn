@@ -36,6 +36,7 @@ struct HomeView: View {
                 }
                 if accounts.isEmpty {
                     emptyState
+                    PersonalTrackingEntryPoints()
                 } else {
                     NavigationLink {
                         NetWorthView()
@@ -148,6 +149,7 @@ struct HomeView: View {
                 }
             }
         }
+        PersonalTrackingEntryPoints()
     }
 
     private var budgetCurrency: Currency {

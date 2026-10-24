@@ -1,6 +1,1546 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+      "%@ set aside toward %@": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ set aside toward %@"
+            }
+          }
+        }
+      },
+      "A target date gives a monthly suggestion. Record contributions when you set money aside.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "A target date gives a monthly suggestion. Record contributions when you set money aside."
+            }
+          }
+        }
+      },
+      "Active": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Active"
+            }
+          }
+        }
+      },
+      "Add a shared expense, choose the split, and record repayments as they happen.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Add a shared expense, choose the split, and record repayments as they happen."
+            }
+          }
+        }
+      },
+      "Add person": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Add person"
+            }
+          }
+        }
+      },
+      "Add shared expense": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Add shared expense"
+            }
+          }
+        }
+      },
+      "Add sinking fund": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Add sinking fund"
+            }
+          }
+        }
+      },
+      "Allocated: %@": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Allocated: %@"
+            }
+          }
+        }
+      },
+      "Allocation": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Allocation"
+            }
+          }
+        }
+      },
+      "Allocation history": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Allocation history"
+            }
+          }
+        }
+      },
+      "Allocation options": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Allocation options"
+            }
+          }
+        }
+      },
+      "Allocations track your plans without moving money or changing account balances or spending.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Allocations track your plans without moving money or changing account balances or spending."
+            }
+          }
+        }
+      },
+      "Already allocated (optional)": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Already allocated (optional)"
+            }
+          }
+        }
+      },
+      "Archive expense": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Archive expense"
+            }
+          }
+        }
+      },
+      "Archived": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Archived"
+            }
+          }
+        }
+      },
+      "Attach expense transaction": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Attach expense transaction"
+            }
+          }
+        }
+      },
+      "Attach payment transaction": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Attach payment transaction"
+            }
+          }
+        }
+      },
+      "Attach transaction": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Attach transaction"
+            }
+          }
+        }
+      },
+      "Attached expense transaction": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Attached expense transaction"
+            }
+          }
+        }
+      },
+      "Attached transaction is no longer available": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Attached transaction is no longer available"
+            }
+          }
+        }
+      },
+      "Bank-linked reimbursements": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Bank-linked reimbursements"
+            }
+          }
+        }
+      },
+      "Cash and other repayments can be recorded without a bank transaction.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Cash and other repayments can be recorded without a bank transaction."
+            }
+          }
+        }
+      },
+      "Choose a person who is part of this expense.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Choose a person who is part of this expense."
+            }
+          }
+        }
+      },
+      "Choose a posted transaction with the same currency, direction, and amount.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Choose a posted transaction with the same currency, direction, and amount."
+            }
+          }
+        }
+      },
+      "Choose a valid currency. Currency cannot change after activity is recorded.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Choose a valid currency. Currency cannot change after activity is recorded."
+            }
+          }
+        }
+      },
+      "Completed": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Completed"
+            }
+          }
+        }
+      },
+      "Contribution": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Contribution"
+            }
+          }
+        }
+      },
+      "Contribution plan": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Contribution plan"
+            }
+          }
+        }
+      },
+      "Correction": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Correction"
+            }
+          }
+        }
+      },
+      "Couldn't save changes": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Couldn't save changes"
+            }
+          }
+        }
+      },
+      "Currency code": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Currency code"
+            }
+          }
+        }
+      },
+      "Delete allocation": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Delete allocation"
+            }
+          }
+        }
+      },
+      "Delete expense": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Delete expense"
+            }
+          }
+        }
+      },
+      "Delete fund": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Delete fund"
+            }
+          }
+        }
+      },
+      "Delete repayment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Delete repayment"
+            }
+          }
+        }
+      },
+      "Delete this allocation?": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Delete this allocation?"
+            }
+          }
+        }
+      },
+      "Delete this repayment?": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Delete this repayment?"
+            }
+          }
+        }
+      },
+      "Delete this shared expense?": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Delete this shared expense?"
+            }
+          }
+        }
+      },
+      "Delete this sinking fund?": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Delete this sinking fund?"
+            }
+          }
+        }
+      },
+      "Edit shared expense": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Edit shared expense"
+            }
+          }
+        }
+      },
+      "Edit sinking fund": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Edit sinking fund"
+            }
+          }
+        }
+      },
+      "Enter a name of up to 80 characters.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Enter a name of up to 80 characters."
+            }
+          }
+        }
+      },
+      "Enter a positive contribution or withdrawal. Corrections may be positive or negative.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Enter a positive contribution or withdrawal. Corrections may be positive or negative."
+            }
+          }
+        }
+      },
+      "Enter a valid amount within the supported range.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Enter a valid amount within the supported range."
+            }
+          }
+        }
+      },
+      "Expense": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Expense"
+            }
+          }
+        }
+      },
+      "Expense unavailable": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Expense unavailable"
+            }
+          }
+        }
+      },
+      "Expenses": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Expenses"
+            }
+          }
+        }
+      },
+      "Export shared expenses and sinking funds": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Export shared expenses and sinking funds"
+            }
+          }
+        }
+      },
+      "Fund": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Fund"
+            }
+          }
+        }
+      },
+      "Fund name": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Fund name"
+            }
+          }
+        }
+      },
+      "Fund progress": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Fund progress"
+            }
+          }
+        }
+      },
+      "Fund totals unavailable": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Fund totals unavailable"
+            }
+          }
+        }
+      },
+      "Fund totals unavailable. Review the allocation history.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Fund totals unavailable. Review the allocation history."
+            }
+          }
+        }
+      },
+      "Fund unavailable": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Fund unavailable"
+            }
+          }
+        }
+      },
+      "Its allocation history will also be removed. Account transactions are kept.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Its allocation history will also be removed. Account transactions are kept."
+            }
+          }
+        }
+      },
+      "Its repayment history will also be removed. Account transactions are kept.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Its repayment history will also be removed. Account transactions are kept."
+            }
+          }
+        }
+      },
+      "Keep track of who owes what": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Keep track of who owes what"
+            }
+          }
+        }
+      },
+      "Make room for what's ahead": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Make room for what's ahead"
+            }
+          }
+        }
+      },
+      "Matching transactions": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Matching transactions"
+            }
+          }
+        }
+      },
+      "Monthly contribution plan (optional)": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Monthly contribution plan (optional)"
+            }
+          }
+        }
+      },
+      "Monthly plan": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Monthly plan"
+            }
+          }
+        }
+      },
+      "No allocations recorded": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "No allocations recorded"
+            }
+          }
+        }
+      },
+      "No matching transactions": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "No matching transactions"
+            }
+          }
+        }
+      },
+      "No repayments recorded": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "No repayments recorded"
+            }
+          }
+        }
+      },
+      "Note (optional)": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Note (optional)"
+            }
+          }
+        }
+      },
+      "OK": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "OK"
+            }
+          }
+        }
+      },
+      "Opening amount": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Opening amount"
+            }
+          }
+        }
+      },
+      "Optional attachment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Optional attachment"
+            }
+          }
+        }
+      },
+      "Other currency": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Other currency"
+            }
+          }
+        }
+      },
+      "Outstanding": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Outstanding"
+            }
+          }
+        }
+      },
+      "Owed to you": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Owed to you"
+            }
+          }
+        }
+      },
+      "Owed to you: %@ · You owe: %@": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Owed to you: %@ · You owe: %@"
+            }
+          }
+        }
+      },
+      "Owes you": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Owes you"
+            }
+          }
+        }
+      },
+      "Paid by": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Paid by"
+            }
+          }
+        }
+      },
+      "Paused": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Paused"
+            }
+          }
+        }
+      },
+      "Payment amount": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Payment amount"
+            }
+          }
+        }
+      },
+      "Payment received": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Payment received"
+            }
+          }
+        }
+      },
+      "Person's name": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Person's name"
+            }
+          }
+        }
+      },
+      "Personal records only. Shared balances are separate from account spending.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Personal records only. Shared balances are separate from account spending."
+            }
+          }
+        }
+      },
+      "Plans are not recorded automatically.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Plans are not recorded automatically."
+            }
+          }
+        }
+      },
+      "Record a withdrawal when you spend from a fund. The purchase stays in account spending.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Record a withdrawal when you spend from a fund. The purchase stays in account spending."
+            }
+          }
+        }
+      },
+      "Record allocation": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Record allocation"
+            }
+          }
+        }
+      },
+      "Record payment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Record payment"
+            }
+          }
+        }
+      },
+      "Record received payment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Record received payment"
+            }
+          }
+        }
+      },
+      "Record repayment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Record repayment"
+            }
+          }
+        }
+      },
+      "Record unavailable": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Record unavailable"
+            }
+          }
+        }
+      },
+      "Record your payment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Record your payment"
+            }
+          }
+        }
+      },
+      "Recorded contributions and payments cannot be dated in the future.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Recorded contributions and payments cannot be dated in the future."
+            }
+          }
+        }
+      },
+      "Remaining": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Remaining"
+            }
+          }
+        }
+      },
+      "Remove attachment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Remove attachment"
+            }
+          }
+        }
+      },
+      "Remove person": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Remove person"
+            }
+          }
+        }
+      },
+      "Repayment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Repayment"
+            }
+          }
+        }
+      },
+      "Repayment history": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Repayment history"
+            }
+          }
+        }
+      },
+      "Repayment options": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Repayment options"
+            }
+          }
+        }
+      },
+      "Repayment totals unavailable. Review this expense's shares and payments.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Repayment totals unavailable. Review this expense's shares and payments."
+            }
+          }
+        }
+      },
+      "Restore expense": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Restore expense"
+            }
+          }
+        }
+      },
+      "Set a target date": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Set a target date"
+            }
+          }
+        }
+      },
+      "Set aside": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Set aside"
+            }
+          }
+        }
+      },
+      "Set money aside for insurance, a holiday, repairs, or another future expense.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Set money aside for insurance, a holiday, repairs, or another future expense."
+            }
+          }
+        }
+      },
+      "Set money aside for what's ahead": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Set money aside for what's ahead"
+            }
+          }
+        }
+      },
+      "Settled": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Settled"
+            }
+          }
+        }
+      },
+      "Share amount": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Share amount"
+            }
+          }
+        }
+      },
+      "Share the cost. Keep the record.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Share the cost. Keep the record."
+            }
+          }
+        }
+      },
+      "Shared balances are personal records. Account spending and balances stay separate.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Shared balances are personal records. Account spending and balances stay separate."
+            }
+          }
+        }
+      },
+      "Shared expense options": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Shared expense options"
+            }
+          }
+        }
+      },
+      "Shared expense totals unavailable": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Shared expense totals unavailable"
+            }
+          }
+        }
+      },
+      "Shared expenses": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Shared expenses"
+            }
+          }
+        }
+      },
+      "Shares": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Shares"
+            }
+          }
+        }
+      },
+      "Shares must add up to the total, with exactly one share for you.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Shares must add up to the total, with exactly one share for you."
+            }
+          }
+        }
+      },
+      "Show archived expenses": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Show archived expenses"
+            }
+          }
+        }
+      },
+      "Show archived funds": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Show archived funds"
+            }
+          }
+        }
+      },
+      "Shows fund progress and allocation history": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Shows fund progress and allocation history"
+            }
+          }
+        }
+      },
+      "Shows up to 100 recent transactions matching the amount and direction.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Shows up to 100 recent transactions matching the amount and direction."
+            }
+          }
+        }
+      },
+      "Sinking fund": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Sinking fund"
+            }
+          }
+        }
+      },
+      "Sinking fund options": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Sinking fund options"
+            }
+          }
+        }
+      },
+      "Sinking funds": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Sinking funds"
+            }
+          }
+        }
+      },
+      "Some records could not be read. Totals may be incomplete.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Some records could not be read. Totals may be incomplete."
+            }
+          }
+        }
+      },
+      "Split equally": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Split equally"
+            }
+          }
+        }
+      },
+      "Suggested per month": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Suggested per month"
+            }
+          }
+        }
+      },
+      "Target amount": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Target amount"
+            }
+          }
+        }
+      },
+      "Target date": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Target date"
+            }
+          }
+        }
+      },
+      "That transaction is already attached to a shared expense or payment.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "That transaction is already attached to a shared expense or payment."
+            }
+          }
+        }
+      },
+      "The payment exceeds this person's outstanding amount.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "The payment exceeds this person's outstanding amount."
+            }
+          }
+        }
+      },
+      "This change would leave the fund below zero.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "This change would leave the fund below zero."
+            }
+          }
+        }
+      },
+      "This record no longer exists.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "This record no longer exists."
+            }
+          }
+        }
+      },
+      "Total amount": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Total amount"
+            }
+          }
+        }
+      },
+      "Track repayments or link an incoming reimbursement.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Track repayments or link an incoming reimbursement."
+            }
+          }
+        }
+      },
+      "Track shared expense…": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Track shared expense…"
+            }
+          }
+        }
+      },
+      "Type": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Type"
+            }
+          }
+        }
+      },
+      "Unnamed person": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Unnamed person"
+            }
+          }
+        }
+      },
+      "Withdrawal": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Withdrawal"
+            }
+          }
+        }
+      },
+      "You": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "You"
+            }
+          }
+        }
+      },
+      "You can attach your repayment when you record it.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "You can attach your repayment when you record it."
+            }
+          }
+        }
+      },
+      "You can save without a bank transaction. Attachments are references only.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "You can save without a bank transaction. Attachments are references only."
+            }
+          }
+        }
+      },
+      "You can save without an attachment.": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "You can save without an attachment."
+            }
+          }
+        }
+      },
+      "You owe": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "You owe"
+            }
+          }
+        }
+      },
+      "Your funds": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Your funds"
+            }
+          }
+        }
+      },
+      "Your repayment": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Your repayment"
+            }
+          }
+        }
+      },
+      "of %@": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "of %@"
+            }
+          }
+        }
+      },
+      "of %@ set aside": {
+        "extractionState": "manual",
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "of %@ set aside"
+            }
+          }
+        }
+      },
     "" : {
 
     },

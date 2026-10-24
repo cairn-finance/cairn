@@ -51,6 +51,10 @@ struct DeleteAllDataTests {
         snapshot.account = account
         context.insert(snapshot)
         context.insert(AppSettings())
+        context.insert(SharedExpense())
+        context.insert(SharedExpensePayment())
+        context.insert(SinkingFund())
+        context.insert(SinkingFundEntry())
         try context.save()
 
         let engine = SyncEngine(modelContainer: container)
@@ -65,6 +69,10 @@ struct DeleteAllDataTests {
         #expect(try context.fetchCount(FetchDescriptor<Account>()) == 0)
         #expect(try context.fetchCount(FetchDescriptor<Institution>()) == 0)
         #expect(try context.fetchCount(FetchDescriptor<AppSettings>()) == 0)
+        #expect(try context.fetchCount(FetchDescriptor<SharedExpense>()) == 0)
+        #expect(try context.fetchCount(FetchDescriptor<SharedExpensePayment>()) == 0)
+        #expect(try context.fetchCount(FetchDescriptor<SinkingFund>()) == 0)
+        #expect(try context.fetchCount(FetchDescriptor<SinkingFundEntry>()) == 0)
         _ = container
     }
 }
