@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   stale:
-    if: github.repository == 'cairn-finance/cairn'
+    if: github.repository == 'sehejjain/cairn'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
