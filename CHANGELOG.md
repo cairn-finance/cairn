@@ -6,6 +6,8 @@ All notable changes to Cairn are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-24
+
 ### Added
 
 - Support project generation and signing configuration for iOS and macOS
